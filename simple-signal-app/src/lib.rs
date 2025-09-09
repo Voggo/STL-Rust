@@ -8,15 +8,17 @@ pub struct SignalStep {
     timestamp: Duration, // use built-in duration type
 }
 
+// Derive PartialEq to allow comparison in tests, derive Copy to allow copying to make vector quickly.
+// Rust requires Copy types to also implement Clone, so we derive both.
+#[derive(PartialEq, Clone, Copy)] 
 // enum 'Verdict' to represent the result of the validation
-#[derive(PartialEq, Clone)] // derive PartialEq to allow comparison in tests, derive Clone to allow cloning to make vector quickly
 pub enum Verdict {
     Ok,
     Violated,
 }
 
-// Validate that the signal never exceeds the threshold for more than threshold
-// note: we use a ref to vectorslice because we don't know the size of [SignalStep] at compile time, but pointers to slices have a known size
+// Validate that the signal never exceeds the threshold value for more than a duration threshold
+// note: we use a ref to vectorslice because we don't know the size of [SignalStep] at compile time, but references to slices have a known size
 pub fn validate_signal(signal: &[SignalStep], duration_threshold: Duration) -> Vec<Verdict> {
     let mut verdict: Vec<Verdict> = Vec::new();
     let mut exceed_start: Option<Duration> = None;
@@ -45,9 +47,8 @@ pub fn validate_signal(signal: &[SignalStep], duration_threshold: Duration) -> V
 mod tests {
     use super::*;
 
-    #[test]
-    fn signal_1() {
-        let signal = vec![
+    fn signal_1() -> Vec<SignalStep>{
+        vec![
             SignalStep {
                 value: 10,
                 timestamp: Duration::new(0, 0),
@@ -80,9 +81,13 @@ mod tests {
                 value: 20,
                 timestamp: Duration::new(7, 0),
             },
-        ];
+        ]
+    }
+    #[test]
+    fn signal_1_full_signal() {
+        let signal = signal_1();
         let verdict_vec = vec![Verdict::Ok; 8];
-        let res_vec = validate_signal(&signal[0..3], Duration::new(5, 0));
+        let res_vec = validate_signal(&signal, Duration::new(5, 0));
         assert!(
             res_vec
                 .iter()
@@ -91,8 +96,20 @@ mod tests {
         );
     }
     #[test]
-    fn signal_2() {
-        let signal = vec![
+    fn signal_1_partial_signal() {
+        let signal = signal_1();
+        let verdict_vec = vec![Verdict::Ok; 4];
+        let res_vec = validate_signal(&signal[0..4], Duration::new(5, 0));
+        assert!(
+            res_vec
+                .iter()
+                .zip(verdict_vec.iter())
+                .all(|verdicts| verdicts.0 == verdicts.1)
+        );
+    }
+
+    fn signal_2() -> Vec<SignalStep> {
+        vec![
             SignalStep {
                 value: 10,
                 timestamp: Duration::new(0, 0),
@@ -111,12 +128,29 @@ mod tests {
             },
             SignalStep {
                 value: 60,
-                timestamp: Duration::new(7, 0),
+                timestamp: Duration::new(9, 0),
             },
-        ];
+        ]
+    }
+    #[test]
+    fn signal_2_full_signal() {
+        let signal = signal_2();
         let mut verdict_vec = vec![Verdict::Ok; 4];
         verdict_vec.push(Verdict::Violated);
-        let res_vec = validate_signal(&signal[0..3], Duration::new(5, 0));
+        let res_vec = validate_signal(&signal, Duration::new(5, 0));
+        assert!(
+            res_vec
+                .iter()
+                .zip(verdict_vec.iter())
+                .all(|verdicts| verdicts.0 == verdicts.1)
+        );
+        
+    }
+    #[test]
+    fn signal_2_partial_signal() {
+        let signal = signal_2();
+        let verdict_vec = vec![Verdict::Ok; 4];
+        let res_vec = validate_signal(&signal[0..4], Duration::new(5, 0));
         assert!(
             res_vec
                 .iter()
@@ -124,4 +158,4 @@ mod tests {
                 .all(|verdicts| verdicts.0 == verdicts.1)
         );
     }
-}
+}   
