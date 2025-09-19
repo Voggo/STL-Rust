@@ -11,6 +11,25 @@ pub struct SignalBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
 
+pub trait SignalTrait {
+    // The type of the value stored in the signal
+    type Value;
+    
+    // The container that holds the steps
+    type Container: IntoIterator;
+
+    // A Generic Associated Type (GAT) for the iterator.
+    // The <'a> here links the iterator's lifetime to the lifetime of `&'a self`.
+    type Iter<'a>: Iterator<Item = &'a Step<Self::Value>> where Self: 'a;
+
+    fn new() -> Self;
+    fn add_step(&mut self, value: Self::Value, timestamp: Duration);
+    fn prune(&mut self, current_time: Duration, max_age: Duration);
+    
+    // The iter method now returns the generic iterator type.
+    fn iter<'a>(&'a self) -> Self::Iter<'a>;
+}
+
 impl<T> SignalBuffer<T> {
     pub fn new() -> Self {
         Self {
