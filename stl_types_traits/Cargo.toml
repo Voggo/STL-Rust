@@ -1,5 +1,5 @@
 [package]
-name = "STL_types_traits"
+name = "stl_types_traits"
 version = "0.1.0"
 edition = "2024"
 

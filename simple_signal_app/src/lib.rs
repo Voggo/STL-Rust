@@ -10,7 +10,7 @@ pub struct SignalStep {
 
 // Derive PartialEq to allow comparison in tests, derive Copy to allow copying to make vector quickly.
 // Rust requires Copy types to also implement Clone, so we derive both.
-#[derive(PartialEq, Clone, Copy)] 
+#[derive(Debug, PartialEq, Clone, Copy)]
 // enum 'Verdict' to represent the result of the validation
 pub enum Verdict {
     Ok,
@@ -94,6 +94,7 @@ mod tests {
                 .zip(verdict_vec.iter())
                 .all(|verdicts| verdicts.0 == verdicts.1)
         );
+        assert_eq!(res_vec, verdict_vec);
     }
     #[test]
     fn signal_1_partial_signal() {
@@ -106,6 +107,7 @@ mod tests {
                 .zip(verdict_vec.iter())
                 .all(|verdicts| verdicts.0 == verdicts.1)
         );
+        assert_eq!(res_vec, verdict_vec);
     }
 
     fn signal_2() -> Vec<SignalStep> {
@@ -145,6 +147,7 @@ mod tests {
                 .all(|verdicts| verdicts.0 == verdicts.1)
         );
         
+        assert_eq!(res_vec, verdict_vec);
     }
     #[test]
     fn signal_2_partial_signal() {
@@ -157,5 +160,72 @@ mod tests {
                 .zip(verdict_vec.iter())
                 .all(|verdicts| verdicts.0 == verdicts.1)
         );
+        assert_eq!(res_vec, verdict_vec);
+    }   
+
+    #[test]
+    fn empty_signal() {
+        let signal: Vec<SignalStep> = vec![];
+        let verdict_vec: Vec<Verdict> = vec![];
+        let res_vec = validate_signal(&signal, Duration::new(5, 0));
+        assert_eq!(res_vec, verdict_vec);
     }
-}   
+
+    #[test]
+    fn single_step_signal() {
+        // Below threshold
+        let signal = vec![SignalStep {
+            value: 10,
+            timestamp: Duration::new(0, 0),
+        }];
+        let verdict_vec = vec![Verdict::Ok];
+        let res_vec = validate_signal(&signal, Duration::new(5, 0));
+        assert_eq!(res_vec, verdict_vec);
+
+        // Above threshold
+        let signal = vec![SignalStep {
+            value: 50,
+            timestamp: Duration::new(0, 0),
+        }];
+        let verdict_vec = vec![Verdict::Ok];
+        let res_vec = validate_signal(&signal, Duration::new(5, 0));
+        assert_eq!(res_vec, verdict_vec);
+    }
+
+    #[test]
+    fn signal_never_exceeds_threshold() {
+        let signal = vec![
+            SignalStep { value: 10, timestamp: Duration::from_secs(0) },
+            SignalStep { value: 20, timestamp: Duration::from_secs(1) },
+            SignalStep { value: THRESHOLD_VALUE, timestamp: Duration::from_secs(2) },
+        ];
+        let verdict_vec = vec![Verdict::Ok; 3];
+        let res_vec = validate_signal(&signal, Duration::from_secs(1));
+        assert_eq!(res_vec, verdict_vec);
+    }
+
+    #[test]
+    fn exceed_duration_equals_threshold() {
+        let signal = vec![
+            SignalStep { value: 50, timestamp: Duration::from_secs(0) },
+            SignalStep { value: 60, timestamp: Duration::from_secs(5) },
+        ];
+        let verdict_vec = vec![Verdict::Ok, Verdict::Ok];
+        let res_vec = validate_signal(&signal, Duration::from_secs(5));
+        assert_eq!(res_vec, verdict_vec);
+    }
+
+    #[test]
+    fn exceed_reset_and_exceed_again() {
+        let signal = vec![
+            SignalStep { value: 50, timestamp: Duration::from_secs(0) }, // Exceeds
+            SignalStep { value: 60, timestamp: Duration::from_secs(1) }, // Exceeds
+            SignalStep { value: 30, timestamp: Duration::from_secs(2) }, // Below, resets timer
+            SignalStep { value: 70, timestamp: Duration::from_secs(3) }, // Exceeds again
+            SignalStep { value: 80, timestamp: Duration::from_secs(7) }, // 7-3=4s > 3s, VIOLATION
+        ];
+        let verdict_vec = vec![Verdict::Ok, Verdict::Ok, Verdict::Ok, Verdict::Ok, Verdict::Violated];
+        let res_vec = validate_signal(&signal, Duration::from_secs(3));
+        assert_eq!(res_vec, verdict_vec);
+    }
+}
