@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use STL_types_traits::signal::SignalBuffer;
+    use stl_types_traits::signal::SignalBuffer;
 
     #[test]
     fn signal_test() {
