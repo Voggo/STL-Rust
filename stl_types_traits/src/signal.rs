@@ -1,14 +1,9 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, ops::Index, time::Duration};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Step<T> {
     pub value: T,
     pub timestamp: Duration,
-}
-
-#[derive(Clone)]
-pub struct SignalBuffer<T> {
-    pub steps: VecDeque<Step<T>>,
 }
 
 pub trait SignalTrait {
@@ -23,16 +18,25 @@ pub trait SignalTrait {
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>> where Self: 'a;
 
     fn new() -> Self;
+
     fn add_step(&mut self, value: Self::Value, timestamp: Duration);
     fn prune(&mut self, current_time: Duration, max_age: Duration);
-    
+
     // The iter method now returns the generic iterator type.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
 }
 
-impl<T> SignalBuffer<T> {
+#[derive(Clone)]
+pub struct SignalBuffer<T> {
+    pub steps: VecDeque<Step<T>>,
+}
+
+impl<T> SignalBuffer<T>
+where
+    T: Copy,
+{
     pub fn new() -> Self {
-        Self {
+        SignalBuffer {
             steps: VecDeque::new(),
         }
     }
@@ -41,11 +45,42 @@ impl<T> SignalBuffer<T> {
         self.steps.push_back(Step { value, timestamp });
     }
 
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<Step<T>> {
+        self.steps.iter()
+    }
+}
+
+impl<T> SignalTrait for SignalBuffer<T>
+where
+    T: Copy,
+{
+    type Value = T;
+    type Container = VecDeque<Step<T>>;
+    type Iter<'a> = std::collections::vec_deque::Iter<'a, Step<T>> where Self: 'a;
+
+    fn new() -> Self {
+        SignalBuffer::new()
+    }
+
+    fn add_step(&mut self, value: T, timestamp: Duration) {
+        self.add_step(value, timestamp)
+    }
+
     fn prune(&mut self, current_time: Duration, max_age: Duration) {
         todo!("Implementation for pruning old steps")
     }
 
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<Step<T>> {
-        self.steps.iter()
+    fn iter<'a>(&'a self) -> Self::Iter<'a> {
+        self.iter()
+    }
+}
+
+impl<T> Index<usize> for SignalBuffer<T>
+where
+    T: Copy,
+{
+    type Output = Step<T>;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.steps[index]
     }
 }

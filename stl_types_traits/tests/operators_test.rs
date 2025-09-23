@@ -24,16 +24,16 @@ mod tests {
     }
     #[test]
     fn print_stl_formula() {
-        println!("{}", get_formula().stl_formula_to_string());
+        println!("{}", get_formula().to_string());
         assert_eq!(
-            get_formula().stl_formula_to_string(),
+            get_formula().to_string(),
             "(G[0, 10](x < 5)) /\\ ((False) U[0, 20] (True))"
         );
     }
 
     #[test]
     fn to_tree_string() {
-        println!("{}", get_formula().stl_formula_to_tree_string(10));
+        println!("{}", get_formula().to_tree_string(10));
     }
 
     #[test]

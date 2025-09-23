@@ -7,6 +7,7 @@ pub struct TimeInterval {
     pub end: Duration,
 }
 
+#[derive(Debug, Clone)]
 // A generic representation of an STL formula.
 pub enum STLFormula {
     // Boolean operators
@@ -31,40 +32,40 @@ pub enum STLFormula {
 
 impl STLFormula {
     /// Recursively generates a pretty-printed string representation of the formula.
-    pub fn stl_formula_to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             STLFormula::True => "True".to_string(),
             STLFormula::False => "False".to_string(),
-            STLFormula::Not(f) => format!("¬({})", f.stl_formula_to_string()),
-            STLFormula::And(f1, f2) => format!("({}) /\\ ({})", f1.stl_formula_to_string(), f2.stl_formula_to_string()),
-            STLFormula::Or(f1, f2) => format!("({}) /\\ ({})", f1.stl_formula_to_string(), f2.stl_formula_to_string()),
+            STLFormula::Not(f) => format!("¬({})", f.to_string()),
+            STLFormula::And(f1, f2) => format!("({}) /\\ ({})", f1.to_string(), f2.to_string()),
+            STLFormula::Or(f1, f2) => format!("({}) /\\ ({})", f1.to_string(), f2.to_string()),
             STLFormula::Always(interval, f) => format!(
                 "G[{}, {}]({})",
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f.stl_formula_to_string()
+                f.to_string()
             ),
             STLFormula::Eventually(interval, f) => format!(
                 "F[{}, {}]({})",
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f.stl_formula_to_string()
+                f.to_string()
             ),
             STLFormula::Until(interval, f1, f2) => format!(
                 "({}) U[{}, {}] ({})",
-                f1.stl_formula_to_string(),
+                f1.to_string(),
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f2.stl_formula_to_string()
+                f2.to_string()
             ),
-            STLFormula::Implies(f1, f2) => format!("({}) -> ({})", f1.stl_formula_to_string(), f2.stl_formula_to_string()),
+            STLFormula::Implies(f1, f2) => format!("({}) -> ({})", f1.to_string(), f2.to_string()),
             STLFormula::GreaterThan(val) => format!("x > {}", val),
             STLFormula::LessThan(val) => format!("x < {}", val),
         }
     }
 
     /// Recursively generate a tree-like string representation of the formula.
-    pub fn stl_formula_to_tree_string(&self, indent: usize) -> String {
+    pub fn to_tree_string(&self, indent: usize) -> String {
         let padding = " ".repeat(indent);
         match self {
             STLFormula::True => format!("{}True", padding),
@@ -72,47 +73,47 @@ impl STLFormula {
             STLFormula::Not(f) => format!(
                 "{}Not\n{}",
                 padding,
-                f.stl_formula_to_tree_string(indent + 2)
+                f.to_tree_string(indent + 2)
             ),
             STLFormula::And(f1, f2) => format!(
                 "{}And\n{}\n{}",
                 padding,
-                f1.stl_formula_to_tree_string(indent + 2),
-                f2.stl_formula_to_tree_string(indent + 2)
+                f1.to_tree_string(indent + 2),
+                f2.to_tree_string(indent + 2)
             ),
             STLFormula::Or(f1, f2) => format!(
                 "{}Or\n{}\n{}",
                 padding,
-                f1.stl_formula_to_tree_string(indent + 2),
-                f2.stl_formula_to_tree_string(indent + 2)
+                f1.to_tree_string(indent + 2),
+                f2.to_tree_string(indent + 2)
             ),
             STLFormula::Always(interval, f) => format!(
                 "{}Always [{} - {}]\n{}",
                 padding,
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f.stl_formula_to_tree_string(indent + 2)
+                f.to_tree_string(indent + 2)
             ),
             STLFormula::Eventually(interval, f) => format!(
                 "{}Eventually [{} - {}]\n{}",
                 padding,
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f.stl_formula_to_tree_string(indent + 2)
+                f.to_tree_string(indent + 2)
             ),
             STLFormula::Until(interval, f1, f2) => format!(
                 "{}Until [{} - {}]\n{}\n{}",
                 padding,
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
-                f1.stl_formula_to_tree_string(indent + 2),
-                f2.stl_formula_to_tree_string(indent + 2)
+                f1.to_tree_string(indent + 2),
+                f2.to_tree_string(indent + 2)
             ),
             STLFormula::Implies(f1, f2) => format!(
                 "{}Implies\n{}\n{}",
                 padding,
-                f1.stl_formula_to_tree_string(indent + 2),
-                f2.stl_formula_to_tree_string(indent + 2)
+                f1.to_tree_string(indent + 2),
+                f2.to_tree_string(indent + 2)
             ),
             STLFormula::GreaterThan(val) => format!("{}x > {}", padding, val),
             STLFormula::LessThan(val) => format!("{}x < {}", padding, val),
