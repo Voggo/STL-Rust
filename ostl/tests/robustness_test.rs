@@ -135,7 +135,7 @@ mod tests {
         // Robustness values for (value > 3.0) are: 1, 3, 1
         // Min is 1.0
         let phi = Box::new(STLFormula::GreaterThan(3.0));
-        let formula = STLFormula::Always(interval, phi);
+        let formula = STLFormula::Globally(interval, phi);
         println!(
             "Robustness for {} at t=0: {}",
             formula.to_string(),
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(eventually.robustness_naive(&signal), f64::NEG_INFINITY);
 
         // Always should return +inf if no points are found
-        let always = STLFormula::Always(interval, phi); // Always_[10,20] (value > 0.0)
+        let always = STLFormula::Globally(interval, phi); // Always_[10,20] (value > 0.0)
         println!( 
             "Robustness for {} at t=0: {}", always.to_string(),
             always.robustness_naive(&signal)

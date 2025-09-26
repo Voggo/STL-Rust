@@ -49,7 +49,7 @@ impl STLFormula {
             }
 
             // Always: ρ(s_t, □_[a,b]φ) = min_{t' ∈ [t+a,t+b]} ρ(s_t', φ)
-            STLFormula::Always(interval, phi) => {
+            STLFormula::Globally(interval, phi) => {
                 let start_time = t + interval.start;
                 let end_time = t + interval.end;
 

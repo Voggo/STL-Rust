@@ -17,7 +17,7 @@ pub enum STLFormula {
     Or(Box<STLFormula>, Box<STLFormula>),
 
     // Temporal operators
-    Always(TimeInterval, Box<STLFormula>),
+    Globally(TimeInterval, Box<STLFormula>),
     Eventually(TimeInterval, Box<STLFormula>),
     Until(TimeInterval, Box<STLFormula>, Box<STLFormula>),
 
@@ -40,7 +40,7 @@ impl STLFormula {
             STLFormula::Not(f) => format!("¬({})", f.to_string()),
             STLFormula::And(f1, f2) => format!("({}) /\\ ({})", f1.to_string(), f2.to_string()),
             STLFormula::Or(f1, f2) => format!("({}) /\\ ({})", f1.to_string(), f2.to_string()),
-            STLFormula::Always(interval, f) => format!(
+            STLFormula::Globally(interval, f) => format!(
                 "G[{}, {}]({})",
                 interval.start.as_secs_f64(),
                 interval.end.as_secs_f64(),
@@ -88,7 +88,7 @@ impl STLFormula {
                 f1.to_tree_string(indent + 2),
                 f2.to_tree_string(indent + 2)
             ),
-            STLFormula::Always(interval, f) => format!(
+            STLFormula::Globally(interval, f) => format!(
                 "{}Always [{} - {}]\n{}",
                 padding,
                 interval.start.as_secs_f64(),
@@ -125,7 +125,7 @@ impl STLFormula {
     /// Recursively computes the maximum lookahead time required for the formula.
     pub fn get_max_lookahead(&self) -> Duration {
         match self {
-            STLFormula::Always(interval, f)
+            STLFormula::Globally(interval, f)
             | STLFormula::Eventually(interval, f)
             | STLFormula::Until(interval, f, _) => {
                 interval.end.max(f.get_max_lookahead())

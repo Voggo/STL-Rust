@@ -5,7 +5,7 @@ mod tests {
 
     fn get_formula() -> STLFormula {
         STLFormula::And(
-            Box::new(STLFormula::Always(
+            Box::new(STLFormula::Globally(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(10),

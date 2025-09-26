@@ -62,7 +62,7 @@ where C: RingBufferTrait<Value = f64>
 }
 
 
-struct Always<T, C> 
+struct Globally<T, C> 
 where C: RingBufferTrait<Value = f64>
 {
     interval: TimeInterval,
@@ -70,7 +70,7 @@ where C: RingBufferTrait<Value = f64>
     cache: C,
 }
 
-impl<T, C> StlOperator<T> for Always<T, C> 
+impl<T, C> StlOperator<T> for Globally<T, C> 
 where C: RingBufferTrait<Value = f64>
 {
     fn robustness(&self, step: Step<T>) -> f64 {
