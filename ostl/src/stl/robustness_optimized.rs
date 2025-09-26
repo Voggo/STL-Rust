@@ -1,4 +1,4 @@
-use crate::signal::{SignalTrait, Step};
+use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::operators::STLFormula;
 use std::ops::Index;
 
@@ -8,7 +8,7 @@ use std::ops::Index;
 impl STLFormula {
     pub fn robustness_opt<S>(&self, signal: &S) -> f64
     where
-        S: SignalTrait<Value = f64> + Index<usize, Output = Step<f64>>,
+        S: RingBufferTrait<Value = f64> + Index<usize, Output = Step<f64>>,
     {
         let current_value = signal[0];
         // Find the signal value at time 't'

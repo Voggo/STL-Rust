@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "stl_types_traits"
+name = "ostl"
 version = "0.1.0"

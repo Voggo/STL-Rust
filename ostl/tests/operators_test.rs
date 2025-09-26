@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use stl_types_traits::{stl::operators::STLFormula, stl::operators::TimeInterval};
+    use ostl::{stl::operators::STLFormula, stl::operators::TimeInterval};
     use std::time::Duration;
 
     fn get_formula() -> STLFormula {

@@ -6,7 +6,7 @@ pub struct Step<T> {
     pub timestamp: Duration,
 }
 
-pub trait SignalTrait {
+pub trait RingBufferTrait {
     // The type of the value stored in the signal
     type Value;
     
@@ -27,16 +27,16 @@ pub trait SignalTrait {
 }
 
 #[derive(Clone)]
-pub struct SignalBuffer<T> {
+pub struct RingBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
 
-impl<T> SignalBuffer<T>
+impl<T> RingBuffer<T>
 where
     T: Copy,
 {
     pub fn new() -> Self {
-        SignalBuffer {
+        RingBuffer {
             steps: VecDeque::new(),
         }
     }
@@ -50,7 +50,7 @@ where
     }
 }
 
-impl<T> SignalTrait for SignalBuffer<T>
+impl<T> RingBufferTrait for RingBuffer<T>
 where
     T: Copy,
 {
@@ -59,7 +59,7 @@ where
     type Iter<'a> = std::collections::vec_deque::Iter<'a, Step<T>> where Self: 'a;
 
     fn new() -> Self {
-        SignalBuffer::new()
+        RingBuffer::new()
     }
 
     fn add_step(&mut self, value: T, timestamp: Duration) {
@@ -75,7 +75,7 @@ where
     }
 }
 
-impl<T> Index<usize> for SignalBuffer<T>
+impl<T> Index<usize> for RingBuffer<T>
 where
     T: Copy,
 {
