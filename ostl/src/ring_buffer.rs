@@ -18,6 +18,10 @@ pub trait RingBufferTrait {
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>> where Self: 'a;
 
     fn new() -> Self;
+    fn is_empty(&self) -> bool;
+    fn len(&self) -> usize;
+    fn get_back(&self) -> Option<&Step<Self::Value>>;
+    fn get_front(&self) -> Option<&Step<Self::Value>>;
 
     fn add_step(&mut self, value: Self::Value, timestamp: Duration);
     fn prune(&mut self, current_time: Duration, max_age: Duration);
@@ -60,6 +64,18 @@ where
 
     fn new() -> Self {
         RingBuffer::new()
+    }
+    fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+    fn len(&self) -> usize {
+        self.steps.len()
+    }
+    fn get_back(&self) -> Option<&Step<T>> {
+        self.steps.back()
+    }
+    fn get_front(&self) -> Option<&Step<T>> {
+        self.steps.front()
     }
 
     fn add_step(&mut self, value: T, timestamp: Duration) {

@@ -8,7 +8,6 @@ pub struct TimeInterval {
 }
 
 #[derive(Debug, Clone)]
-
 // A generic representation of an STL formula.
 pub enum STLFormula {
     // Boolean operators

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ostl::{stl::operators::STLFormula, stl::operators::TimeInterval};
+    use ostl::{stl::robustness_naive::STLFormula, stl::core::TimeInterval};
     use std::time::Duration;
 
     fn get_formula() -> STLFormula {
