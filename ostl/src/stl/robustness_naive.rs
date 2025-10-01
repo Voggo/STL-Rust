@@ -1,3 +1,4 @@
+use core::f64;
 use std::ops::Index;
 use std::time::Duration;
 
@@ -158,10 +159,10 @@ impl StlOperator {
                                 s.timestamp >= lower_bound_t_prime && s.timestamp <= t_prime
                             })
                             .map(|s| phi.robustness_naive(signal, s))
-                            .fold(f64::INFINITY, |acc, x| acc.max(x.unwrap_or(f64::INFINITY)));
+                            .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
                         robustness_psi.map(|r_psi| r_psi.min(robustness_phi))
                     })
-                    .fold(f64::INFINITY, |acc, x| {
+                    .fold(f64::NEG_INFINITY, |acc, x| {
                         acc.max(x.unwrap_or(f64::NEG_INFINITY))
                     })
             }
