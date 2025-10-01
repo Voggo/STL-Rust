@@ -34,6 +34,22 @@ mod tests {
         );
     }
 
+    fn generate_steps_and_expected(
+        values: Vec<f64>,
+        timestamps: Vec<u64>,
+        expected: Vec<Option<f64>>,
+    ) -> (Vec<Step<f64>>, Vec<Option<f64>>) {
+        let steps = values
+            .into_iter()
+            .zip(timestamps.into_iter())
+            .map(|(value, timestamp)| Step {
+                value,
+                timestamp: Duration::from_secs(timestamp),
+            })
+            .collect();
+        (steps, expected)
+    }
+
     #[test]
     fn formula_to_string() {
         // Example usage of the STL operators
@@ -584,30 +600,10 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let steps = vec![
-            Step {
-                value: 15.0,
-                timestamp: Duration::from_secs(0),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(2),
-            },
-            Step {
-                value: 8.0,
-                timestamp: Duration::from_secs(4),
-            },
-            Step {
-                value: 5.0,
-                timestamp: Duration::from_secs(6),
-            },
-            Step {
-                value: 20.0,
-                timestamp: Duration::from_secs(8),
-            },
-        ];
-
-        let expected_rob = vec![None, None, Some(5.0), Some(2.0), Some(10.0)];
+        let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
+        let timestamps = vec![0, 2, 4, 6, 8];
+        let expected = vec![None, None, Some(5.0), Some(2.0), Some(10.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
         for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
             assert_eq!(
@@ -625,17 +621,6 @@ mod tests {
                 expected
             );
         }
-
-        // let step = Step {
-        //     value: 15.0,
-        //     timestamp: Duration::from_secs(9),
-        // };
-        // run_robustness_test(
-        //     Box::new(eventually_naive),
-        //     Box::new(eventually_opt),
-        //     &step,
-        //     Some(10.0),
-        // );
     }
 
     #[test]
@@ -654,29 +639,10 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let steps = vec![
-            Step {
-                value: 15.0,
-                timestamp: Duration::from_secs(0),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(2),
-            },
-            Step {
-                value: 8.0,
-                timestamp: Duration::from_secs(4),
-            },
-            Step {
-                value: 5.0,
-                timestamp: Duration::from_secs(6),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(8),
-            },
-        ];
-        let expected_rob = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
+        let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
+        let timestamps = vec![0, 2, 4, 6, 8];
+        let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
         for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
             assert_eq!(
@@ -717,29 +683,10 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let steps = vec![
-            Step {
-                value: 15.0,
-                timestamp: Duration::from_secs(0),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(2),
-            },
-            Step {
-                value: 8.0,
-                timestamp: Duration::from_secs(4),
-            },
-            Step {
-                value: 5.0,
-                timestamp: Duration::from_secs(6),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(8),
-            },
-        ];
-        let expected_rob = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
+        let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
+        let timestamps = vec![0, 2, 4, 6, 8];
+        let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
         for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
             assert_eq!(
@@ -789,33 +736,10 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let steps = vec![
-            Step {
-                value: 15.0,
-                timestamp: Duration::from_secs(0),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(3),
-            },
-            Step {
-                value: 8.0,
-                timestamp: Duration::from_secs(6),
-            },
-            Step {
-                value: 5.0,
-                timestamp: Duration::from_secs(9),
-            },
-            Step {
-                value: 12.0,
-                timestamp: Duration::from_secs(12),
-            },
-            Step {
-                value: 20.0,
-                timestamp: Duration::from_secs(15),
-            },
-        ];
-        let expected_rob = vec![None, None, None, None, Some(2.0), Some(10.0)];
+        let values = vec![15.0, 12.0, 8.0, 5.0, 12.0, 20.0];
+        let timestamps = vec![0, 3, 6, 9, 12, 15];
+        let expected = vec![None, None, None, None, Some(2.0), Some(10.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
         for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
             assert_eq!(
