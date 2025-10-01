@@ -1,5 +1,6 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{StlOperatorTrait, TimeInterval};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct And<T> {
@@ -71,19 +72,24 @@ where
             .add_step(self.operand.robustness(step), step.timestamp);
 
         // The window of interest for the operand's past robustness values
-        let window_start = step.timestamp.saturating_sub(self.interval.end);
-        let window_end = step.timestamp.saturating_sub(self.interval.start);
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound_t_prime = t + self.interval.start;
+        let upper_bound_t_prime = t + self.interval.end;
 
-        // We can only compute a result if we have data extending back to the start of the window.
-        if self
-            .cache
-            .get_front()
-            .map_or(false, |h| h.timestamp < window_start)
+        // Ensure we have enough data to evaluate the window
+        if self.cache.is_empty()
+            || upper_bound_t_prime - lower_bound_t_prime
+                <= self
+                    .cache
+                    .get_back()
+                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
         {
             let max_robustness = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .filter(|entry| {
+                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+                })
                 .filter_map(|entry| entry.value) // From Step<Option<f64>> to Option<f64>, then unwraps to f64
                 .fold(f64::NEG_INFINITY, f64::max);
 
@@ -122,19 +128,24 @@ where
             .add_step(self.operand.robustness(step), step.timestamp);
 
         // The window of interest for the operand's past robustness values
-        let window_start = step.timestamp.saturating_sub(self.interval.end);
-        let window_end = step.timestamp.saturating_sub(self.interval.start);
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound_t_prime = t + self.interval.start;
+        let upper_bound_t_prime = t + self.interval.end;
 
         // We can only compute a result if we have data extending back to the start of the window.
-        if self
-            .cache
-            .get_back()
-            .map_or(false, |h| h.timestamp < window_start)
+        if self.cache.is_empty()
+            || upper_bound_t_prime - lower_bound_t_prime
+                <= self
+                    .cache
+                    .get_back()
+                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
         {
             let min_robustness = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .filter(|entry| {
+                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+                })
                 .filter_map(|entry| entry.value) // From Step<Option<f64>> to Option<f64>, then unwraps to f64
                 .fold(f64::INFINITY, f64::min);
 
