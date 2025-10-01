@@ -34,6 +34,34 @@ mod tests {
         );
     }
 
+    fn run_multi_step_robustness_test<T: Clone>(
+        mut formula_naive: Box<dyn StlOperatorTrait<T>>,
+        mut formula_opt: Box<dyn StlOperatorTrait<T>>,
+        steps: &[Step<T>],
+        expected: &[Option<f64>],
+    ) {
+        for (step, &exp) in steps.iter().zip(expected.iter()) {
+            let robustness_naive = formula_naive.robustness(step);
+            let robustness_opt = formula_opt.robustness(step);
+
+            assert_eq!(
+                robustness_naive, exp,
+                "Naive implementation failed at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_naive, exp
+            );
+            assert_eq!(
+                robustness_opt, exp,
+                "Optimized implementation failed at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_opt, exp
+            );
+            assert_eq!(
+                robustness_naive, robustness_opt,
+                "Mismatch between naive and optimized implementations at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_naive, robustness_opt
+            );
+        }
+    }
+
     fn generate_steps_and_expected(
         values: Vec<f64>,
         timestamps: Vec<u64>,
@@ -142,28 +170,16 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let step = Step {
-            value: 15.0,
-            timestamp: Duration::from_secs(5),
-        };
+        let values = vec![15.0, 8.0];
+        let timestamps = vec![5, 5];
+        let expected = vec![Some(5.0), Some(-2.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        run_robustness_test(
+        run_multi_step_robustness_test(
             Box::new(atomic_naive.clone()),
             Box::new(atomic_opt.clone()),
-            &step,
-            Some(5.0),
-        );
-
-        let step = Step {
-            value: 8.0,
-            timestamp: Duration::from_secs(5),
-        };
-
-        run_robustness_test(
-            Box::new(atomic_naive.clone()),
-            Box::new(atomic_opt.clone()),
-            &step,
-            Some(-2.0),
+            &steps,
+            &expected_rob,
         );
     }
 
@@ -175,28 +191,16 @@ mod tests {
             signal: RingBuffer::<f64>::new(),
         };
 
-        let step = Step {
-            value: 5.0,
-            timestamp: Duration::from_secs(5),
-        };
+        let values = vec![5.0, 12.0];
+        let timestamps = vec![5, 5];
+        let expected = vec![Some(5.0), Some(-2.0)];
+        let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        run_robustness_test(
+        run_multi_step_robustness_test(
             Box::new(atomic_naive.clone()),
             Box::new(atomic_opt.clone()),
-            &step,
-            Some(5.0),
-        );
-
-        let step = Step {
-            value: 12.0,
-            timestamp: Duration::from_secs(5),
-        };
-
-        run_robustness_test(
-            Box::new(atomic_naive.clone()),
-            Box::new(atomic_opt.clone()),
-            &step,
-            Some(-2.0),
+            &steps,
+            &expected_rob,
         );
     }
 
@@ -389,7 +393,8 @@ mod tests {
         assert_eq!(
             formula_or_naive.robustness(&step),
             formula_and_naive.robustness(&step)
-        );}
+        );
+    }
 
     #[test]
     fn implies_law_robustness() {
@@ -468,10 +473,7 @@ mod tests {
             cache: RingBuffer::new(),
         };
         let mut formula_eventually_naive = StlFormula {
-            formula: StlOperator::Eventually(
-                ti.clone(),
-                Box::new(StlOperator::GreaterThan(10.0)),
-            ),
+            formula: StlOperator::Eventually(ti.clone(), Box::new(StlOperator::GreaterThan(10.0))),
             signal: RingBuffer::<f64>::new(),
         };
         let mut formula_until_naive = StlFormula {
@@ -507,7 +509,6 @@ mod tests {
             formula_eventually_naive.robustness(&step),
             formula_until_naive.robustness(&step)
         );
-
     }
 
     #[test]
@@ -581,7 +582,7 @@ mod tests {
 
     #[test]
     fn eventually_operator_robustness() {
-        let mut eventually_opt: Eventually<f64, RingBuffer<Option<f64>>> = Eventually {
+        let eventually_opt: Eventually<f64, RingBuffer<Option<f64>>> = Eventually {
             interval: TimeInterval {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(4),
@@ -589,7 +590,7 @@ mod tests {
             operand: Box::new(Atomic::GreaterThan(10.0)),
             cache: RingBuffer::new(),
         };
-        let mut eventually_naive = StlFormula {
+        let eventually_naive = StlFormula {
             formula: StlOperator::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
@@ -605,22 +606,12 @@ mod tests {
         let expected = vec![None, None, Some(5.0), Some(2.0), Some(10.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
-            assert_eq!(
-                eventually_naive.robustness(&step),
-                expected,
-                "Naive implementation failed at step {:?} != {:?}",
-                eventually_naive.robustness(&step),
-                expected
-            );
-            assert_eq!(
-                eventually_opt.robustness(&step),
-                expected,
-                "Optimized implementation failed at step {:?} != {:?}",
-                eventually_opt.robustness(&step),
-                expected
-            );
-        }
+        run_multi_step_robustness_test(
+            Box::new(eventually_naive.clone()),
+            Box::new(eventually_opt.clone()),
+            &steps,
+            &expected_rob,
+        );
     }
 
     #[test]
@@ -629,12 +620,12 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let mut globally_opt = Globally {
+        let globally_opt = Globally {
             interval: ti.clone(),
             operand: Box::new(Atomic::GreaterThan(10.0)),
             cache: RingBuffer::new(),
         };
-        let mut globally_naive = StlFormula {
+        let globally_naive = StlFormula {
             formula: StlOperator::Globally(ti.clone(), Box::new(StlOperator::GreaterThan(10.0))),
             signal: RingBuffer::<f64>::new(),
         };
@@ -644,22 +635,12 @@ mod tests {
         let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
-            assert_eq!(
-                globally_naive.robustness(&step),
-                expected,
-                "Naive implementation failed at step {:?} != {:?}",
-                globally_naive.robustness(&step),
-                expected
-            );
-            assert_eq!(
-                globally_opt.robustness(&step),
-                expected,
-                "Optimized implementation failed at step {:?} != {:?}",
-                globally_opt.robustness(&step),
-                expected
-            );
-        }
+        run_multi_step_robustness_test(
+            Box::new(globally_naive.clone()),
+            Box::new(globally_opt.clone()),
+            &steps,
+            &expected_rob,
+        );
     }
 
     #[test]
@@ -668,13 +649,13 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let mut until_opt = Until {
+        let until_opt = Until {
             interval: ti.clone(),
             left: Box::new(Atomic::GreaterThan(10.0)),
             right: Box::new(Atomic::LessThan(20.0)),
             cache: RingBuffer::new(),
         };
-        let mut until_naive = StlFormula {
+        let until_naive = StlFormula {
             formula: StlOperator::Until(
                 ti.clone(),
                 Box::new(StlOperator::GreaterThan(10.0)),
@@ -688,22 +669,12 @@ mod tests {
         let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
-            assert_eq!(
-                until_naive.robustness(&step),
-                expected,
-                "Naive implementation failed at step {:?} != {:?}",
-                until_naive.robustness(&step),
-                expected
-            );
-            assert_eq!(
-                until_opt.robustness(&step),
-                expected,
-                "Optimized implementation failed at step {:?} != {:?}",
-                until_opt.robustness(&step),
-                expected
-            );
-        }
+        run_multi_step_robustness_test(
+            Box::new(until_naive.clone()),
+            Box::new(until_opt.clone()),
+            &steps,
+            &expected_rob,
+        );
     }
 
     #[test]
@@ -716,7 +687,7 @@ mod tests {
             start: Duration::from_secs(1),
             end: Duration::from_secs(3),
         };
-        let mut nested_opt = Eventually {
+        let nested_opt = Eventually {
             interval: ti1.clone(),
             operand: Box::new(Globally {
                 interval: ti2.clone(),
@@ -725,7 +696,7 @@ mod tests {
             }),
             cache: RingBuffer::new(),
         };
-        let mut nested_naive = StlFormula {
+        let nested_naive = StlFormula {
             formula: StlOperator::Eventually(
                 ti1.clone(),
                 Box::new(StlOperator::Globally(
@@ -741,21 +712,11 @@ mod tests {
         let expected = vec![None, None, None, None, Some(2.0), Some(10.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        for (step, expected) in steps.into_iter().zip(expected_rob.into_iter()) {
-            assert_eq!(
-                nested_naive.robustness(&step),
-                expected,
-                "Naive implementation failed at step {:?} != {:?}",
-                nested_naive.robustness(&step),
-                expected
-            );
-            assert_eq!(
-                nested_opt.robustness(&step),
-                expected,
-                "Optimized implementation failed at step {:?} != {:?}",
-                nested_opt.robustness(&step),
-                expected
-            );
-        }
+        run_multi_step_robustness_test(
+            Box::new(nested_naive.clone()),
+            Box::new(nested_opt.clone()),
+            &steps,
+            &expected_rob,
+        );
     }
 }
