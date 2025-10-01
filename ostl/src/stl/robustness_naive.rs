@@ -128,7 +128,7 @@ impl StlOperator {
                             && step.timestamp <= upper_bound_t_prime
                     })
                     .map(|step| phi.robustness_naive(signal, step))
-                    .fold(f64::INFINITY, |acc, x| acc.max(x.unwrap_or(f64::INFINITY)))
+                    .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)))
             }
             .into(),
 
