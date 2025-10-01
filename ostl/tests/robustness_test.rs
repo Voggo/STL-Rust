@@ -666,7 +666,7 @@ mod tests {
 
         let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let timestamps = vec![0, 2, 4, 6, 8];
-        let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
+        let expected = vec![None, None, Some(5.0), Some(2.0), Some(-2.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
         run_multi_step_robustness_test(
