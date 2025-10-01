@@ -162,8 +162,8 @@ impl StlOperator {
                             .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
                         robustness_psi.map(|r_psi| r_psi.min(robustness_phi))
                     })
-                    .fold(f64::NEG_INFINITY, |acc, x| {
-                        acc.max(x.unwrap_or(f64::NEG_INFINITY))
+                    .fold(f64::INFINITY, |acc, x| {
+                        acc.min(x.unwrap_or(f64::INFINITY))
                     })
             }
             .into(),
