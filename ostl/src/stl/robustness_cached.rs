@@ -181,33 +181,45 @@ where
     C: RingBufferTrait<Value = f64> + Clone,
 {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        let left_robustness = self.left.robustness(step)?;
         let right_robustness = self.right.robustness(step)?;
-
-        self.cache.add_step(left_robustness, step.timestamp);
+        self.cache.add_step(self.left.robustness(step)?, step.timestamp);
 
         // The window of interest for the left operand's past robustness values
-        let window_start = step.timestamp.saturating_sub(self.interval.end);
-        let window_end = step.timestamp.saturating_sub(self.interval.start);
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound_t_prime = t + self.interval.start;
+        let upper_bound_t_prime = t + self.interval.end;
 
-        // We can only compute a result if we have data extending back to the start of the window.
-        if self
-            .cache
-            .get_back()
-            .map_or(false, |h| h.timestamp <= window_start)
+        // Ensure we have enough data to evaluate the window
+        if self.cache.is_empty()
+            || upper_bound_t_prime - lower_bound_t_prime
+                > self
+                    .cache
+                    .get_back()
+                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
         {
-            // Compute the minimum left robustness in the window
-            let min_left_robustness = self
-                .cache
-                .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
-                .map(|entry| entry.value) // From Step<f64> to f64
-                .fold(f64::INFINITY, f64::min);
-
-            Some(right_robustness.min(min_left_robustness))
-        } else {
-            None // Not enough historical data to compute robustness
+            return None; // Not enough data to evaluate
         }
+
+        let max_robustness = self
+            .cache
+            .iter()
+            .filter(|entry| {
+                entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+            })
+            .map(|entry| {
+                let t_prime = entry.timestamp;
+                let min_left_robustness = self
+                    .cache
+                    .iter()
+                    .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
+                    .map(|e| e.value)
+                    .fold(f64::INFINITY, f64::min);
+
+                right_robustness.min(min_left_robustness)
+            })
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        Some(max_robustness)
     }
     fn to_string(&self) -> String {
         format!(
