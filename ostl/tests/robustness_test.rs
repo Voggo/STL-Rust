@@ -535,7 +535,9 @@ mod tests {
         let mut formula_eventually_opt = Eventually {
             interval: ti.clone(),
             operand: Box::new(Not {
-                operand: Box::new(atomic_greater_than.clone()),
+                operand: Box::new(Not {
+                    operand: Box::new(atomic_greater_than.clone()),
+                }),
             }),
             cache: RingBuffer::new(),
         };
