@@ -1,6 +1,7 @@
 use core::f64;
 use std::ops::Index;
 use std::time::Duration;
+use std::fmt::Display;
 
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
@@ -37,8 +38,16 @@ where
     pub formula: StlOperator,
     pub signal: C,
 }
+impl <T, C> Display for StlFormula<T, C>
+where
+    C: RingBufferTrait<Value = T>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.formula.to_string())
+    }
+}
 
-impl<T, C> StlOperatorTrait<T> for StlFormula<T, C>
+impl<T, C> StlOperatorTrait<T, f64> for StlFormula<T, C>
 where
     T: Clone + Copy + Into<f64>,
     C: RingBufferTrait<Value = T> + Index<usize, Output = Step<T>> + Clone,
@@ -46,9 +55,6 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
         self.signal.add_step(step.value.clone(), step.timestamp);
         self.formula.robustness_naive(&self.signal, step) // robustness for signal at step.timestamp
-    }
-    fn to_string(&self) -> String {
-        self.formula.to_string()
     }
 }
 
@@ -169,38 +175,6 @@ impl StlOperator {
             .into(),
         }
     }
-    /// Recursively generates a pretty-printed string representation of the formula.
-    fn to_string(&self) -> String {
-        match self {
-            StlOperator::True => "True".to_string(),
-            StlOperator::False => "False".to_string(),
-            StlOperator::Not(f) => format!("¬({})", f.to_string()),
-            StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
-            StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
-            StlOperator::Globally(interval, f) => format!(
-                "G[{}, {}]({})",
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f.to_string()
-            ),
-            StlOperator::Eventually(interval, f) => format!(
-                "F[{}, {}]({})",
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f.to_string()
-            ),
-            StlOperator::Until(interval, f1, f2) => format!(
-                "({}) U[{}, {}] ({})",
-                f1.to_string(),
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f2.to_string()
-            ),
-            StlOperator::Implies(f1, f2) => format!("({}) -> ({})", f1.to_string(), f2.to_string()),
-            StlOperator::GreaterThan(val) => format!("x > {}", val),
-            StlOperator::LessThan(val) => format!("x < {}", val),
-        }
-    }
 
     /// Recursively generate a tree-like string representation of the formula.
     pub fn to_tree_string(&self, indent: usize) -> String {
@@ -269,5 +243,38 @@ impl StlOperator {
             | StlOperator::GreaterThan(_)
             | StlOperator::LessThan(_) => Duration::ZERO,
         }
+    }
+}
+impl Display for StlOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            StlOperator::True => "True".to_string(),
+            StlOperator::False => "False".to_string(),
+            StlOperator::Not(f) => format!("¬({})", f.to_string()),
+            StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
+            StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
+            StlOperator::Globally(interval, f) => format!(
+                "G[{}, {}]({})",
+                interval.start.as_secs_f64(),
+                interval.end.as_secs_f64(),
+                f.to_string()
+            ),
+            StlOperator::Eventually(interval, f) => format!(
+                "F[{}, {}]({})",
+                interval.start.as_secs_f64(),
+                interval.end.as_secs_f64(),
+                f.to_string()
+            ),
+            StlOperator::Until(interval, f1, f2) => format!(
+                "({}) U[{}, {}] ({})",
+                f1.to_string(),
+                interval.start.as_secs_f64(),
+                interval.end.as_secs_f64(),
+                f2.to_string()
+            ),
+            StlOperator::Implies(f1, f2) => format!("({}) → ({})", f1.to_string(), f2.to_string()),
+            StlOperator::GreaterThan(val) => format!("x > {}", val),
+            StlOperator::LessThan(val) => format!("x < {}", val),
+        })
     }
 }

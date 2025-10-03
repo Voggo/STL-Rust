@@ -9,8 +9,8 @@ mod tests {
     use std::time::Duration;
 
     fn run_robustness_test<T: Clone>(
-        mut formula_naive: Box<dyn StlOperatorTrait<T>>,
-        mut formula_opt: Box<dyn StlOperatorTrait<T>>,
+        mut formula_naive: Box<dyn StlOperatorTrait<T, f64>>,
+        mut formula_opt: Box<dyn StlOperatorTrait<T, f64>>,
         step: &Step<T>,
         expected: Option<f64>,
     ) {
@@ -35,8 +35,8 @@ mod tests {
     }
 
     fn run_multi_step_robustness_test<T: Clone>(
-        mut formula_naive: Box<dyn StlOperatorTrait<T>>,
-        mut formula_opt: Box<dyn StlOperatorTrait<T>>,
+        mut formula_naive: Box<dyn StlOperatorTrait<T, f64>>,
+        mut formula_opt: Box<dyn StlOperatorTrait<T, f64>>,
         steps: &[Step<T>],
         expected: &[Option<f64>],
     ) {
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn formula_to_string() {
         // Example usage of the STL operators
-        let stl_formula_opt: Implies<f64> = Implies {
+        let stl_formula_opt: Implies<f64, f64> = Implies {
             antecedent: Box::new(And {
                 left: Box::new(Atomic::GreaterThan(5.0)),
                 right: Box::new(Or {
@@ -153,11 +153,11 @@ mod tests {
         // println!("STL Formula: {}", stl_formula.to_string());
         assert_eq!(
             stl_formula_opt.to_string(),
-            "((x > 5) ∧ ((¬(x < 3)) v (F[0, 10](G[2, 8]((True) U[1, 5] (False)))))) -> (x < 7)"
+            "((x > 5) ∧ ((¬(x < 3)) v (F[0, 10](G[2, 8]((True) U[1, 5] (False)))))) → (x < 7)"
         );
         assert_eq!(
             stl_formula_naive.to_string(),
-            "((x > 5) ∧ ((¬(x < 3)) v (F[0, 10](G[2, 8]((True) U[1, 5] (False)))))) -> (x < 7)"
+            "((x > 5) ∧ ((¬(x < 3)) v (F[0, 10](G[2, 8]((True) U[1, 5] (False)))))) → (x < 7)"
         );
         assert_eq!(stl_formula_opt.to_string(), stl_formula_naive.to_string());
     }
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn eventually_operator_robustness() {
-        let eventually_opt: Eventually<f64, RingBuffer<Option<f64>>> = Eventually {
+        let eventually_opt: Eventually<f64, RingBuffer<Option<f64>>, f64> = Eventually {
             interval: TimeInterval {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(4),

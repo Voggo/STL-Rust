@@ -1,68 +1,156 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
-use crate::stl::core::{StlOperatorTrait, TimeInterval};
+use crate::stl::core::{
+    LogicalOperatorTrait, StlOperatorTrait, TemporalOperatorTrait, TimeInterval,
+};
+use std::fmt::Display;
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct And<T> {
-    pub left: Box<dyn StlOperatorTrait<T>>,
-    pub right: Box<dyn StlOperatorTrait<T>>,
+pub struct And<T, Y> {
+    pub left: Box<dyn StlOperatorTrait<T, Y>>,
+    pub right: Box<dyn StlOperatorTrait<T, Y>>,
 }
 
-impl<T: Clone> StlOperatorTrait<T> for And<T> {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.left
-            .robustness(step)
-            .zip(self.right.robustness(step))
-            .map(|(l, r)| l.min(r))
+impl<T, Y> Display for And<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) ∧ ({})",
+            self.left.to_string(),
+            self.right.to_string()
+        )
     }
-    fn to_string(&self) -> String {
-        format!("({}) ∧ ({})", self.left.to_string(), self.right.to_string())
+}
+
+impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for And<T, Y> {
+    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.left
+    }
+    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.right
+    }
+}
+
+impl<T: Clone> StlOperatorTrait<T, f64> for And<T, f64> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.robustness_with(step, |l, r| l.min(r))
+    }
+}
+
+/// Implement StlOperatorTrait for And with boolean output
+impl<T: Clone> StlOperatorTrait<T, bool> for And<T, bool> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.robustness_with(step, |l, r| l && r)
     }
 }
 
 #[derive(Clone)]
-pub struct Or<T> {
-    pub left: Box<dyn StlOperatorTrait<T> + 'static>,
-    pub right: Box<dyn StlOperatorTrait<T> + 'static>,
+pub struct Or<T, Y> {
+    pub left: Box<dyn StlOperatorTrait<T, Y> + 'static>,
+    pub right: Box<dyn StlOperatorTrait<T, Y> + 'static>,
 }
 
-impl<T: Clone> StlOperatorTrait<T> for Or<T> {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.left
-            .robustness(step)
-            .zip(self.right.robustness(step))
-            .map(|(l, r)| l.max(r))
+impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for Or<T, Y> {
+    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.left
     }
-    fn to_string(&self) -> String {
-        format!("({}) v ({})", self.left.to_string(), self.right.to_string())
+    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.right
+    }
+}
+
+impl<T: Clone> StlOperatorTrait<T, f64> for Or<T, f64> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.robustness_with(step, |l, r| l.max(r))
+    }
+}
+
+impl<T: Clone> StlOperatorTrait<T, bool> for Or<T, bool> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.robustness_with(step, |l, r| l || r)
+    }
+}
+
+impl<T, Y> Display for Or<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) v ({})",
+            self.left.to_string(),
+            self.right.to_string()
+        )
     }
 }
 
 #[derive(Clone)]
-pub struct Not<T> {
-    pub operand: Box<dyn StlOperatorTrait<T> + 'static>,
+pub struct Not<T, Y> {
+    pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
 }
 
-impl<T: Clone> StlOperatorTrait<T> for Not<T> {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.operand.robustness(step).map(|r| -r)
+impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for Not<T, Y> {
+    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.operand
     }
-    fn to_string(&self) -> String {
-        format!("¬({})", self.operand.to_string())
+    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        panic!("Not operator does not have a right operand");
+    }
+}
+
+impl<T: Clone> StlOperatorTrait<T, f64> for Not<T, f64> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.left().robustness(step).map(|r| -r)
+    }
+}
+
+impl<T, Y> Display for Not<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "¬({})", self.operand.to_string())
     }
 }
 
 #[derive(Clone)]
-pub struct Eventually<T, C>
+pub struct Implies<T, Y> {
+    pub antecedent: Box<dyn StlOperatorTrait<T, Y> + 'static>,
+    pub consequent: Box<dyn StlOperatorTrait<T, Y> + 'static>,
+}
+
+impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for Implies<T, Y> {
+    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.antecedent
+    }
+    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.consequent
+    }    
+}
+
+impl<T: Clone> StlOperatorTrait<T, f64> for Implies<T, f64> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.robustness_with(step, |a, c| (-a).max(c))
+    }
+}
+impl<T, Y> Display for Implies<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) → ({})",
+            self.antecedent.to_string(),
+            self.consequent.to_string()
+        )
+    }
+}
+
+
+#[derive(Clone)]
+pub struct Eventually<T, C, Y>
 where
     C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorTrait<T> + 'static>,
+    pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
 
-impl<T, C: RingBufferTrait<Value = Option<f64>>> StlOperatorTrait<T> for Eventually<T, C>
+impl<T, C> StlOperatorTrait<T, f64> for Eventually<T, C, f64>
 where
     T: Clone,
     C: RingBufferTrait<Value = Option<f64>> + Clone,
@@ -98,8 +186,14 @@ where
             None // Not enough historical data to compute robustness
         }
     }
-    fn to_string(&self) -> String {
-        format!(
+}
+impl<T, C, Y> Display for Eventually<T, C, Y>
+where
+    C: RingBufferTrait<Value = Option<f64>> + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "F[{}, {}]({})",
             self.interval.start.as_secs_f64(),
             self.interval.end.as_secs_f64(),
@@ -109,16 +203,16 @@ where
 }
 
 #[derive(Clone)]
-pub struct Globally<T, C>
+pub struct Globally<T, Y, C>
 where
     C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorTrait<T> + 'static>,
+    pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
 
-impl<T, C: RingBufferTrait<Value = Option<f64>>> StlOperatorTrait<T> for Globally<T, C>
+impl<T, C> StlOperatorTrait<T, f64> for Globally<T, f64, C>
 where
     T: Clone,
     C: RingBufferTrait<Value = Option<f64>> + Clone,
@@ -154,8 +248,15 @@ where
             None // Not enough historical data to compute robustness
         }
     }
-    fn to_string(&self) -> String {
-        format!(
+}
+
+impl<T, C, Y> Display for Globally<T, Y, C>
+where
+    C: RingBufferTrait<Value = Option<f64>> + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "G[{}, {}]({})",
             self.interval.start.as_secs_f64(),
             self.interval.end.as_secs_f64(),
@@ -165,24 +266,25 @@ where
 }
 
 #[derive(Clone)]
-pub struct Until<T, C>
+pub struct Until<T, Y, C>
 where
     C: RingBufferTrait<Value = f64> + Clone,
 {
     pub interval: TimeInterval,
-    pub left: Box<dyn StlOperatorTrait<T> + 'static>,
-    pub right: Box<dyn StlOperatorTrait<T> + 'static>,
+    pub left: Box<dyn StlOperatorTrait<T, Y> + 'static>,
+    pub right: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
 
-impl<T, C: RingBufferTrait<Value = f64>> StlOperatorTrait<T> for Until<T, C>
+impl<T, C> StlOperatorTrait<T, f64> for Until<T, f64, C>
 where
     T: Clone,
     C: RingBufferTrait<Value = f64> + Clone,
 {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
         let right_robustness = self.right.robustness(step)?;
-        self.cache.add_step(self.left.robustness(step)?, step.timestamp);
+        self.cache
+            .add_step(self.left.robustness(step)?, step.timestamp);
 
         // The window of interest for the left operand's past robustness values
         let t = step.timestamp.saturating_sub(self.interval.end);
@@ -221,8 +323,14 @@ where
 
         Some(max_robustness)
     }
-    fn to_string(&self) -> String {
-        format!(
+}
+impl<T, C, Y> Display for Until<T, Y, C>
+where
+    C: RingBufferTrait<Value = f64> + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "({}) U[{}, {}] ({})",
             self.left.to_string(),
             self.interval.start.as_secs_f64(),
@@ -232,28 +340,6 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct Implies<T> {
-    pub antecedent: Box<dyn StlOperatorTrait<T> + 'static>,
-    pub consequent: Box<dyn StlOperatorTrait<T> + 'static>,
-}
-
-impl<T: Clone> StlOperatorTrait<T> for Implies<T> {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        return self
-            .antecedent
-            .robustness(step)
-            .zip(self.consequent.robustness(step))
-            .map(|(a, c)| (-a).max(c));
-    }
-    fn to_string(&self) -> String {
-        format!(
-            "({}) -> ({})",
-            self.antecedent.to_string(),
-            self.consequent.to_string()
-        )
-    }
-}
 
 #[derive(Clone)]
 pub enum Atomic {
@@ -263,7 +349,7 @@ pub enum Atomic {
     False,
 }
 
-impl<T> StlOperatorTrait<T> for Atomic
+impl<T> StlOperatorTrait<T, f64> for Atomic
 where
     T: Into<f64> + Clone,
 {
@@ -276,12 +362,14 @@ where
             Atomic::LessThan(c) => Some(*c - value),
         }
     }
-    fn to_string(&self) -> String {
+}
+impl Display for Atomic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Atomic::True => "True".to_string(),
-            Atomic::False => "False".to_string(),
-            Atomic::GreaterThan(val) => format!("x > {}", val),
-            Atomic::LessThan(val) => format!("x < {}", val),
+            Atomic::LessThan(c) => write!(f, "x < {}", c),
+            Atomic::GreaterThan(c) => write!(f, "x > {}", c),
+            Atomic::True => write!(f, "True"),
+            Atomic::False => write!(f, "False"),
         }
     }
 }
