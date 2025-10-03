@@ -142,8 +142,6 @@ impl<T, Y> Display for Implies<T, Y> {
 
 #[derive(Clone)]
 pub struct Eventually<T, C, Y>
-where
-    C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
@@ -188,8 +186,6 @@ where
     }
 }
 impl<T, C, Y> Display for Eventually<T, C, Y>
-where
-    C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -204,8 +200,6 @@ where
 
 #[derive(Clone)]
 pub struct Globally<T, Y, C>
-where
-    C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
@@ -251,8 +245,6 @@ where
 }
 
 impl<T, C, Y> Display for Globally<T, Y, C>
-where
-    C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -267,8 +259,6 @@ where
 
 #[derive(Clone)]
 pub struct Until<T, Y, C>
-where
-    C: RingBufferTrait<Value = f64> + Clone,
 {
     pub interval: TimeInterval,
     pub left: Box<dyn StlOperatorTrait<T, Y> + 'static>,
