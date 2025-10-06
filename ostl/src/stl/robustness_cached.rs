@@ -4,7 +4,6 @@ use crate::stl::core::{
     TimeInterval, UnaryTemporalOperatorTrait,
 };
 use std::fmt::Display;
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct And<T, Y> {
