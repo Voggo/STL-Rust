@@ -1,6 +1,7 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{
-    LogicalOperatorTrait, StlOperatorTrait, TemporalOperatorTrait, TimeInterval,
+    BinaryTemporalOperatorTrait, LogicalOperatorTrait, StlOperatorTrait, TemporalOperatorBaseTrait,
+    TimeInterval, UnaryTemporalOperatorTrait,
 };
 use std::fmt::Display;
 use std::time::Duration;
@@ -94,11 +95,29 @@ impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for Not<T, Y> {
     fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
         panic!("Not operator does not have a right operand");
     }
+    fn robustness_with<F>(&mut self, step: &Step<T>, f: F) -> Option<Y>
+    where
+        F: FnOnce(Y, Y) -> Y,
+        Y: Clone,
+        T: Clone,
+        Self: StlOperatorTrait<T, Y>,
+    {
+        // NOTE: currently, traiy forces f to be a binary function, but we only need a unary function here.
+        // This is a workaround to reuse the robustness_with method.
+        // In the future, we might want to refactor this to allow unary functions.
+        self.left().robustness(step).map(|r| f(r.clone(), r))
+    }
 }
 
 impl<T: Clone> StlOperatorTrait<T, f64> for Not<T, f64> {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.left().robustness(step).map(|r| -r)
+        self.robustness_with(step, |a, _| -a)
+    }
+}
+
+impl<T: Clone> StlOperatorTrait<T, bool> for Not<T, bool> {
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.robustness_with(step, |a, _| !a)
     }
 }
 
@@ -120,7 +139,7 @@ impl<T: Clone, Y: Clone> LogicalOperatorTrait<T, Y> for Implies<T, Y> {
     }
     fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
         &mut self.consequent
-    }    
+    }
 }
 
 impl<T: Clone> StlOperatorTrait<T, f64> for Implies<T, f64> {
@@ -139,54 +158,61 @@ impl<T, Y> Display for Implies<T, Y> {
     }
 }
 
-
 #[derive(Clone)]
-pub struct Eventually<T, C, Y>
-{
+pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
-
-impl<T, C> StlOperatorTrait<T, f64> for Eventually<T, C, f64>
+// Implementation of the new TemporalOperatorBaseTrait for Eventually
+impl<T, Y, C> TemporalOperatorBaseTrait<T, Y, C> for Eventually<T, C, Y>
 where
     T: Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
+{
+    fn interval(&self) -> TimeInterval {
+        self.interval
+    }
+
+    fn cache(&mut self) -> &mut C {
+        &mut self.cache
+    }
+}
+
+impl<T, Y, C> UnaryTemporalOperatorTrait<T, Y, C> for Eventually<T, C, Y>
+where
+    T: Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
+{
+    fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.operand
+    }
+}
+
+// StlOperatorTrait for Eventually now uses the shared robustness_with method
+impl<T: Clone, C> StlOperatorTrait<T, f64> for Eventually<T, C, f64>
+where
     C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.cache
-            .add_step(self.operand.robustness(step), step.timestamp);
-
-        // The window of interest for the operand's past robustness values
-        let t = step.timestamp.saturating_sub(self.interval.end);
-        let lower_bound_t_prime = t + self.interval.start;
-        let upper_bound_t_prime = t + self.interval.end;
-
-        // Ensure we have enough data to evaluate the window
-        if self.cache.is_empty()
-            || upper_bound_t_prime - lower_bound_t_prime
-                <= self
-                    .cache
-                    .get_back()
-                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
-        {
-            let max_robustness = self
-                .cache
-                .iter()
-                .filter(|entry| {
-                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-                })
-                .filter_map(|entry| entry.value) // From Step<Option<f64>> to Option<f64>, then unwraps to f64
-                .fold(f64::NEG_INFINITY, f64::max);
-
-            Some(max_robustness)
-        } else {
-            None // Not enough historical data to compute robustness
-        }
+        self.robustness_unary_with(step, f64::NEG_INFINITY, f64::max)
     }
 }
-impl<T, C, Y> Display for Eventually<T, C, Y>
+
+impl<T, C> StlOperatorTrait<T, bool> for Eventually<T, C, bool>
+where
+    T: Clone,
+    C: RingBufferTrait<Value = Option<bool>> + Clone,
 {
+    // formula: exists t' in [t+start, t+end] s.t. operand is true at t'
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.robustness_unary_with(step, false, |a, b| a || b)
+    }
+}
+
+impl<T, C, Y> Display for Eventually<T, C, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -199,53 +225,61 @@ impl<T, C, Y> Display for Eventually<T, C, Y>
 }
 
 #[derive(Clone)]
-pub struct Globally<T, Y, C>
-{
+pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
 
-impl<T, C> StlOperatorTrait<T, f64> for Globally<T, f64, C>
+// Implementation of the new TemporalOperatorBaseTrait for Globally
+impl<T, Y, C> TemporalOperatorBaseTrait<T, Y, C> for Globally<T, Y, C>
 where
     T: Clone,
-    C: RingBufferTrait<Value = Option<f64>> + Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
 {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
-        self.cache
-            .add_step(self.operand.robustness(step), step.timestamp);
+    fn interval(&self) -> TimeInterval {
+        self.interval
+    }
 
-        // The window of interest for the operand's past robustness values
-        let t = step.timestamp.saturating_sub(self.interval.end);
-        let lower_bound_t_prime = t + self.interval.start;
-        let upper_bound_t_prime = t + self.interval.end;
-
-        // We can only compute a result if we have data extending back to the start of the window.
-        if self.cache.is_empty()
-            || upper_bound_t_prime - lower_bound_t_prime
-                <= self
-                    .cache
-                    .get_back()
-                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
-        {
-            let min_robustness = self
-                .cache
-                .iter()
-                .filter(|entry| {
-                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-                })
-                .filter_map(|entry| entry.value) // From Step<Option<f64>> to Option<f64>, then unwraps to f64
-                .fold(f64::INFINITY, f64::min);
-
-            Some(min_robustness)
-        } else {
-            None // Not enough historical data to compute robustness
-        }
+    fn cache(&mut self) -> &mut C {
+        &mut self.cache
     }
 }
 
-impl<T, C, Y> Display for Globally<T, Y, C>
+impl<T, Y, C> UnaryTemporalOperatorTrait<T, Y, C> for Globally<T, Y, C>
+where
+    T: Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
 {
+    fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.operand
+    }
+}
+
+// StlOperatorTrait for Globally now uses the shared robustness_with method
+impl<T: Clone, C> StlOperatorTrait<T, f64> for Globally<T, f64, C>
+where
+    C: RingBufferTrait<Value = Option<f64>> + Clone,
+{
+    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.robustness_unary_with(step, f64::INFINITY, f64::min)
+    }
+}
+
+impl<T, C> StlOperatorTrait<T, bool> for Globally<T, bool, C>
+where
+    T: Clone,
+    C: RingBufferTrait<Value = Option<bool>> + Clone,
+{
+    // formula: for all t' in [t+start, t+end], operand is true at t'
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.robustness_unary_with(step, true, |a, b| a && b)
+    }
+}
+
+impl<T, C, Y> Display for Globally<T, Y, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -258,23 +292,52 @@ impl<T, C, Y> Display for Globally<T, Y, C>
 }
 
 #[derive(Clone)]
-pub struct Until<T, Y, C>
-{
+pub struct Until<T, C, Y> {
     pub interval: TimeInterval,
     pub left: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub right: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
 
-impl<T, C> StlOperatorTrait<T, f64> for Until<T, f64, C>
+// Implementation of the new TemporalOperatorBaseTrait for Until
+impl<T, Y, C> TemporalOperatorBaseTrait<T, Y, C> for Until<T, C, Y>
 where
     T: Clone,
-    C: RingBufferTrait<Value = f64> + Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
+{
+    fn interval(&self) -> TimeInterval {
+        self.interval
+    }
+
+    fn cache(&mut self) -> &mut C {
+        &mut self.cache
+    }
+}
+
+impl<T, Y, C> BinaryTemporalOperatorTrait<T, Y, C> for Until<T, C, Y>
+where
+    T: Clone,
+    Y: Clone,
+    C: RingBufferTrait<Value = Option<Y>> + Clone,
+{
+    fn left_operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.left
+    }
+    fn right_operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Y>> {
+        &mut self.right
+    }
+}
+
+impl<T, C> StlOperatorTrait<T, f64> for Until<T, C, f64>
+where
+    T: Clone,
+    C: RingBufferTrait<Value = Option<f64>> + Clone,
 {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
         let right_robustness = self.right.robustness(step)?;
         self.cache
-            .add_step(self.left.robustness(step)?, step.timestamp);
+            .add_step(Some(self.left.robustness(step))?, step.timestamp);
 
         // The window of interest for the left operand's past robustness values
         let t = step.timestamp.saturating_sub(self.interval.end);
@@ -282,42 +345,78 @@ where
         let upper_bound_t_prime = t + self.interval.end;
 
         // Ensure we have enough data to evaluate the window
-        if self.cache.is_empty()
-            || upper_bound_t_prime - lower_bound_t_prime
-                > self
-                    .cache
-                    .get_back()
-                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
-        {
-            return None; // Not enough data to evaluate
+        if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
+            let max_robustness = self
+                .cache
+                .iter()
+                .filter(|entry| {
+                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+                })
+                .map(|entry| {
+                    let t_prime = entry.timestamp;
+                    let min_left_robustness = self
+                        .cache
+                        .iter()
+                        .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
+                        .filter_map(|e| e.value)
+                        .fold(f64::INFINITY, f64::min);
+
+                    right_robustness.min(min_left_robustness)
+                })
+                .fold(f64::NEG_INFINITY, f64::max);
+
+            Some(max_robustness)
+        } else {
+            None // Not enough data to evaluate
         }
-
-        let max_robustness = self
-            .cache
-            .iter()
-            .filter(|entry| {
-                entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-            })
-            .map(|entry| {
-                let t_prime = entry.timestamp;
-                let min_left_robustness = self
-                    .cache
-                    .iter()
-                    .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
-                    .map(|e| e.value)
-                    .fold(f64::INFINITY, f64::min);
-
-                right_robustness.min(min_left_robustness)
-            })
-            .fold(f64::NEG_INFINITY, f64::max);
-
-        Some(max_robustness)
     }
 }
-impl<T, C, Y> Display for Until<T, Y, C>
+
+// Implement StlOperatorTrait for Until with boolean output
+impl<T, C> StlOperatorTrait<T, bool> for Until<T, C, bool>
 where
-    C: RingBufferTrait<Value = f64> + Clone,
+    T: Clone,
+    C: RingBufferTrait<Value = Option<bool>> + Clone,
 {
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        let right_robustness = self.right.robustness(step)?;
+        self.cache
+            .add_step(Some(self.left.robustness(step)?), step.timestamp);
+
+        // The window of interest for the left operand's past robustness values
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound_t_prime = t + self.interval.start;
+        let upper_bound_t_prime = t + self.interval.end;
+
+        // Ensure we have enough data to evaluate the window
+        if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
+            let max_robustness = self
+                .cache
+                .iter()
+                .filter(|entry| {
+                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+                })
+                .map(|entry| {
+                    let t_prime = entry.timestamp;
+                    let min_left_robustness = self
+                        .cache
+                        .iter()
+                        .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
+                        .map(|e| e.value)
+                        .fold(true, |a, b| a && b.unwrap_or(false));
+
+                    right_robustness.min(min_left_robustness)
+                })
+                .fold(false, |a, b| a || b);
+
+            Some(max_robustness)
+        } else {
+            None // Not enough data to evaluate
+        }
+    }
+}
+
+impl<T, C, Y> Display for Until<T, Y, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -329,7 +428,6 @@ where
         )
     }
 }
-
 
 #[derive(Clone)]
 pub enum Atomic {
@@ -353,6 +451,22 @@ where
         }
     }
 }
+
+impl<T> StlOperatorTrait<T, bool> for Atomic
+where
+    T: Into<f64> + Clone,
+{
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        let value = step.value.clone().into();
+        match self {
+            Atomic::True => Some(true),
+            Atomic::False => Some(false),
+            Atomic::GreaterThan(c) => Some(value > *c),
+            Atomic::LessThan(c) => Some(value < *c),
+        }
+    }
+}
+
 impl Display for Atomic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

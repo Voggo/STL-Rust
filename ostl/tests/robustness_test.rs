@@ -589,7 +589,7 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(4),
             },
-            operand: Box::new(Atomic::GreaterThan(10.0)),
+            operand: Box::new(Atomic::GreaterThan(10.0)), // Ensure operand produces f64
             cache: RingBuffer::new(),
         };
         let eventually_naive = StlFormula {
@@ -721,4 +721,27 @@ mod tests {
             &expected_rob,
         );
     }
+
+    #[test]
+    fn boolean_tests() {
+        let mut gq_cached = Atomic::GreaterThan(0.0);
+        let mut ev : Eventually<f64, RingBuffer<Option<bool>>, bool> = Eventually {
+            interval: TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(4),
+            },
+            operand: Box::new(gq_cached.clone()),
+            cache: RingBuffer::new(),
+        };
+
+        let step = Step {
+            value: 1.0,
+            timestamp: Duration::from_secs(5),
+        };
+
+        // assert_eq!(gq_cached.robustness(&step), Some(false));
+        assert_eq!(ev.robustness(&step), Some(true));
+
+    }
+
 }
