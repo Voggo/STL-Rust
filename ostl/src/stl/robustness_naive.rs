@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
-use crate::stl::core::{StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 
 #[derive(Debug, Clone)]
 // A generic representation of an STL formula.
@@ -29,14 +29,29 @@ pub enum StlOperator {
 }
 
 #[derive(Debug, Clone)]
-pub struct StlFormula<T, C>
+pub struct StlFormula<T, C, Y>
 where
     C: RingBufferTrait<Value = T>,
 {
     pub formula: StlOperator,
     pub signal: C,
+    pub _phantom: std::marker::PhantomData<Y>,
 }
-impl <T, C> Display for StlFormula<T, C>
+
+impl<T, C, Y> StlFormula<T, C, Y>
+where
+    C: RingBufferTrait<Value = T>,
+{
+    pub fn new(formula: StlOperator, signal: C) -> Self {
+        Self {
+            formula,
+            signal,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, C, Y> Display for StlFormula<T, C, Y>
 where
     C: RingBufferTrait<Value = T>,
 {
@@ -45,25 +60,17 @@ where
     }
 }
 
-impl<T, C> StlOperatorTrait<T, f64> for StlFormula<T, C>
+impl<T, C, Y> StlOperatorTrait<T> for StlFormula<T, C, Y>
 where
     T: Clone + Copy + Into<f64>,
     C: RingBufferTrait<Value = T> + Clone,
+    Y: RobustnessSemantics,
 {
-    fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
+    type Output = Y;
+
+    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.signal.add_step(step.value.clone(), step.timestamp);
         self.formula.robustness_naive(&self.signal, step) // robustness for signal at step.timestamp
-    }
-}
-
-impl<T, C> StlOperatorTrait<T, bool> for StlFormula<T, C>
-where
-    T: Clone + Copy + Into<f64>,
-    C: RingBufferTrait<Value = T> + Clone,
-{
-    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
-        self.signal.add_step(step.value.clone(), step.timestamp);
-        self.formula.robustness_naive(&self.signal, step).map(|r| r > 0.0) // robustness for signal at step.timestamp
     }
 }
 
@@ -72,14 +79,15 @@ impl StlOperator {
     /// This method directly implements the STL semantics for robustness calculation.
     /// It may not be efficient for large signals or complex formulas due to its recursive nature.
     /// Returns `None` if the signal does not have enough data to evaluate the formula at the given time step.
-    pub fn robustness_naive<T, C>(&self, signal: &C, current_step: &Step<T>) -> Option<f64>
+    pub fn robustness_naive<T, C, Y>(&self, signal: &C, current_step: &Step<T>) -> Option<Y>
     where
         C: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
         match self {
-            StlOperator::True => self.eval_true::<T>(),
-            StlOperator::False => self.eval_false::<T>(),
+            StlOperator::True => self.eval_true(),
+            StlOperator::False => self.eval_false(),
             StlOperator::GreaterThan(c) => self.eval_greater_than(*c, current_step),
             StlOperator::LessThan(c) => self.eval_less_than(*c, current_step),
             StlOperator::Not(phi) => self.eval_not(phi, signal, current_step),
@@ -109,64 +117,83 @@ impl StlOperator {
         }
     }
 
-    fn eval_true<T>(&self) -> Option<f64> {
-        Some(f64::INFINITY)
+    fn eval_true<Y: RobustnessSemantics>(&self) -> Option<Y> {
+        Some(Y::atomic_true())
     }
 
-    fn eval_false<T>(&self) -> Option<f64> {
-        Some(f64::NEG_INFINITY)
+    fn eval_false<Y: RobustnessSemantics>(&self) -> Option<Y> {
+        Some(Y::atomic_false())
     }
 
-    fn eval_greater_than<T: Clone + Into<f64>>(&self, c: f64, current_step: &Step<T>) -> Option<f64> {
-        Some(current_step.value.clone().into() - c)
-    }
-
-    fn eval_less_than<T: Clone + Into<f64>>(&self, c: f64, current_step: &Step<T>) -> Option<f64> {
-        Some(c - current_step.value.clone().into())
-    }
-
-    fn eval_not<T, S>(&self, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_greater_than<T, Y>(&self, c: f64, current_step: &Step<T>) -> Option<Y>
     where
-        S: RingBufferTrait<Value = T>,
-        T: Clone + Copy + Into<f64>,
+        T: Clone + Into<f64>,
+        Y: RobustnessSemantics,
     {
-        phi.robustness_naive(signal, current_step).map(|r| -r)
+        Some(Y::atomic_greater_than(current_step.value.clone().into(), c))
     }
 
-    fn eval_and<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_less_than<T, Y>(&self, c: f64, current_step: &Step<T>) -> Option<Y>
     where
-        S: RingBufferTrait<Value = T>,
-        T: Clone + Copy + Into<f64>,
+        T: Clone + Into<f64>,
+        Y: RobustnessSemantics,
     {
-        phi.robustness_naive(signal, current_step)
-            .zip(psi.robustness_naive(signal, current_step))
-            .map(|(r1, r2)| r1.min(r2))
+        Some(Y::atomic_less_than(current_step.value.clone().into(), c))
     }
 
-    fn eval_or<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_not<T, S, Y>(&self, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
-        phi.robustness_naive(signal, current_step)
-            .zip(psi.robustness_naive(signal, current_step))
-            .map(|(r1, r2)| r1.max(r2))
+        phi.robustness_naive(signal, current_step).map(Y::not)
     }
 
-    fn eval_implies<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_and<T, S, Y>(
+        &self,
+        phi: &StlOperator,
+        psi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
         phi.robustness_naive(signal, current_step)
             .zip(psi.robustness_naive(signal, current_step))
-            .map(|(r1, r2)| (-r1).max(r2))
+            .map(|(r1, r2)| Y::and(r1, r2))
     }
 
-    fn eval_eventually<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_or<T, S, Y>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
+    {
+        phi.robustness_naive(signal, current_step)
+            .zip(psi.robustness_naive(signal, current_step))
+            .map(|(r1, r2)| Y::or(r1, r2))
+    }
+
+    fn eval_implies<T, S, Y>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
+    {
+        phi.robustness_naive(signal, current_step)
+            .zip(psi.robustness_naive(signal, current_step))
+            .map(|(r1, r2)| Y::implies(r1, r2))
+    }
+
+    fn eval_eventually<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
         let t = current_step.timestamp.saturating_sub(interval.end);
         let lower_bound_t_prime = t + interval.start;
@@ -180,14 +207,20 @@ impl StlOperator {
             .iter()
             .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
             .map(|step| phi.robustness_naive(signal, step))
-            .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
+            .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
+                (Some(a), Some(v)) => Some(Y::or(a, v)),
+                (Some(a), None) => Some(a),
+                (None, Some(v)) => Some(v),
+                (None, None) => None,
+            })?;
         Some(result)
     }
 
-    fn eval_globally<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_globally<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
         let t = current_step.timestamp.saturating_sub(interval.end);
         let lower_bound_t_prime = t + interval.start;
@@ -201,14 +234,20 @@ impl StlOperator {
             .iter()
             .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
             .map(|step| phi.robustness_naive(signal, step))
-            .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)));
+            .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
+                (Some(a), Some(v)) => Some(Y::and(a, v)),
+                (Some(a), None) => Some(a),
+                (None, Some(v)) => Some(v),
+                (None, None) => None,
+            })?;
         Some(result)
     }
 
-    fn eval_until<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    fn eval_until<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
     {
         let t = current_step.timestamp.saturating_sub(interval.end);
         let lower_bound_t_prime = t + interval.start;
@@ -228,10 +267,20 @@ impl StlOperator {
                     .iter()
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp <= t_prime)
                     .map(|s| phi.robustness_naive(signal, s))
-                    .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
-                robustness_psi.map(|r_psi| r_psi.min(robustness_phi))
+                    .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
+                        (Some(a), Some(v)) => Some(Y::and(a, v)),
+                        (Some(a), None) => Some(a),
+                        (None, Some(v)) => Some(v),
+                        (None, None) => None,
+                    });
+                robustness_psi.zip(robustness_phi).map(|(r_psi, r_phi)| Y::and(r_psi, r_phi))
             })
-            .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)));
+            .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
+                (Some(a), Some(v)) => Some(Y::or(a, v)),
+                (Some(a), None) => Some(a),
+                (None, Some(v)) => Some(v),
+                (None, None) => None,
+            })?;
         Some(result)
     }
 
