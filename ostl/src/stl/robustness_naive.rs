@@ -1,5 +1,3 @@
-use core::f64;
-use std::ops::Index;
 use std::time::Duration;
 use std::fmt::Display;
 
@@ -50,11 +48,22 @@ where
 impl<T, C> StlOperatorTrait<T, f64> for StlFormula<T, C>
 where
     T: Clone + Copy + Into<f64>,
-    C: RingBufferTrait<Value = T> + Index<usize, Output = Step<T>> + Clone,
+    C: RingBufferTrait<Value = T> + Clone,
 {
     fn robustness(&mut self, step: &Step<T>) -> Option<f64> {
         self.signal.add_step(step.value.clone(), step.timestamp);
         self.formula.robustness_naive(&self.signal, step) // robustness for signal at step.timestamp
+    }
+}
+
+impl<T, C> StlOperatorTrait<T, bool> for StlFormula<T, C>
+where
+    T: Clone + Copy + Into<f64>,
+    C: RingBufferTrait<Value = T> + Clone,
+{
+    fn robustness(&mut self, step: &Step<T>) -> Option<bool> {
+        self.signal.add_step(step.value.clone(), step.timestamp);
+        self.formula.robustness_naive(&self.signal, step).map(|r| r > 0.0) // robustness for signal at step.timestamp
     }
 }
 
@@ -63,117 +72,167 @@ impl StlOperator {
     /// This method directly implements the STL semantics for robustness calculation.
     /// It may not be efficient for large signals or complex formulas due to its recursive nature.
     /// Returns `None` if the signal does not have enough data to evaluate the formula at the given time step.
-    pub fn robustness_naive<T, S>(&self, signal: &S, current_step: &Step<T>) -> Option<f64>
+    pub fn robustness_naive<T, C>(&self, signal: &C, current_step: &Step<T>) -> Option<f64>
     where
-        S: RingBufferTrait<Value = T> + Index<usize, Output = Step<T>>,
+        C: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
     {
         match self {
-            StlOperator::True => Some(f64::INFINITY), // Always satisfied
-            StlOperator::False => Some(f64::NEG_INFINITY), // Never satisfied
-            StlOperator::GreaterThan(c) => Some(current_step.value.clone().into() - c), // ρ(s_t, x > c) = s(t) - c
-            StlOperator::LessThan(c) => Some(c - current_step.value.clone().into()), // ρ(s_t, x < c) = c - s(t)
-
-            // Not: ρ(s_t, ¬φ) = -ρ(s_t, φ)
-            StlOperator::Not(phi) => phi.robustness_naive(signal, current_step).map(|r| -r),
-
-            // And: ρ(s_t, φ ∧ ψ) = min(ρ(s_t, φ), ρ(s_t, ψ))
-            StlOperator::And(phi, psi) => phi
-                .robustness_naive(signal, current_step)
-                .zip(psi.robustness_naive(signal, current_step))
-                .map(|(r1, r2)| r1.min(r2)),
-
-            // Or: ρ(s_t, φ ∨ ψ) = max(ρ(s_t, φ), ρ(s_t, ψ))
-            StlOperator::Or(phi, psi) => phi
-                .robustness_naive(signal, current_step)
-                .zip(psi.robustness_naive(signal, current_step))
-                .map(|(r1, r2)| r1.max(r2)),
-
-            // Implies: ρ(s_t, φ ⇒ ψ) = max(-ρ(s_t, φ), ρ(s_t, ψ))
-            StlOperator::Implies(phi, psi) => phi
-                .robustness_naive(signal, current_step)
-                .zip(psi.robustness_naive(signal, current_step))
-                .map(|(r1, r2)| (-r1).max(r2)),
-
-            // Eventually: ρ(s_t, ◇_[a,b]φ) = max_{t' ∈ [t+a,t+b]} ρ(s_t', φ)
-            StlOperator::Eventually(interval, phi) => {
-                let t = current_step.timestamp.saturating_sub(interval.end);
-                let lower_bound_t_prime = t + interval.start;
-                let upper_bound_t_prime = t + interval.end;
-                let back = signal.get_back().unwrap().timestamp;
-                if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
-                    return None; // Not enough data to evaluate
-                }
-
-                signal
-                    .iter()
-                    .filter(|step| {
-                        step.timestamp >= lower_bound_t_prime
-                            && step.timestamp <= upper_bound_t_prime
-                    })
-                    .map(|step| phi.robustness_naive(signal, step))
-                    .fold(f64::NEG_INFINITY, |acc, x| {
-                        acc.max(x.unwrap_or(f64::NEG_INFINITY))
-                    })
-            }
-            .into(),
-
-            // Always: ρ(s_t, □_[a,b]φ) = min_{t' ∈ [t+a,t+b]} ρ(s_t', φ)
-            StlOperator::Globally(interval, phi) => {
-                let t = current_step.timestamp.saturating_sub(interval.end);
-                let lower_bound_t_prime = t + interval.start;
-                let upper_bound_t_prime = t + interval.end;
-                let back = signal.get_back().unwrap().timestamp;
-                if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
-                    return None; // Not enough data to evaluate
-                }
-
-                signal
-                    .iter()
-                    .filter(|step| {
-                        step.timestamp >= lower_bound_t_prime
-                            && step.timestamp <= upper_bound_t_prime
-                    })
-                    .map(|step| phi.robustness_naive(signal, step))
-                    .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)))
-            }
-            .into(),
-
-            // Until: ρ(s_t, φ U_[a,b] ψ) = max_{t' ∈ [t+a,t+b]} ( min(ρ(s_t', ψ), min_{t'' ∈ [t,t']} ρ(s_t'', φ)) )
-            StlOperator::Until(interval, phi, psi) => {
-                let t = current_step.timestamp.saturating_sub(interval.end);
-                let lower_bound_t_prime = t + interval.start;
-                let upper_bound_t_prime = t + interval.end;
-                let back = signal.get_back().unwrap().timestamp;
-                if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
-                    return None; // Not enough data to evaluate
-                }
-
-                signal
-                    .iter()
-                    .filter(|step| {
-                        step.timestamp >= lower_bound_t_prime
-                            && step.timestamp <= upper_bound_t_prime
-                    })
-                    .map(|step| {
-                        let t_prime = step.timestamp;
-                        let robustness_psi = psi.robustness_naive(signal, step);
-                        
-                        let robustness_phi = signal
-                            .iter()
-                            .filter(|s| {
-                                s.timestamp >= lower_bound_t_prime && s.timestamp <= t_prime
-                            })
-                            .map(|s| phi.robustness_naive(signal, s))
-                            .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
-                        robustness_psi.map(|r_psi| r_psi.min(robustness_phi))
-                    })
-                    .fold(f64::INFINITY, |acc, x| {
-                        acc.min(x.unwrap_or(f64::INFINITY))
-                    })
-            }
-            .into(),
+            StlOperator::True => self.eval_true::<T>(),
+            StlOperator::False => self.eval_false::<T>(),
+            StlOperator::GreaterThan(c) => self.eval_greater_than(*c, current_step),
+            StlOperator::LessThan(c) => self.eval_less_than(*c, current_step),
+            StlOperator::Not(phi) => self.eval_not(phi, signal, current_step),
+            StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal, current_step),
+            StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal, current_step),
+            StlOperator::Implies(phi, psi) => self.eval_implies(phi, psi, signal, current_step),
+            StlOperator::Eventually(interval, phi) => self.eval_eventually(interval, phi, signal, current_step),
+            StlOperator::Globally(interval, phi) => self.eval_globally(interval, phi, signal, current_step),
+            StlOperator::Until(interval, phi, psi) => self.eval_until(interval, phi, psi, signal, current_step),
         }
+    }
+
+    /// Recursively computes the maximum lookahead time required for the formula.
+    pub fn get_max_lookahead(&self) -> Duration {
+        match self {
+            StlOperator::Globally(interval, f)
+            | StlOperator::Eventually(interval, f)
+            | StlOperator::Until(interval, f, _) => interval.end.max(f.get_max_lookahead()),
+            StlOperator::Not(f) => f.get_max_lookahead(),
+            StlOperator::And(f1, f2) | StlOperator::Or(f1, f2) | StlOperator::Implies(f1, f2) => {
+                f1.get_max_lookahead().max(f2.get_max_lookahead())
+            }
+            StlOperator::True
+            | StlOperator::False
+            | StlOperator::GreaterThan(_)
+            | StlOperator::LessThan(_) => Duration::ZERO,
+        }
+    }
+
+    fn eval_true<T>(&self) -> Option<f64> {
+        Some(f64::INFINITY)
+    }
+
+    fn eval_false<T>(&self) -> Option<f64> {
+        Some(f64::NEG_INFINITY)
+    }
+
+    fn eval_greater_than<T: Clone + Into<f64>>(&self, c: f64, current_step: &Step<T>) -> Option<f64> {
+        Some(current_step.value.clone().into() - c)
+    }
+
+    fn eval_less_than<T: Clone + Into<f64>>(&self, c: f64, current_step: &Step<T>) -> Option<f64> {
+        Some(c - current_step.value.clone().into())
+    }
+
+    fn eval_not<T, S>(&self, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        phi.robustness_naive(signal, current_step).map(|r| -r)
+    }
+
+    fn eval_and<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        phi.robustness_naive(signal, current_step)
+            .zip(psi.robustness_naive(signal, current_step))
+            .map(|(r1, r2)| r1.min(r2))
+    }
+
+    fn eval_or<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        phi.robustness_naive(signal, current_step)
+            .zip(psi.robustness_naive(signal, current_step))
+            .map(|(r1, r2)| r1.max(r2))
+    }
+
+    fn eval_implies<T, S>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        phi.robustness_naive(signal, current_step)
+            .zip(psi.robustness_naive(signal, current_step))
+            .map(|(r1, r2)| (-r1).max(r2))
+    }
+
+    fn eval_eventually<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        let t = current_step.timestamp.saturating_sub(interval.end);
+        let lower_bound_t_prime = t + interval.start;
+        let upper_bound_t_prime = t + interval.end;
+        let back = signal.get_back()?.timestamp;
+        if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
+            return None; // Not enough data to evaluate
+        }
+
+        let result = signal
+            .iter()
+            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .map(|step| phi.robustness_naive(signal, step))
+            .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
+        Some(result)
+    }
+
+    fn eval_globally<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        let t = current_step.timestamp.saturating_sub(interval.end);
+        let lower_bound_t_prime = t + interval.start;
+        let upper_bound_t_prime = t + interval.end;
+        let back = signal.get_back()?.timestamp;
+        if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
+            return None; // Not enough data to evaluate
+        }
+
+        let result = signal
+            .iter()
+            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .map(|step| phi.robustness_naive(signal, step))
+            .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)));
+        Some(result)
+    }
+
+    fn eval_until<T, S>(&self, interval: &TimeInterval, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<f64>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+    {
+        let t = current_step.timestamp.saturating_sub(interval.end);
+        let lower_bound_t_prime = t + interval.start;
+        let upper_bound_t_prime = t + interval.end;
+        let back = signal.get_back()?.timestamp;
+        if signal.is_empty() || upper_bound_t_prime - lower_bound_t_prime > back - t {
+            return None; // Not enough data to evaluate
+        }
+
+        let result = signal
+            .iter()
+            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .map(|step| {
+                let t_prime = step.timestamp;
+                let robustness_psi = psi.robustness_naive(signal, step);
+                let robustness_phi = signal
+                    .iter()
+                    .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp <= t_prime)
+                    .map(|s| phi.robustness_naive(signal, s))
+                    .fold(f64::NEG_INFINITY, |acc, x| acc.max(x.unwrap_or(f64::NEG_INFINITY)));
+                robustness_psi.map(|r_psi| r_psi.min(robustness_phi))
+            })
+            .fold(f64::INFINITY, |acc, x| acc.min(x.unwrap_or(f64::INFINITY)));
+        Some(result)
     }
 
     /// Recursively generate a tree-like string representation of the formula.
@@ -225,23 +284,6 @@ impl StlOperator {
             ),
             StlOperator::GreaterThan(val) => format!("{}x > {}", padding, val),
             StlOperator::LessThan(val) => format!("{}x < {}", padding, val),
-        }
-    }
-
-    /// Recursively computes the maximum lookahead time required for the formula.
-    pub fn get_max_lookahead(&self) -> Duration {
-        match self {
-            StlOperator::Globally(interval, f)
-            | StlOperator::Eventually(interval, f)
-            | StlOperator::Until(interval, f, _) => interval.end.max(f.get_max_lookahead()),
-            StlOperator::Not(f) => f.get_max_lookahead(),
-            StlOperator::And(f1, f2) | StlOperator::Or(f1, f2) | StlOperator::Implies(f1, f2) => {
-                f1.get_max_lookahead().max(f2.get_max_lookahead())
-            }
-            StlOperator::True
-            | StlOperator::False
-            | StlOperator::GreaterThan(_)
-            | StlOperator::LessThan(_) => Duration::ZERO,
         }
     }
 }

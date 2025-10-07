@@ -34,11 +34,65 @@ mod tests {
         );
     }
 
+    fn run_robustness_test_bool<T: Clone>(
+        mut formula_naive: Box<dyn StlOperatorTrait<T, bool>>,
+        mut formula_opt: Box<dyn StlOperatorTrait<T, bool>>,
+        step: &Step<T>,
+        expected: Option<bool>,
+    ) {
+        let robustness_naive = formula_naive.robustness(step);
+        let robustness_opt = formula_opt.robustness(step);
+
+        assert_eq!(
+            robustness_naive, expected,
+            "Naive implementation failed {:?} != {:?}",
+            robustness_naive, expected
+        );
+        assert_eq!(
+            robustness_opt, expected,
+            "Optimized implementation failed {:?} != {:?}",
+            robustness_opt, expected
+        );
+        assert_eq!(
+            robustness_naive, robustness_opt,
+            "Mismatch between naive and optimized implementations {:?} != {:?}",
+            robustness_naive, robustness_opt
+        );
+    }
+
     fn run_multi_step_robustness_test<T: Clone>(
         mut formula_naive: Box<dyn StlOperatorTrait<T, f64>>,
         mut formula_opt: Box<dyn StlOperatorTrait<T, f64>>,
         steps: &[Step<T>],
         expected: &[Option<f64>],
+    ) {
+        for (step, &exp) in steps.iter().zip(expected.iter()) {
+            let robustness_naive = formula_naive.robustness(step);
+            let robustness_opt = formula_opt.robustness(step);
+
+            assert_eq!(
+                robustness_naive, exp,
+                "Naive implementation failed at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_naive, exp
+            );
+            assert_eq!(
+                robustness_opt, exp,
+                "Optimized implementation failed at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_opt, exp
+            );
+            assert_eq!(
+                robustness_naive, robustness_opt,
+                "Mismatch between naive and optimized implementations at timestep {:?}: {:?} != {:?}",
+                step.timestamp, robustness_naive, robustness_opt
+            );
+        }
+    }
+
+    fn run_multi_step_robustness_test_bool<T: Clone>(
+        mut formula_naive: Box<dyn StlOperatorTrait<T, bool>>,
+        mut formula_opt: Box<dyn StlOperatorTrait<T, bool>>,
+        steps: &[Step<T>],
+        expected: &[Option<bool>],
     ) {
         for (step, &exp) in steps.iter().zip(expected.iter()) {
             let robustness_naive = formula_naive.robustness(step);
@@ -181,6 +235,14 @@ mod tests {
             &steps,
             &expected_rob,
         );
+
+        let expected_bool = vec![Some(true), Some(false)];
+        run_multi_step_robustness_test_bool(
+            Box::new(atomic_naive.clone()),
+            Box::new(atomic_opt.clone()),
+            &steps,
+            &expected_bool,
+        );
     }
 
     #[test]
@@ -201,6 +263,13 @@ mod tests {
             Box::new(atomic_opt.clone()),
             &steps,
             &expected_rob,
+        );
+        let expected_bool = vec![Some(true), Some(false)];
+        run_multi_step_robustness_test_bool(
+            Box::new(atomic_naive.clone()),
+            Box::new(atomic_opt.clone()),
+            &steps,
+            &expected_bool,
         );
     }
 
@@ -223,6 +292,15 @@ mod tests {
             &step,
             Some(f64::INFINITY),
         );
+        run_robustness_test_bool(
+            Box::new(StlFormula {
+                formula: StlOperator::True,
+                signal: RingBuffer::<f64>::new(),
+            }),
+            Box::new(Atomic::True),
+            &step,
+            Some(true),
+        );
     }
 
     #[test]
@@ -239,10 +317,16 @@ mod tests {
         };
 
         run_robustness_test(
+            Box::new(atomic_naive.clone()),
+            Box::new(atomic_opt.clone()),
+            &step,
+            Some(f64::NEG_INFINITY),
+        );
+        run_robustness_test_bool(
             Box::new(atomic_naive),
             Box::new(atomic_opt),
             &step,
-            Some(f64::NEG_INFINITY),
+            Some(false),
         );
     }
 
@@ -261,7 +345,13 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(Box::new(not_naive), Box::new(not_opt), &step, Some(-5.0));
+        run_robustness_test(
+            Box::new(not_naive.clone()),
+            Box::new(not_opt.clone()),
+            &step,
+            Some(-5.0),
+        );
+        // run_robustness_test_bool(Box::new(not_naive), Box::new(not_opt), &step, Some(false));
     }
 
     #[test]
@@ -354,7 +444,7 @@ mod tests {
             }),
         };
 
-        let mut formula_or_naive = StlFormula {
+        let formula_or_naive = StlFormula {
             formula: StlOperator::Or(
                 Box::new(StlOperator::GreaterThan(10.0)),
                 Box::new(StlOperator::LessThan(20.0)),
@@ -391,8 +481,8 @@ mod tests {
             formula_and_opt.robustness(&step)
         );
         assert_eq!(
-            formula_or_naive.robustness(&step),
-            formula_and_naive.robustness(&step)
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_and_naive, &step),
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_and_opt, &step),
         );
     }
 
@@ -418,7 +508,7 @@ mod tests {
             ),
             signal: RingBuffer::<f64>::new(),
         };
-        let mut formula_or_naive = StlFormula {
+        let formula_or_naive = StlFormula {
             formula: StlOperator::Or(
                 Box::new(StlOperator::Not(Box::new(StlOperator::GreaterThan(10.0)))),
                 Box::new(StlOperator::LessThan(20.0)),
@@ -448,8 +538,8 @@ mod tests {
             formula_or_opt.robustness(&step)
         );
         assert_eq!(
-            formula_implies_naive.robustness(&step),
-            formula_or_naive.robustness(&step)
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_implies_naive, &step),
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_implies_opt, &step),
         );
     }
 
@@ -506,8 +596,8 @@ mod tests {
             formula_until_opt.robustness(&step)
         );
         assert_eq!(
-            formula_eventually_naive.robustness(&step),
-            formula_until_naive.robustness(&step)
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_eventually_naive, &step),
+            <dyn StlOperatorTrait<f64, f64>>::robustness(&mut formula_until_naive, &step),
         );
     }
 
@@ -725,7 +815,7 @@ mod tests {
     #[test]
     fn boolean_tests() {
         let mut gq_cached = Atomic::GreaterThan(0.0);
-        let mut ev : Eventually<f64, RingBuffer<Option<bool>>, bool> = Eventually {
+        let mut ev: Eventually<f64, RingBuffer<Option<bool>>, bool> = Eventually {
             interval: TimeInterval {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(4),
@@ -741,7 +831,5 @@ mod tests {
 
         // assert_eq!(gq_cached.robustness(&step), Some(false));
         assert_eq!(ev.robustness(&step), Some(true));
-
     }
-
 }

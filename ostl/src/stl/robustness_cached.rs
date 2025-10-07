@@ -163,7 +163,7 @@ pub struct Eventually<T, C, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Y> + 'static>,
     pub cache: C,
 }
-// Implementation of the new TemporalOperatorBaseTrait for Eventually
+
 impl<T, Y, C> TemporalOperatorBaseTrait<T, Y, C> for Eventually<T, C, Y>
 where
     T: Clone,
@@ -190,7 +190,6 @@ where
     }
 }
 
-// StlOperatorTrait for Eventually now uses the shared robustness_with method
 impl<T: Clone, C> StlOperatorTrait<T, f64> for Eventually<T, C, f64>
 where
     C: RingBufferTrait<Value = Option<f64>> + Clone,
@@ -230,7 +229,6 @@ pub struct Globally<T, Y, C> {
     pub cache: C,
 }
 
-// Implementation of the new TemporalOperatorBaseTrait for Globally
 impl<T, Y, C> TemporalOperatorBaseTrait<T, Y, C> for Globally<T, Y, C>
 where
     T: Clone,
@@ -257,7 +255,6 @@ where
     }
 }
 
-// StlOperatorTrait for Globally now uses the shared robustness_with method
 impl<T: Clone, C> StlOperatorTrait<T, f64> for Globally<T, f64, C>
 where
     C: RingBufferTrait<Value = Option<f64>> + Clone,
@@ -371,7 +368,6 @@ where
     }
 }
 
-// Implement StlOperatorTrait for Until with boolean output
 impl<T, C> StlOperatorTrait<T, bool> for Until<T, C, bool>
 where
     T: Clone,
