@@ -6,13 +6,25 @@ use crate::stl::core::{
 use std::fmt::Display;
 
 #[derive(Clone)]
-pub struct And<T, Y> {
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+pub struct And<T, Y>
+where
+    T: 'static,
+    Y: 'static,
+{
+    pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+    pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
 }
 
-impl<T: Clone, Y: RobustnessSemantics> StlOperatorTrait<T> for And<T, Y> {
+impl<T, Y> StlOperatorTrait<T> for And<T, Y>
+where
+    T: Clone + 'static,
+    Y: RobustnessSemantics + 'static,
+{
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         // Get the robustness of the left and right children
@@ -34,13 +46,25 @@ impl<T, Y> Display for And<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Or<T, Y> {
+pub struct Or<T, Y>
+where
+    T: 'static,
+    Y: 'static,
+{
     pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
 }
 
-impl<T: Clone, Y: RobustnessSemantics> StlOperatorTrait<T> for Or<T, Y> {
+impl<T, Y> StlOperatorTrait<T> for Or<T, Y>
+where
+    T: Clone + 'static,
+    Y: RobustnessSemantics + 'static,
+{
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         // Get the robustness of the left and right children
@@ -63,12 +87,24 @@ impl<T, Y> Display for Or<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Not<T, Y> {
+pub struct Not<T, Y>
+where
+    T: 'static,
+    Y: 'static,
+{
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
 }
 
-impl<T: Clone, Y: RobustnessSemantics> StlOperatorTrait<T> for Not<T, Y> {
+impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
+where
+    T: Clone + 'static,
+    Y: RobustnessSemantics + 'static,
+{
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.operand.robustness(step).map(Y::not)
@@ -82,18 +118,31 @@ impl<T, Y> Display for Not<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Implies<T, Y> {
+pub struct Implies<T, Y>
+where
+    T: 'static,
+    Y: 'static,
+{
     pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub consequent: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
 }
 
-impl<T: Clone, Y: RobustnessSemantics> StlOperatorTrait<T> for Implies<T, Y> {
+impl<T, Y> StlOperatorTrait<T> for Implies<T, Y>
+where
+    T: Clone + 'static,
+    Y: RobustnessSemantics + 'static,
+{
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         // Get the robustness of the antecedent and consequent
         let antecedent_robustness = self.antecedent.robustness(step);
         let consequent_robustness = self.consequent.robustness(step);
+
         antecedent_robustness.zip(consequent_robustness).map(|(a, c)| Y::implies(a, c))
     }
 }
@@ -117,11 +166,15 @@ pub struct Eventually<T, C, Y> {
 
 impl<T, C, Y> StlOperatorTrait<T> for Eventually<T, C, Y>
 where
-    T: Clone,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
-    Y: RobustnessSemantics, // The crucial trait bound
+    T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    Y: RobustnessSemantics + 'static, // The crucial trait bound
 {
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         // Use the identity and combining function from the trait
@@ -131,9 +184,9 @@ where
 
 impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Eventually<T, C, Y>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn interval(&self) -> TimeInterval {
         self.interval
@@ -146,9 +199,9 @@ where
 
 impl<T, C, Y> UnaryTemporalOperatorTrait<T, C> for Eventually<T, C, Y>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
         &mut self.operand
@@ -176,11 +229,15 @@ pub struct Globally<T, Y, C> {
 
 impl<T, C, Y> StlOperatorTrait<T> for Globally<T, Y, C>
 where
-    T: Clone,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
-    Y: RobustnessSemantics,
+    T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.robustness_unary_with(step, Y::globally_identity(), Y::and)
@@ -189,9 +246,9 @@ where
 
 impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Globally<T, Y, C>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn interval(&self) -> TimeInterval {
         self.interval
@@ -204,9 +261,9 @@ where
 
 impl<T, C, Y> UnaryTemporalOperatorTrait<T, C> for Globally<T, Y, C>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
         &mut self.operand
@@ -235,12 +292,16 @@ pub struct Until<T, C, Y> {
 
 impl<T, C, Y> StlOperatorTrait<T> for Until<T, C, Y>
 where
-    T: Clone,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
-    Y: RobustnessSemantics,
+    T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-    
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         let right_robustness = self.right.robustness(step)?;
         self.cache
@@ -280,9 +341,9 @@ where
 }
 impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Until<T, C, Y>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn interval(&self) -> TimeInterval {
         self.interval
@@ -295,9 +356,9 @@ where
 
 impl<T, C, Y> BinaryTemporalOperatorTrait<T, C> for Until<T, C, Y>
 where
-    T: Clone,
-    Y: Clone + RobustnessSemantics,
-    C: RingBufferTrait<Value = Option<Y>> + Clone,
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
 {
     fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
         &mut self.left
@@ -346,8 +407,8 @@ impl<Y> Atomic<Y> {
 
 impl<T, Y> StlOperatorTrait<T> for Atomic<Y>
 where
-    T: Into<f64> + Clone,
-    Y: RobustnessSemantics,
+    T: Into<f64> + Clone + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
@@ -358,6 +419,9 @@ where
             Atomic::GreaterThan(c, _) => Some(Y::atomic_greater_than(value, *c)),
             Atomic::LessThan(c, _) => Some(Y::atomic_less_than(value, *c)),
         }
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

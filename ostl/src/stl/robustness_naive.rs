@@ -31,7 +31,9 @@ pub enum StlOperator {
 #[derive(Debug, Clone)]
 pub struct StlFormula<T, C, Y>
 where
-    C: RingBufferTrait<Value = T>,
+    T: 'static,
+    C: RingBufferTrait<Value = T> + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     pub formula: StlOperator,
     pub signal: C,
@@ -40,7 +42,9 @@ where
 
 impl<T, C, Y> StlFormula<T, C, Y>
 where
-    C: RingBufferTrait<Value = T>,
+    T: 'static,
+    C: RingBufferTrait<Value = T> + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     pub fn new(formula: StlOperator, signal: C) -> Self {
         Self {
@@ -53,6 +57,7 @@ where
 
 impl<T, C, Y> Display for StlFormula<T, C, Y>
 where
+    Y: RobustnessSemantics,
     C: RingBufferTrait<Value = T>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -62,11 +67,15 @@ where
 
 impl<T, C, Y> StlOperatorTrait<T> for StlFormula<T, C, Y>
 where
-    T: Clone + Copy + Into<f64>,
-    C: RingBufferTrait<Value = T> + Clone,
-    Y: RobustnessSemantics,
+    T: Clone + Copy + Into<f64> + 'static,
+    C: RingBufferTrait<Value = T> + Clone + 'static,
+    Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.signal.add_step(step.value.clone(), step.timestamp);
