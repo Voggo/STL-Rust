@@ -77,6 +77,22 @@ mod tests {
         (steps, expected)
     }
 
+    fn build_monitors(formula: FormulaDefinition) -> (StlMonitor<f64>, StlMonitor<f64>) {
+        let monitor_naive = StlMonitor::builder()
+            .formula(formula.clone())
+            .strategy(MonitoringStrategy::Naive)
+            .build()
+            .unwrap();
+
+        let monitor_opt = StlMonitor::builder()
+            .formula(formula)
+            .strategy(MonitoringStrategy::Incremental)
+            .build()
+            .unwrap();
+
+        (monitor_naive, monitor_opt)
+    }
+
     #[test]
     fn formula_to_string() {
         let formula = FormulaDefinition::Implies(
@@ -111,17 +127,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(7.0)),
         );
 
-        let monitor_opt: StlMonitor<f64> = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         assert_eq!(
             monitor_opt.specification_to_string(),
@@ -141,17 +147,7 @@ mod tests {
     fn atomic_greater_than_robustness() {
         let formula = FormulaDefinition::GreaterThan(10.0);
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let values = vec![15.0, 8.0];
         let timestamps = vec![5, 5];
@@ -165,17 +161,7 @@ mod tests {
     fn atomic_less_than_robustness() {
         let formula = FormulaDefinition::LessThan(10.0);
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let values = vec![5.0, 12.0];
         let timestamps = vec![5, 5];
@@ -189,17 +175,7 @@ mod tests {
     fn atomic_true_robustness() {
         let formula = FormulaDefinition::True;
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 0.0,
@@ -213,17 +189,7 @@ mod tests {
     fn atomic_false_robustness() {
         let formula = FormulaDefinition::False;
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 0.0,
@@ -236,18 +202,7 @@ mod tests {
     #[test]
     fn not_operator_robustness() {
         let formula = FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan(10.0)));
-
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 15.0,
@@ -264,17 +219,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(20.0)),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 15.0,
@@ -291,17 +236,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(5.0)),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 15.0,
@@ -318,17 +253,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(20.0)),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_naive, monitor_opt) = build_monitors(formula);
 
         let step = Step {
             value: 15.0,
@@ -355,29 +280,8 @@ mod tests {
             ))),
         )));
 
-        let monitor_or_opt = StlMonitor::builder()
-            .formula(formula_or.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_and_opt = StlMonitor::builder()
-            .formula(formula_and.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_or_naive = StlMonitor::builder()
-            .formula(formula_or)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
-
-        let monitor_and_naive = StlMonitor::builder()
-            .formula(formula_and)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_or_naive, monitor_or_opt) = build_monitors(formula_or);
+        let (monitor_and_naive, monitor_and_opt) = build_monitors(formula_and);
 
         let step = Step {
             value: 15.0,
@@ -386,14 +290,6 @@ mod tests {
 
         run_robustness_test(monitor_or_naive, monitor_or_opt, &step, Some(5.0));
         run_robustness_test(monitor_and_naive, monitor_and_opt, &step, Some(5.0));
-        // assert_eq!(
-        //     monitor_or_opt.instantaneous_robustness(&step),
-        //     monitor_and_opt.instantaneous_robustness(&step)
-        // );
-        // assert_eq!(
-        //     monitor_or_naive.instantaneous_robustness(&step),
-        //     monitor_and_naive.instantaneous_robustness(&step)
-        // );
     }
 
     #[test]
@@ -411,29 +307,8 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(20.0)),
         );
 
-        let monitor_implies_opt = StlMonitor::builder()
-            .formula(formula_implies.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_or_opt = StlMonitor::builder()
-            .formula(formula_or.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_implies_naive = StlMonitor::builder()
-            .formula(formula_implies)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
-
-        let monitor_or_naive = StlMonitor::builder()
-            .formula(formula_or)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_implies_opt, monitor_implies_naive) = build_monitors(formula_implies.clone());
+        let (monitor_or_opt, monitor_or_naive) = build_monitors(formula_or);
 
         let step = Step {
             value: 15.0,
@@ -464,29 +339,9 @@ mod tests {
             Box::new(FormulaDefinition::GreaterThan(10.0)),
         );
 
-        let monitor_eventually_opt = StlMonitor::builder()
-            .formula(formula_eventually.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_until_opt = StlMonitor::builder()
-            .formula(formula_until.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_eventually_naive = StlMonitor::builder()
-            .formula(formula_eventually)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
-
-        let monitor_until_naive = StlMonitor::builder()
-            .formula(formula_until)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_eventually_opt, monitor_eventually_naive) =
+            build_monitors(formula_eventually.clone());
+        let (monitor_until_opt, monitor_until_naive) = build_monitors(formula_until);
 
         let step = Step {
             value: 15.0,
@@ -523,29 +378,9 @@ mod tests {
             ))),
         )));
 
-        let monitor_globally_opt = StlMonitor::builder()
-            .formula(formula_globally.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_eventually_opt = StlMonitor::builder()
-            .formula(formula_eventually.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_globally_naive = StlMonitor::builder()
-            .formula(formula_globally)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
-
-        let monitor_eventually_naive = StlMonitor::builder()
-            .formula(formula_eventually)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_globally_opt, monitor_globally_naive) =
+            build_monitors(formula_globally.clone());
+        let (monitor_eventually_opt, monitor_eventually_naive) = build_monitors(formula_eventually);
 
         let step = Step {
             value: 15.0,
@@ -576,17 +411,7 @@ mod tests {
             Box::new(FormulaDefinition::GreaterThan(10.0)),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_opt, monitor_naive) = build_monitors(formula);
 
         let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let timestamps = vec![0, 2, 4, 6, 8];
@@ -605,24 +430,14 @@ mod tests {
         let formula =
             FormulaDefinition::Globally(ti.clone(), Box::new(FormulaDefinition::GreaterThan(10.0)));
 
-        let globally_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let globally_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_opt, monitor_naive) = build_monitors(formula);
 
         let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let timestamps = vec![0, 2, 4, 6, 8];
         let expected = vec![None, None, Some(-2.0), Some(-5.0), Some(-5.0)];
         let (steps, expected_rob) = generate_steps_and_expected(values, timestamps, expected);
 
-        run_multi_step_robustness_test(globally_naive, globally_opt, &steps, &expected_rob);
+        run_multi_step_robustness_test(monitor_naive, monitor_opt, &steps, &expected_rob);
     }
 
     #[test]
@@ -636,17 +451,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(20.0)),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_opt, monitor_naive) = build_monitors(formula);
 
         let values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let timestamps = vec![0, 2, 4, 6, 8];
@@ -672,17 +477,7 @@ mod tests {
             )),
         );
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_opt, monitor_naive) = build_monitors(formula);
 
         let values = vec![15.0, 12.0, 8.0, 5.0, 12.0, 20.0];
         let timestamps = vec![0, 3, 6, 9, 12, 15];
@@ -696,17 +491,7 @@ mod tests {
     fn boolean_tests() {
         let formula = FormulaDefinition::GreaterThan(0.0);
 
-        let monitor_opt = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .build()
-            .unwrap();
-
-        let monitor_naive = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .build()
-            .unwrap();
+        let (monitor_opt, monitor_naive) = build_monitors(formula);
 
         let step = Step {
             value: 1.0,
