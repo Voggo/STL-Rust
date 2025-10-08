@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use stl_types_traits::{stl::operators::STLFormula, stl::operators::TimeInterval};
+    use ostl::{stl::robustness_naive::STLFormula, stl::core::TimeInterval};
     use std::time::Duration;
 
     fn get_formula() -> STLFormula {
         STLFormula::And(
-            Box::new(STLFormula::Always(
+            Box::new(STLFormula::Globally(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(10),

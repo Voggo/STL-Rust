@@ -6,7 +6,7 @@ pub struct Step<T> {
     pub timestamp: Duration,
 }
 
-pub trait SignalTrait {
+pub trait RingBufferTrait {
     // The type of the value stored in the signal
     type Value;
     
@@ -18,6 +18,10 @@ pub trait SignalTrait {
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>> where Self: 'a;
 
     fn new() -> Self;
+    fn is_empty(&self) -> bool;
+    fn len(&self) -> usize;
+    fn get_back(&self) -> Option<&Step<Self::Value>>;
+    fn get_front(&self) -> Option<&Step<Self::Value>>;
 
     fn add_step(&mut self, value: Self::Value, timestamp: Duration);
     fn prune(&mut self, current_time: Duration, max_age: Duration);
@@ -27,16 +31,16 @@ pub trait SignalTrait {
 }
 
 #[derive(Clone)]
-pub struct SignalBuffer<T> {
+pub struct RingBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
 
-impl<T> SignalBuffer<T>
+impl<T> RingBuffer<T>
 where
     T: Copy,
 {
     pub fn new() -> Self {
-        SignalBuffer {
+        RingBuffer {
             steps: VecDeque::new(),
         }
     }
@@ -50,7 +54,7 @@ where
     }
 }
 
-impl<T> SignalTrait for SignalBuffer<T>
+impl<T> RingBufferTrait for RingBuffer<T>
 where
     T: Copy,
 {
@@ -59,7 +63,19 @@ where
     type Iter<'a> = std::collections::vec_deque::Iter<'a, Step<T>> where Self: 'a;
 
     fn new() -> Self {
-        SignalBuffer::new()
+        RingBuffer::new()
+    }
+    fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+    fn len(&self) -> usize {
+        self.steps.len()
+    }
+    fn get_back(&self) -> Option<&Step<T>> {
+        self.steps.back()
+    }
+    fn get_front(&self) -> Option<&Step<T>> {
+        self.steps.front()
     }
 
     fn add_step(&mut self, value: T, timestamp: Duration) {
@@ -75,7 +91,7 @@ where
     }
 }
 
-impl<T> Index<usize> for SignalBuffer<T>
+impl<T> Index<usize> for RingBuffer<T>
 where
     T: Copy,
 {

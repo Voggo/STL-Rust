@@ -1,6 +1,7 @@
 [package]
-name = "stl_types_traits"
+name = "ostl"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+dyn-clone = "1.0.20"

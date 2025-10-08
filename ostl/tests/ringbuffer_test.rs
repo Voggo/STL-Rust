@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use stl_types_traits::signal::SignalBuffer;
+    use ostl::ring_buffer::RingBuffer;
 
     #[test]
-    fn signal_test() {
-        let mut signal = SignalBuffer::new();
+    fn ring_buffer_test() {
+        let mut signal = RingBuffer::new();
         signal.add_step(1, std::time::Duration::new(0, 0));
         signal.add_step(2, std::time::Duration::new(1, 0));
         signal.add_step(3, std::time::Duration::new(2, 0));

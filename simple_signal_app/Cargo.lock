@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "simple-signal-app"
+name = "simple_signal_app"
 version = "0.1.0"

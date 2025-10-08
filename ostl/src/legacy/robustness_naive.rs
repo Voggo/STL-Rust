@@ -1,5 +1,5 @@
-use crate::signal::{SignalTrait, Step};
-use crate::stl::operators::{STLFormula};
+use crate::ring_buffer::{RingBufferTrait, Step};
+use crate::stl::operators_naive::{STLFormula};
 use std::ops::Index;
 
 /// Computes the robustness of the STL formula with respect to the given signal
@@ -8,7 +8,7 @@ use std::ops::Index;
 impl STLFormula {
     pub fn robustness_naive<S>(&self, signal: &S) -> f64 
     where
-        S: SignalTrait<Value = f64> + Index<usize, Output = Step<f64>>,
+        S: RingBufferTrait<Value = f64> + Index<usize, Output = Step<f64>>,
     {
         let current_value = signal[0];
         // Find the signal value at time 't'
@@ -49,7 +49,7 @@ impl STLFormula {
             }
 
             // Always: ρ(s_t, □_[a,b]φ) = min_{t' ∈ [t+a,t+b]} ρ(s_t', φ)
-            STLFormula::Always(interval, phi) => {
+            STLFormula::Globally(interval, phi) => {
                 let start_time = t + interval.start;
                 let end_time = t + interval.end;
 
