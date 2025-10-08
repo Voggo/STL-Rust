@@ -1,5 +1,5 @@
 use crate::ring_buffer::{RingBuffer, Step};
-use crate::stl::core::{StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 use std::collections::VecDeque;
@@ -30,26 +30,26 @@ pub enum MonitoringStrategy {
 }
 
 /// The final monitor struct that handles the input stream.
-pub struct StlMonitor<T: Clone> {
-    root_operator: Box<dyn StlOperatorTrait<T, Output = f64>>,
+pub struct StlMonitor<T: Clone, Y> {
+    root_operator: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub strategy: MonitoringStrategy,
 }
 
-impl<T: Clone> StlMonitor<T> {
+impl<T: Clone, Y> StlMonitor<T, Y> {
     /// Creates a new builder instance.
-    pub fn builder() -> StlMonitorBuilder<T> {
+    pub fn builder() -> StlMonitorBuilder<T, Y> {
         StlMonitorBuilder::new()
     }
 
     /// Processes a single input step and returns all finalized robustness results.
     /// This is the unified public interface.
-    pub fn advance_and_get_results(&mut self, step: &Step<T>) -> VecDeque<Step<f64>> {
+    pub fn advance_and_get_future_robustness_estimates(&mut self, step: &Step<T>) -> VecDeque<Step<f64>> {
         // self.root_operator.advance_and_get_results(step)
         todo!("Implement advance_and_get_results for the root operator");
     }
 
     /// Computes the instantaneous robustness for the current step.
-    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Option<f64> {
+    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Option<Y> {
         self.root_operator.robustness(step)
     }
 
@@ -60,13 +60,13 @@ impl<T: Clone> StlMonitor<T> {
 }
 
 /// The Builder pattern struct for StlMonitor.
-pub struct StlMonitorBuilder<T> {
+pub struct StlMonitorBuilder<T, Y> {
     formula: Option<FormulaDefinition>,
     strategy: MonitoringStrategy,
-    _phantom: std::marker::PhantomData<T>,
+    _phantom: std::marker::PhantomData<(T, Y)>,
 }
 
-impl<T> StlMonitorBuilder<T> {
+impl<T, Y> StlMonitorBuilder<T, Y> {
     pub fn new() -> Self {
         StlMonitorBuilder {
             formula: None,
@@ -88,9 +88,10 @@ impl<T> StlMonitorBuilder<T> {
     }
 
     /// Builds the final StlMonitor by recursively constructing the operator tree.
-    pub fn build(self) -> Result<StlMonitor<T>, &'static str>
+    pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
     where
         T: Into<f64> + Copy + 'static, // Add required bounds
+        Y: RobustnessSemantics + Copy + 'static, // Add required bounds
     {
         let formula_def = self
             .formula
@@ -114,37 +115,38 @@ impl<T> StlMonitorBuilder<T> {
     fn build_naive_operator(
         &self,
         formula: FormulaDefinition,
-    ) -> Box<dyn StlOperatorTrait<T, Output = f64>>
+    ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
+        Y: RobustnessSemantics + 'static,
     {
         match formula {
-            FormulaDefinition::GreaterThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::GreaterThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::GreaterThan(c),
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::LessThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::LessThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::LessThan(c),
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::True => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::True => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::True,
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::False => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::False => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::False,
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::And(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::And(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::And(
                     Box::new(
                         self.build_naive_operator(*l)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -152,7 +154,7 @@ impl<T> StlMonitorBuilder<T> {
                     Box::new(
                         self.build_naive_operator(*r)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -161,12 +163,12 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Or(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Or(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Or(
                     Box::new(
                         self.build_naive_operator(*l)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -174,7 +176,7 @@ impl<T> StlMonitorBuilder<T> {
                     Box::new(
                         self.build_naive_operator(*r)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -183,11 +185,11 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Not(op) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Not(op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Not(Box::new(
                     self.build_naive_operator(*op)
                         .as_any()
-                        .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                        .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                         .unwrap()
                         .formula
                         .clone(),
@@ -195,12 +197,12 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Implies(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Implies(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Implies(
                     Box::new(
                         self.build_naive_operator(*l)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -208,7 +210,7 @@ impl<T> StlMonitorBuilder<T> {
                     Box::new(
                         self.build_naive_operator(*r)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -217,13 +219,13 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Eventually(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Eventually(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Eventually(
                     i,
                     Box::new(
                         self.build_naive_operator(*op)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -232,13 +234,13 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Globally(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Globally(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Globally(
                     i,
                     Box::new(
                         self.build_naive_operator(*op)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -247,13 +249,13 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
-            FormulaDefinition::Until(i, l, r) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+            FormulaDefinition::Until(i, l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Until(
                     i,
                     Box::new(
                         self.build_naive_operator(*l)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -261,7 +263,7 @@ impl<T> StlMonitorBuilder<T> {
                     Box::new(
                         self.build_naive_operator(*r)
                             .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
                             .formula
                             .clone(),
@@ -276,9 +278,10 @@ impl<T> StlMonitorBuilder<T> {
     fn build_incremental_operator(
         &self,
         formula: FormulaDefinition,
-    ) -> Box<dyn StlOperatorTrait<T, Output = f64>>
+    ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
+        Y: RobustnessSemantics + Copy + 'static,
     {
         match formula {
             FormulaDefinition::GreaterThan(c) => Box::new(Atomic::GreaterThan(c, PhantomData)),
@@ -338,13 +341,13 @@ mod tests {
             )),
         );
 
-        let monitor: StlMonitor<f64> = StlMonitor::builder()
+        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
             .build()
             .unwrap();
 
-        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
+        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
             .build()
@@ -373,13 +376,13 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(7.0)),
         );
 
-        let monitor: StlMonitor<f64> = StlMonitor::builder()
+        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
             .build()
             .unwrap();
 
-        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
+        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
             .build()
@@ -417,12 +420,12 @@ mod tests {
             )),
         );
 
-        let monitor: StlMonitor<f64> = StlMonitor::builder()
+        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
             .build()
             .unwrap();
-        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
+        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
             .build()

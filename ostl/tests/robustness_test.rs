@@ -2,17 +2,22 @@
 mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl::{
-        core::{StlOperatorTrait, TimeInterval},
+        core::{RobustnessSemantics, TimeInterval},
         monitor::{FormulaDefinition, MonitoringStrategy, StlMonitor},
     };
+    use std::fmt::Debug;
     use std::time::Duration;
 
-    fn run_robustness_test<T: Clone>(
-        mut monitor_naive: StlMonitor<T>,
-        mut monitor_opt: StlMonitor<T>,
+    fn run_robustness_test<T, Y>(
+        mut monitor_naive: StlMonitor<T, Y>,
+        mut monitor_opt: StlMonitor<T, Y>,
         step: &Step<T>,
-        expected: Option<f64>,
-    ) {
+        expected: Option<Y>,
+    )
+    where
+        T: Clone,
+        Y: RobustnessSemantics + Copy + Debug + PartialEq,
+    {
         let robustness_naive = monitor_naive.instantaneous_robustness(step);
         let robustness_opt = monitor_opt.instantaneous_robustness(step);
 
@@ -33,12 +38,16 @@ mod tests {
         );
     }
 
-    fn run_multi_step_robustness_test<T: Clone>(
-        mut monitor_naive: StlMonitor<T>,
-        mut monitor_opt: StlMonitor<T>,
+    fn run_multi_step_robustness_test<T, Y>(
+        mut monitor_naive: StlMonitor<T, Y>,
+        mut monitor_opt: StlMonitor<T, Y>,
         steps: &[Step<T>],
-        expected: &[Option<f64>],
-    ) {
+        expected: &[Option<Y>],
+    )
+    where
+        T: Clone,
+        Y: RobustnessSemantics + Copy + Debug + PartialEq,
+    {
         for (step, &exp) in steps.iter().zip(expected.iter()) {
             let robustness_naive = monitor_naive.instantaneous_robustness(step);
             let robustness_opt = monitor_opt.instantaneous_robustness(step);
@@ -77,7 +86,11 @@ mod tests {
         (steps, expected)
     }
 
-    fn build_monitors(formula: FormulaDefinition) -> (StlMonitor<f64>, StlMonitor<f64>) {
+    fn build_monitors<T, Y>(formula: FormulaDefinition) -> (StlMonitor<T, Y>, StlMonitor<T, Y>)
+    where
+        T: Clone + Copy + 'static + Into<f64>,
+        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+    {
         let monitor_naive = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Naive)
@@ -127,7 +140,7 @@ mod tests {
             Box::new(FormulaDefinition::LessThan(7.0)),
         );
 
-        let (monitor_naive, monitor_opt) = build_monitors(formula);
+        let (monitor_naive, monitor_opt) = build_monitors::<f64, f64>(formula);
 
         assert_eq!(
             monitor_opt.specification_to_string(),
@@ -498,6 +511,6 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(1.0));
+        run_robustness_test(monitor_naive, monitor_opt, &step, Some(true));
     }
 }
