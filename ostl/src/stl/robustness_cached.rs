@@ -32,16 +32,6 @@ where
             .map(|(l, r)| Y::and(l, r))
     }
 }
-impl<T, Y> Display for And<T, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) ∧ ({})",
-            self.left.to_string(),
-            self.right.to_string()
-        )
-    }
-}
 
 #[derive(Clone)]
 pub struct Or<T, Y> {
@@ -71,17 +61,6 @@ where
     }
 }
 
-impl<T, Y> Display for Or<T, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) v ({})",
-            self.left.to_string(),
-            self.right.to_string()
-        )
-    }
-}
-
 #[derive(Clone)]
 pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
@@ -100,12 +79,6 @@ where
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.operand.robustness(step).map(Y::not)
-    }
-}
-
-impl<T, Y> Display for Not<T, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "¬({})", self.operand.to_string())
     }
 }
 
@@ -134,16 +107,6 @@ where
         antecedent_robustness
             .zip(consequent_robustness)
             .map(|(a, c)| Y::implies(a, c))
-    }
-}
-impl<T, Y> Display for Implies<T, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) → ({})",
-            self.antecedent.to_string(),
-            self.consequent.to_string()
-        )
     }
 }
 
@@ -198,18 +161,6 @@ where
     }
 }
 
-impl<T, C, Y> Display for Eventually<T, C, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "F[{}, {}]({})",
-            self.interval.start.as_secs_f64(),
-            self.interval.end.as_secs_f64(),
-            self.operand.to_string()
-        )
-    }
-}
-
 #[derive(Clone)]
 pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
@@ -257,18 +208,6 @@ where
 {
     fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
         &mut self.operand
-    }
-}
-
-impl<T, C, Y> Display for Globally<T, Y, C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "G[{}, {}]({})",
-            self.interval.start.as_secs_f64(),
-            self.interval.end.as_secs_f64(),
-            self.operand.to_string()
-        )
     }
 }
 
@@ -359,19 +298,6 @@ where
     }
 }
 
-impl<T, C, Y> Display for Until<T, Y, C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) U[{}, {}] ({})",
-            self.left.to_string(),
-            self.interval.start.as_secs_f64(),
-            self.interval.end.as_secs_f64(),
-            self.right.to_string()
-        )
-    }
-}
-
 #[derive(Clone)]
 pub enum Atomic<Y> {
     LessThan(f64, std::marker::PhantomData<Y>),
@@ -423,5 +349,78 @@ impl<Y> Display for Atomic<Y> {
             Atomic::True(_) => write!(f, "True"),
             Atomic::False(_) => write!(f, "False"),
         }
+    }
+}
+impl<T, Y> Display for And<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) ∧ ({})",
+            self.left.to_string(),
+            self.right.to_string()
+        )
+    }
+}
+
+impl<T, C, Y> Display for Until<T, Y, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) U[{}, {}] ({})",
+            self.left.to_string(),
+            self.interval.start.as_secs_f64(),
+            self.interval.end.as_secs_f64(),
+            self.right.to_string()
+        )
+    }
+}
+
+impl<T, Y> Display for Or<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) v ({})",
+            self.left.to_string(),
+            self.right.to_string()
+        )
+    }
+}
+
+impl<T, C, Y> Display for Globally<T, Y, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "G[{}, {}]({})",
+            self.interval.start.as_secs_f64(),
+            self.interval.end.as_secs_f64(),
+            self.operand.to_string()
+        )
+    }
+}
+
+impl<T, C, Y> Display for Eventually<T, C, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "F[{}, {}]({})",
+            self.interval.start.as_secs_f64(),
+            self.interval.end.as_secs_f64(),
+            self.operand.to_string()
+        )
+    }
+}
+impl<T, Y> Display for Not<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "¬({})", self.operand.to_string())
+    }
+}
+impl<T, Y> Display for Implies<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}) → ({})",
+            self.antecedent.to_string(),
+            self.consequent.to_string()
+        )
     }
 }
