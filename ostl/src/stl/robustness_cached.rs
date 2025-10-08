@@ -6,13 +6,9 @@ use crate::stl::core::{
 use std::fmt::Display;
 
 #[derive(Clone)]
-pub struct And<T, Y>
-where
-    T: 'static,
-    Y: 'static,
-{
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+pub struct And<T, Y> {
+    pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
 }
 
 impl<T, Y> StlOperatorTrait<T> for And<T, Y>
@@ -31,7 +27,9 @@ where
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
 
-        left_robustness.zip(right_robustness).map(|(l, r)| Y::and(l, r))
+        left_robustness
+            .zip(right_robustness)
+            .map(|(l, r)| Y::and(l, r))
     }
 }
 impl<T, Y> Display for And<T, Y> {
@@ -46,13 +44,9 @@ impl<T, Y> Display for And<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Or<T, Y>
-where
-    T: 'static,
-    Y: 'static,
-{
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+pub struct Or<T, Y> {
+    pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
 }
 
 impl<T, Y> StlOperatorTrait<T> for Or<T, Y>
@@ -71,7 +65,9 @@ where
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
 
-        left_robustness.zip(right_robustness).map(|(l, r)| Y::or(l, r))
+        left_robustness
+            .zip(right_robustness)
+            .map(|(l, r)| Y::or(l, r))
     }
 }
 
@@ -87,12 +83,8 @@ impl<T, Y> Display for Or<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Not<T, Y>
-where
-    T: 'static,
-    Y: 'static,
-{
-    pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+pub struct Not<T, Y> {
+    pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
 }
 
 impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
@@ -118,13 +110,9 @@ impl<T, Y> Display for Not<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Implies<T, Y>
-where
-    T: 'static,
-    Y: 'static,
-{
-    pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
-    pub consequent: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+pub struct Implies<T, Y> {
+    pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
 }
 
 impl<T, Y> StlOperatorTrait<T> for Implies<T, Y>
@@ -143,7 +131,9 @@ where
         let antecedent_robustness = self.antecedent.robustness(step);
         let consequent_robustness = self.consequent.robustness(step);
 
-        antecedent_robustness.zip(consequent_robustness).map(|(a, c)| Y::implies(a, c))
+        antecedent_robustness
+            .zip(consequent_robustness)
+            .map(|(a, c)| Y::implies(a, c))
     }
 }
 impl<T, Y> Display for Implies<T, Y> {
@@ -160,7 +150,7 @@ impl<T, Y> Display for Implies<T, Y> {
 #[derive(Clone)]
 pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+    pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub cache: C,
 }
 
@@ -371,7 +361,7 @@ where
 
 impl<T, C, Y> Display for Until<T, Y, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write! (
+        write!(
             f,
             "({}) U[{}, {}] ({})",
             self.left.to_string(),
