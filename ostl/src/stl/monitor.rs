@@ -1,6 +1,6 @@
 use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{StlOperatorTrait, TimeInterval};
-use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Not, Or, Until}; // Added Until
+use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -9,23 +9,24 @@ use std::marker::PhantomData;
 // This mirrors the structure of the NaiveOperator enum for formula definition.
 #[derive(Clone)]
 pub enum FormulaDefinition {
-    GreaterThan(f64), // signal > c, where c is the threshold
-    LessThan(f64),    // signal < c, where c is the threshold
-    True,             // Constant True
-    False,            // Constant False
+    GreaterThan(f64),
+    LessThan(f64),
+    True,
+    False,
     And(Box<FormulaDefinition>, Box<FormulaDefinition>),
     Or(Box<FormulaDefinition>, Box<FormulaDefinition>),
     Not(Box<FormulaDefinition>),
+    Implies(Box<FormulaDefinition>, Box<FormulaDefinition>),
     Eventually(TimeInterval, Box<FormulaDefinition>),
     Globally(TimeInterval, Box<FormulaDefinition>),
-    Until(TimeInterval, Box<FormulaDefinition>, Box<FormulaDefinition>), // Added Until
+    Until(TimeInterval, Box<FormulaDefinition>, Box<FormulaDefinition>),
 }
 
 /// Defines the monitoring strategy.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MonitoringStrategy {
-    Naive,       // O(W) performance, no short-circuiting, time-implicit output
-    Incremental, // O(1) amortized performance, uses short-circuiting, time-explicit output
+    Naive,
+    Incremental,
 }
 
 /// The final monitor struct that handles the input stream.
@@ -47,6 +48,11 @@ impl<T: Clone> StlMonitor<T> {
         todo!("Implement advance_and_get_results for the root operator");
     }
 
+    /// Computes the instantaneous robustness for the current step.
+    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Option<f64> {
+        self.root_operator.robustness(step)
+    }
+
     /// Returns the string representation of the monitor's formula.
     pub fn specification_to_string(&self) -> String {
         self.root_operator.to_string()
@@ -64,7 +70,7 @@ impl<T> StlMonitorBuilder<T> {
     pub fn new() -> Self {
         StlMonitorBuilder {
             formula: None,
-            strategy: MonitoringStrategy::Incremental, // Default to fastest
+            strategy: MonitoringStrategy::Incremental, // Default
             _phantom: std::marker::PhantomData,
         }
     }
@@ -95,7 +101,6 @@ impl<T> StlMonitorBuilder<T> {
         let root_operator = match self.strategy {
             MonitoringStrategy::Incremental => self.build_incremental_operator(formula_def),
             MonitoringStrategy::Naive => self.build_naive_operator(formula_def),
-            _ => return Err("Unsupported monitoring strategy"),
         };
 
         Ok(StlMonitor {
@@ -190,6 +195,28 @@ impl<T> StlMonitorBuilder<T> {
                 signal: RingBuffer::new(),
                 _phantom: std::marker::PhantomData,
             }),
+            FormulaDefinition::Implies(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
+                formula: StlOperator::Implies(
+                    Box::new(
+                        self.build_naive_operator(*l)
+                            .as_any()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .unwrap()
+                            .formula
+                            .clone(),
+                    ),
+                    Box::new(
+                        self.build_naive_operator(*r)
+                            .as_any()
+                            .downcast_ref::<StlFormula<T, RingBuffer<T>, f64>>()
+                            .unwrap()
+                            .formula
+                            .clone(),
+                    ),
+                ),
+                signal: RingBuffer::new(),
+                _phantom: std::marker::PhantomData,
+            }),
             FormulaDefinition::Eventually(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, f64> {
                 formula: StlOperator::Eventually(
                     i,
@@ -269,6 +296,10 @@ impl<T> StlMonitorBuilder<T> {
             FormulaDefinition::Not(op) => Box::new(Not {
                 operand: self.build_incremental_operator(*op),
             }),
+            FormulaDefinition::Implies(l, r) => Box::new(Implies {
+                antecedent: self.build_incremental_operator(*l),
+                consequent: self.build_incremental_operator(*r),
+            }),
             FormulaDefinition::Eventually(i, op) => Box::new(Eventually {
                 interval: i,
                 operand: self.build_incremental_operator(*op),
@@ -291,13 +322,11 @@ impl<T> StlMonitorBuilder<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stl::monitor::{
-        FormulaDefinition, MonitoringStrategy, StlMonitor,
-    };
+    use crate::stl::monitor::{FormulaDefinition, MonitoringStrategy, StlMonitor};
     use std::time::Duration;
 
     #[test]
-    fn test_build() {
+    fn test_build_1() {
         let formula = FormulaDefinition::And(
             Box::new(FormulaDefinition::GreaterThan(5.0)),
             Box::new(FormulaDefinition::Eventually(
@@ -330,6 +359,81 @@ mod tests {
         let spec_naive = monitor_naive.specification_to_string();
         println!("Naive Monitor Specification: {}", spec_naive);
 
+        assert_eq!(spec, spec_naive);
+    }
+
+    #[test]
+    fn test_build_2() {
+        let formula = FormulaDefinition::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(5),
+            },
+            Box::new(FormulaDefinition::GreaterThan(3.0)),
+            Box::new(FormulaDefinition::LessThan(7.0)),
+        );
+
+        let monitor: StlMonitor<f64> = StlMonitor::builder()
+            .formula(formula.clone())
+            .strategy(MonitoringStrategy::Incremental)
+            .build()
+            .unwrap();
+
+        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
+            .formula(formula)
+            .strategy(MonitoringStrategy::Naive)
+            .build()
+            .unwrap();
+
+        assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
+        assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
+
+        let spec = monitor.specification_to_string();
+        println!("Monitor Specification: {}", spec);
+
+        let spec_naive = monitor_naive.specification_to_string();
+        println!("Naive Monitor Specification: {}", spec_naive);
+
+        assert_eq!(spec, spec_naive);
+    }
+
+    #[test]
+    fn test_build_3() {
+        // test nested temporals
+        let formula = FormulaDefinition::Globally(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(20),
+            },
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(5),
+                    end: Duration::from_secs(15),
+                },
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::GreaterThan(2.0)),
+                    Box::new(FormulaDefinition::LessThan(8.0)),
+                )),
+            )),
+        );
+
+        let monitor: StlMonitor<f64> = StlMonitor::builder()
+            .formula(formula.clone())
+            .strategy(MonitoringStrategy::Incremental)
+            .build()
+            .unwrap();
+        let monitor_naive: StlMonitor<f64> = StlMonitor::builder()
+            .formula(formula)
+            .strategy(MonitoringStrategy::Naive)
+            .build()
+            .unwrap();
+        assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
+        assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
+
+        let spec = monitor.specification_to_string();
+        println!("Monitor Specification: {}", spec);
+        let spec_naive = monitor_naive.specification_to_string();
+        println!("Naive Monitor Specification: {}", spec_naive);
         assert_eq!(spec, spec_naive);
     }
 }
