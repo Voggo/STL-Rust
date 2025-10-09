@@ -18,7 +18,7 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     fn as_any(&self) -> &dyn std::any::Any;
 
     // added DynClone for cloning trait objects
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>];
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>;
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
@@ -168,10 +168,8 @@ where
                 .filter(|entry| entry.timestamp >= lower_bound && entry.timestamp <= upper_bound)
                 .filter_map(|entry| entry.value.clone())
                 .fold(initial, f);
-            Some(result)
-        } else {
-            &[]
-        }
+        };
+        &[]
     }
 }
 

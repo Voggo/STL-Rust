@@ -1,7 +1,6 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{
-    BinaryTemporalOperatorTrait, RobustnessSemantics, StlOperatorTrait, TemporalOperatorBaseTrait,
-    TimeInterval, UnaryTemporalOperatorTrait,
+    RobustnessSemantics, StlOperatorTrait, TimeInterval
 };
 use std::fmt::Display;
 
@@ -24,14 +23,16 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
         // Get the robustness of the left and right children
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
 
-        left_robustness
-            .zip(right_robustness)
-            .map(|(l, r)| Y::and(l, r))
+        // left_robustness
+        //     .zip(right_robustness)
+        //     .map(|(l, r)| Y::and(l, r))
+
+        vec![]
     }
 }
 
@@ -54,20 +55,23 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
         // Get the robustness of the left and right children
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
 
-        left_robustness
-            .zip(right_robustness)
-            .map(|(l, r)| Y::or(l, r))
+        // left_robustness
+        //     .zip(right_robustness)
+        //     .map(|(l, r)| Y::or(l, r));
+
+        vec![]
     }
 }
 
 #[derive(Clone)]
 pub struct Not<T, C, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub eval_buffer: C,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Not<T, C, Y>
@@ -82,8 +86,9 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
-        self.operand.robustness(step).map(Y::not)
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
+        // self.operand.robustness(step).map(Y::not)
+        vec![]
     }
 }
 
@@ -106,14 +111,16 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
         // Get the robustness of the antecedent and consequent
         let antecedent_robustness = self.antecedent.robustness(step);
         let consequent_robustness = self.consequent.robustness(step);
 
-        antecedent_robustness
-            .zip(consequent_robustness)
-            .map(|(a, c)| Y::implies(a, c))
+        // antecedent_robustness
+        //     .zip(consequent_robustness)
+        //     .map(|(a, c)| Y::implies(a, c))
+
+        vec![]
     }
 }
 
@@ -137,35 +144,19 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>]{
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
         // Use the identity and combining function from the trait
-        self.robustness_unary_with(step, Y::eventually_identity(), Y::or)
-    }
-}
+        let sub_robustness_vec = self.operand.robustness(step).to_vec();
 
-impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Eventually<T, C, Y>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn interval(&self) -> TimeInterval {
-        self.interval
-    }
+        sub_robustness_vec
+            .into_iter()
+            .for_each(|step| self.cache.add_step(step));
 
-    fn cache(&mut self) -> &mut C {
-        &mut self.cache
-    }
-}
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound = t + self.interval.start;
+        let upper_bound = t + self.interval.end;
 
-impl<T, C, Y> UnaryTemporalOperatorTrait<T, C> for Eventually<T, C, Y>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
-        &mut self.operand
+        vec![]
     }
 }
 
@@ -189,34 +180,26 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
-        self.robustness_unary_with(step, Y::globally_identity(), Y::and)
-    }
-}
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
+        let sub_robustness_vec = self.operand.robustness(step).to_vec();
 
-impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Globally<T, Y, C>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn interval(&self) -> TimeInterval {
-        self.interval
-    }
+        // sub_robustness_vec
+        //     .into_iter()
+        //     .for_each(|step| self.cache().add_step(step));
 
-    fn cache(&mut self) -> &mut C {
-        &mut self.cache
-    }
-}
+        // let t = step.timestamp.saturating_sub(self.interval().end);
+        // let lower_bound = t + self.interval().start;
+        // let upper_bound = t + self.interval().end;
 
-impl<T, C, Y> UnaryTemporalOperatorTrait<T, C> for Globally<T, Y, C>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
-        &mut self.operand
+        // if self.is_cache_sufficient(lower_bound, upper_bound, t) {
+        //     let result = self
+        //         .cache()
+        //         .iter()
+        //         .filter(|entry| entry.timestamp >= lower_bound && entry.timestamp <= upper_bound)
+        //         .filter_map(|entry| entry.value.clone())
+        //         .fold(Y::globally_identity(), Y::and);
+        // };
+        vec![]
     }
 }
 
@@ -241,70 +224,42 @@ where
         self
     }
 
-    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
-        let right_robustness = self.right.robustness(step)?;
-        self.cache
-            .add_step(self.left.robustness(step), step.timestamp);
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
+        let right_robustness = self.right.robustness(step);
+        // self.cache
+        //     .add_step(self.left.robustness(step), step.timestamp);
 
-        // The window of interest for the left operand's past robustness values
-        let t = step.timestamp.saturating_sub(self.interval.end);
-        let lower_bound_t_prime = t + self.interval.start;
-        let upper_bound_t_prime = t + self.interval.end;
+        // // The window of interest for the left operand's past robustness values
+        // let t = step.timestamp.saturating_sub(self.interval.end);
+        // let lower_bound_t_prime = t + self.interval.start;
+        // let upper_bound_t_prime = t + self.interval.end;
 
-        // Ensure we have enough data to evaluate the window
-        if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
-            let max_robustness = self
-                .cache
-                .iter()
-                .filter(|entry| {
-                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-                })
-                .map(|entry| {
-                    let t_prime = entry.timestamp;
-                    let min_left_robustness = self
-                        .cache
-                        .iter()
-                        .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
-                        .filter_map(|e| e.value.clone())
-                        .fold(Y::globally_identity(), Y::and);
+        // // Ensure we have enough data to evaluate the window
+        // if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
+        //     let max_robustness = self
+        //         .cache
+        //         .iter()
+        //         .filter(|entry| {
+        //             entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+        //         })
+        //         .map(|entry| {
+        //             let t_prime = entry.timestamp;
+        //             let min_left_robustness = self
+        //                 .cache
+        //                 .iter()
+        //                 .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
+        //                 .filter_map(|e| e.value.clone())
+        //                 .fold(Y::globally_identity(), Y::and);
 
-                    Y::and(right_robustness.clone(), min_left_robustness) // OBS: Using clone() here !!!!!!!!!!!!!!!!!!!!!! Should maybe be changed
-                })
-                .fold(Y::eventually_identity(), Y::or);
+        //             Y::and(right_robustness.clone(), min_left_robustness) // OBS: Using clone() here !!!!!!!!!!!!!!!!!!!!!! Should maybe be changed
+        //         })
+        //         .fold(Y::eventually_identity(), Y::or);
 
-            Some(max_robustness)
-        } else {
-            None // Not enough data to evaluate
-        }
-    }
-}
-impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Until<T, C, Y>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn interval(&self) -> TimeInterval {
-        self.interval
-    }
-
-    fn cache(&mut self) -> &mut C {
-        &mut self.cache
-    }
-}
-
-impl<T, C, Y> BinaryTemporalOperatorTrait<T, C> for Until<T, C, Y>
-where
-    T: Clone + 'static,
-    Y: Clone + RobustnessSemantics + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-{
-    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
-        &mut self.left
-    }
-
-    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
-        &mut self.right
+        //     Some(max_robustness)
+        // } else {
+        //     None // Not enough data to evaluate
+        // }
+        vec![]
     }
 }
 
@@ -337,13 +292,25 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
         let value = step.value.clone().into();
         match self {
-            Atomic::True(_) => Some(Y::atomic_true()),
-            Atomic::False(_) => Some(Y::atomic_false()),
-            Atomic::GreaterThan(c, _) => Some(Y::atomic_greater_than(value, *c)),
-            Atomic::LessThan(c, _) => Some(Y::atomic_less_than(value, *c)),
+            Atomic::True(_) => vec![Step {
+                value: Some(Y::atomic_true()),
+                timestamp: step.timestamp,
+            }],
+            Atomic::False(_) => vec![Step {
+                value: Some(Y::atomic_false()),
+                timestamp: step.timestamp,
+            }],
+            Atomic::GreaterThan(c, _) => vec![Step {
+                value: Some(Y::atomic_greater_than(value, *c)),
+                timestamp: step.timestamp,
+            }],
+            Atomic::LessThan(c, _) => vec![Step {
+                value: Some(Y::atomic_less_than(value, *c)),
+                timestamp: step.timestamp,
+            }],
         }
     }
     fn as_any(&self) -> &dyn std::any::Any {
@@ -361,7 +328,7 @@ impl<Y> Display for Atomic<Y> {
         }
     }
 }
-impl<T, Y> Display for And<T, Y> {
+impl<T, C, Y> Display for And<T, C, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -385,7 +352,7 @@ impl<T, C, Y> Display for Until<T, Y, C> {
     }
 }
 
-impl<T, Y> Display for Or<T, Y> {
+impl<T, C, Y> Display for Or<T, C, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -419,12 +386,12 @@ impl<T, C, Y> Display for Eventually<T, C, Y> {
         )
     }
 }
-impl<T, Y> Display for Not<T, Y> {
+impl<T, C, Y> Display for Not<T, C, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "¬({})", self.operand.to_string())
     }
 }
-impl<T, Y> Display for Implies<T, Y> {
+impl<T, C, Y> Display for Implies<T, C, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
