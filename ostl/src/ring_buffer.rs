@@ -25,7 +25,7 @@ pub trait RingBufferTrait {
     fn get_back(&self) -> Option<&Step<Self::Value>>;
     fn get_front(&self) -> Option<&Step<Self::Value>>;
 
-    fn add_step(&mut self, value: Self::Value, timestamp: Duration);
+    fn add_step(&mut self, step: Step<Self::Value>);
     fn prune(&mut self, current_time: Duration, max_age: Duration);
 
     // The iter method now returns the generic iterator type.
@@ -47,8 +47,8 @@ where
         }
     }
 
-    pub fn add_step(&mut self, value: T, timestamp: Duration) {
-        self.steps.push_back(Step { value, timestamp });
+    pub fn add_step(&mut self, step: Step<T>) {
+        self.steps.push_back(step);
     }
 
     pub fn iter(&self) -> std::collections::vec_deque::Iter<Step<T>> {
@@ -83,14 +83,13 @@ where
         self.steps.front()
     }
 
-    fn add_step(&mut self, value: T, timestamp: Duration) {
-        self.add_step(value, timestamp)
+    fn add_step(&mut self, step: Step<T>) {
+        self.add_step(step)
     }
 
     fn prune(&mut self, current_time: Duration, max_age: Duration) {
         let cutoff_time = current_time.saturating_sub(max_age);
 
-        // remove_while is unstable, so we use a while loop
         while let Some(front_step) = self.steps.front() {
             if front_step.timestamp < cutoff_time {
                 self.steps.pop_front();

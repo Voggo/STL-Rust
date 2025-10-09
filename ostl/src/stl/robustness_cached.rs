@@ -6,14 +6,16 @@ use crate::stl::core::{
 use std::fmt::Display;
 
 #[derive(Clone)]
-pub struct And<T, Y> {
+pub struct And<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub eval_buffer: C,
 }
 
-impl<T, Y> StlOperatorTrait<T> for And<T, Y>
+impl<T, C, Y> StlOperatorTrait<T> for And<T, C, Y>
 where
     T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
@@ -22,7 +24,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         // Get the robustness of the left and right children
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
@@ -34,14 +36,16 @@ where
 }
 
 #[derive(Clone)]
-pub struct Or<T, Y> {
+pub struct Or<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub eval_buffer: C,
 }
 
-impl<T, Y> StlOperatorTrait<T> for Or<T, Y>
+impl<T, C, Y> StlOperatorTrait<T> for Or<T, C, Y>
 where
     T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
@@ -50,7 +54,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         // Get the robustness of the left and right children
         let left_robustness = self.left.robustness(step);
         let right_robustness = self.right.robustness(step);
@@ -62,13 +66,14 @@ where
 }
 
 #[derive(Clone)]
-pub struct Not<T, Y> {
+pub struct Not<T, C, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
 }
 
-impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
+impl<T, C, Y> StlOperatorTrait<T> for Not<T, C, Y>
 where
     T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
@@ -77,20 +82,22 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         self.operand.robustness(step).map(Y::not)
     }
 }
 
 #[derive(Clone)]
-pub struct Implies<T, Y> {
+pub struct Implies<T, C, Y> {
     pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub eval_buffer: C,
 }
 
-impl<T, Y> StlOperatorTrait<T> for Implies<T, Y>
+impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
 where
     T: Clone + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
@@ -99,7 +106,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         // Get the robustness of the antecedent and consequent
         let antecedent_robustness = self.antecedent.robustness(step);
         let consequent_robustness = self.consequent.robustness(step);
@@ -115,6 +122,7 @@ pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub cache: C,
+    pub eval_buffer: C,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Eventually<T, C, Y>
@@ -129,7 +137,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>]{
         // Use the identity and combining function from the trait
         self.robustness_unary_with(step, Y::eventually_identity(), Y::or)
     }
@@ -166,6 +174,7 @@ pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub cache: C,
+    pub eval_buffer: C,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Globally<T, Y, C>
@@ -180,7 +189,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         self.robustness_unary_with(step, Y::globally_identity(), Y::and)
     }
 }
@@ -217,6 +226,7 @@ pub struct Until<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub cache: C,
+    pub eval_buffer: C,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Until<T, C, Y>
@@ -231,7 +241,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>] {
         let right_robustness = self.right.robustness(step)?;
         self.cache
             .add_step(self.left.robustness(step), step.timestamp);

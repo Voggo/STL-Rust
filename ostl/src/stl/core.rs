@@ -18,7 +18,7 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     fn as_any(&self) -> &dyn std::any::Any;
 
     // added DynClone for cloning trait objects
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output>;
+    fn robustness<'a>(&'a mut self, step: &Step<T>) -> &'a [Step<Option<Self::Output>>];
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
@@ -140,19 +140,22 @@ where
 {
     fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>>;
 
-    fn robustness_unary_with<F>(
+    fn robustness_unary_with<'a, F>(
         &mut self,
         step: &Step<T>,
         initial: Self::Output,
         f: F,
-    ) -> Option<Self::Output>
+    ) -> &'a [Step<Option<Self::Output>>]
     where
         F: Fn(Self::Output, Self::Output) -> Self::Output,
         Self::Output: Clone,
         Self: Sized,
     {
-        let sub_robustness = self.operand().robustness(step);
-        self.cache().add_step(sub_robustness, step.timestamp);
+        let sub_robustness_vec = self.operand().robustness(step).to_vec();
+
+        sub_robustness_vec
+            .into_iter()
+            .for_each(|step| self.cache().add_step(step));
 
         let t = step.timestamp.saturating_sub(self.interval().end);
         let lower_bound = t + self.interval().start;
@@ -167,7 +170,7 @@ where
                 .fold(initial, f);
             Some(result)
         } else {
-            None
+            &[]
         }
     }
 }
