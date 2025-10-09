@@ -1,5 +1,5 @@
-use std::time::Duration;
 use std::fmt::Display;
+use std::time::Duration;
 
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
@@ -81,6 +81,10 @@ where
         self.signal.add_step(step.value.clone(), step.timestamp);
         self.formula.robustness_naive(&self.signal, step) // robustness for signal at step.timestamp
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.formula.get_max_lookahead().as_secs() as usize
+    }
 }
 
 impl StlOperator {
@@ -103,18 +107,27 @@ impl StlOperator {
             StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal, current_step),
             StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal, current_step),
             StlOperator::Implies(phi, psi) => self.eval_implies(phi, psi, signal, current_step),
-            StlOperator::Eventually(interval, phi) => self.eval_eventually(interval, phi, signal, current_step),
-            StlOperator::Globally(interval, phi) => self.eval_globally(interval, phi, signal, current_step),
-            StlOperator::Until(interval, phi, psi) => self.eval_until(interval, phi, psi, signal, current_step),
+            StlOperator::Eventually(interval, phi) => {
+                self.eval_eventually(interval, phi, signal, current_step)
+            }
+            StlOperator::Globally(interval, phi) => {
+                self.eval_globally(interval, phi, signal, current_step)
+            }
+            StlOperator::Until(interval, phi, psi) => {
+                self.eval_until(interval, phi, psi, signal, current_step)
+            }
         }
     }
 
     /// Recursively computes the maximum lookahead time required for the formula.
     pub fn get_max_lookahead(&self) -> Duration {
         match self {
-            StlOperator::Globally(interval, f)
-            | StlOperator::Eventually(interval, f)
-            | StlOperator::Until(interval, f, _) => interval.end.max(f.get_max_lookahead()),
+            StlOperator::Globally(interval, f) | StlOperator::Eventually(interval, f) => {
+                interval.end + f.get_max_lookahead()
+            }
+            StlOperator::Until(interval, f1, f2) => {
+                interval.end + f1.get_max_lookahead().max(f2.get_max_lookahead())
+            }
             StlOperator::Not(f) => f.get_max_lookahead(),
             StlOperator::And(f1, f2) | StlOperator::Or(f1, f2) | StlOperator::Implies(f1, f2) => {
                 f1.get_max_lookahead().max(f2.get_max_lookahead())
@@ -176,7 +189,13 @@ impl StlOperator {
             .map(|(r1, r2)| Y::and(r1, r2))
     }
 
-    fn eval_or<T, S, Y>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    fn eval_or<T, S, Y>(
+        &self,
+        phi: &StlOperator,
+        psi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -187,7 +206,13 @@ impl StlOperator {
             .map(|(r1, r2)| Y::or(r1, r2))
     }
 
-    fn eval_implies<T, S, Y>(&self, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    fn eval_implies<T, S, Y>(
+        &self,
+        phi: &StlOperator,
+        psi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -198,7 +223,13 @@ impl StlOperator {
             .map(|(r1, r2)| Y::implies(r1, r2))
     }
 
-    fn eval_eventually<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    fn eval_eventually<T, S, Y>(
+        &self,
+        interval: &TimeInterval,
+        phi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -214,7 +245,9 @@ impl StlOperator {
 
         let result = signal
             .iter()
-            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .filter(|step| {
+                step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
+            })
             .map(|step| phi.robustness_naive(signal, step))
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(v)) => Some(Y::or(a, v)),
@@ -225,7 +258,13 @@ impl StlOperator {
         Some(result)
     }
 
-    fn eval_globally<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    fn eval_globally<T, S, Y>(
+        &self,
+        interval: &TimeInterval,
+        phi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -241,7 +280,9 @@ impl StlOperator {
 
         let result = signal
             .iter()
-            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .filter(|step| {
+                step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
+            })
             .map(|step| phi.robustness_naive(signal, step))
             .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(v)) => Some(Y::and(a, v)),
@@ -252,7 +293,14 @@ impl StlOperator {
         Some(result)
     }
 
-    fn eval_until<T, S, Y>(&self, interval: &TimeInterval, phi: &StlOperator, psi: &StlOperator, signal: &S, current_step: &Step<T>) -> Option<Y>
+    fn eval_until<T, S, Y>(
+        &self,
+        interval: &TimeInterval,
+        phi: &StlOperator,
+        psi: &StlOperator,
+        signal: &S,
+        current_step: &Step<T>,
+    ) -> Option<Y>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -268,7 +316,9 @@ impl StlOperator {
 
         let result = signal
             .iter()
-            .filter(|step| step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime)
+            .filter(|step| {
+                step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
+            })
             .map(|step| {
                 let t_prime = step.timestamp;
                 let robustness_psi = psi.robustness_naive(signal, step);
@@ -282,7 +332,9 @@ impl StlOperator {
                         (None, Some(v)) => Some(v),
                         (None, None) => None,
                     });
-                robustness_psi.zip(robustness_phi).map(|(r_psi, r_phi)| Y::and(r_psi, r_phi))
+                robustness_psi
+                    .zip(robustness_phi)
+                    .map(|(r_psi, r_phi)| Y::and(r_psi, r_phi))
             })
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(v)) => Some(Y::or(a, v)),
@@ -347,34 +399,39 @@ impl StlOperator {
 }
 impl Display for StlOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            StlOperator::True => "True".to_string(),
-            StlOperator::False => "False".to_string(),
-            StlOperator::Not(f) => format!("¬({})", f.to_string()),
-            StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
-            StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
-            StlOperator::Globally(interval, f) => format!(
-                "G[{}, {}]({})",
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f.to_string()
-            ),
-            StlOperator::Eventually(interval, f) => format!(
-                "F[{}, {}]({})",
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f.to_string()
-            ),
-            StlOperator::Until(interval, f1, f2) => format!(
-                "({}) U[{}, {}] ({})",
-                f1.to_string(),
-                interval.start.as_secs_f64(),
-                interval.end.as_secs_f64(),
-                f2.to_string()
-            ),
-            StlOperator::Implies(f1, f2) => format!("({}) → ({})", f1.to_string(), f2.to_string()),
-            StlOperator::GreaterThan(val) => format!("x > {}", val),
-            StlOperator::LessThan(val) => format!("x < {}", val),
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                StlOperator::True => "True".to_string(),
+                StlOperator::False => "False".to_string(),
+                StlOperator::Not(f) => format!("¬({})", f.to_string()),
+                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
+                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
+                StlOperator::Globally(interval, f) => format!(
+                    "G[{}, {}]({})",
+                    interval.start.as_secs_f64(),
+                    interval.end.as_secs_f64(),
+                    f.to_string()
+                ),
+                StlOperator::Eventually(interval, f) => format!(
+                    "F[{}, {}]({})",
+                    interval.start.as_secs_f64(),
+                    interval.end.as_secs_f64(),
+                    f.to_string()
+                ),
+                StlOperator::Until(interval, f1, f2) => format!(
+                    "({}) U[{}, {}] ({})",
+                    f1.to_string(),
+                    interval.start.as_secs_f64(),
+                    interval.end.as_secs_f64(),
+                    f2.to_string()
+                ),
+                StlOperator::Implies(f1, f2) =>
+                    format!("({}) → ({})", f1.to_string(), f2.to_string()),
+                StlOperator::GreaterThan(val) => format!("x > {}", val),
+                StlOperator::LessThan(val) => format!("x < {}", val),
+            }
+        )
     }
 }
