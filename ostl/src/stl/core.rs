@@ -11,14 +11,14 @@ pub struct TimeInterval {
 }
 
 // stloperator trait
+// added DynClone for cloning trait objects
 pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     type Output;
 
     // Added as_any for downcasting
     fn as_any(&self) -> &dyn std::any::Any;
-
-    // added DynClone for cloning trait objects
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output>;
+    fn get_temporal_depth(&self) -> usize;
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);

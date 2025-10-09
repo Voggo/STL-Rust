@@ -31,6 +31,12 @@ where
             .zip(right_robustness)
             .map(|(l, r)| Y::and(l, r))
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -59,6 +65,12 @@ where
             .zip(right_robustness)
             .map(|(l, r)| Y::or(l, r))
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -79,6 +91,10 @@ where
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.operand.robustness(step).map(Y::not)
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth()
     }
 }
 
@@ -108,6 +124,12 @@ where
             .zip(consequent_robustness)
             .map(|(a, c)| Y::implies(a, c))
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let antecedent_depth = self.antecedent.get_temporal_depth();
+        let consequent_depth = self.consequent.get_temporal_depth();
+        antecedent_depth.max(consequent_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -132,6 +154,10 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         // Use the identity and combining function from the trait
         self.robustness_unary_with(step, Y::eventually_identity(), Y::or)
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth() + self.interval.end.as_secs() as usize
     }
 }
 
@@ -182,6 +208,10 @@ where
 
     fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
         self.robustness_unary_with(step, Y::globally_identity(), Y::and)
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth() + self.interval.end.as_secs() as usize
     }
 }
 
@@ -267,6 +297,12 @@ where
             None // Not enough data to evaluate
         }
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth) + self.interval.end.as_secs() as usize
+    }
 }
 impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Until<T, C, Y>
 where
@@ -336,8 +372,12 @@ where
             Atomic::LessThan(c, _) => Some(Y::atomic_less_than(value, *c)),
         }
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+    fn get_temporal_depth(&self) -> usize {
+        0
     }
 }
 
