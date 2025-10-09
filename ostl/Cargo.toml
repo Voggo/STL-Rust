@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 dyn-clone = "1.0.20"
+proptest = "1.8.0"

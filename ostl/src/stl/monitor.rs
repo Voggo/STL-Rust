@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 // The input definition of the STL formula, independent of implementation.
 // This mirrors the structure of the NaiveOperator enum for formula definition.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FormulaDefinition {
     GreaterThan(f64),
     LessThan(f64),
