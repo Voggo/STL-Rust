@@ -9,13 +9,15 @@ pub struct Step<T> {
 pub trait RingBufferTrait {
     // The type of the value stored in the signal
     type Value;
-    
+
     // The container that holds the steps
     type Container: IntoIterator;
 
     // A Generic Associated Type (GAT) for the iterator.
     // The <'a> here links the iterator's lifetime to the lifetime of `&'a self`.
-    type Iter<'a>: Iterator<Item = &'a Step<Self::Value>> where Self: 'a;
+    type Iter<'a>: Iterator<Item = &'a Step<Self::Value>>
+    where
+        Self: 'a;
 
     fn new() -> Self;
     fn is_empty(&self) -> bool;
@@ -60,7 +62,10 @@ where
 {
     type Value = T;
     type Container = VecDeque<Step<T>>;
-    type Iter<'a> = std::collections::vec_deque::Iter<'a, Step<T>> where Self: 'a;
+    type Iter<'a>
+        = std::collections::vec_deque::Iter<'a, Step<T>>
+    where
+        Self: 'a;
 
     fn new() -> Self {
         RingBuffer::new()
@@ -83,7 +88,16 @@ where
     }
 
     fn prune(&mut self, current_time: Duration, max_age: Duration) {
-        todo!("Implementation for pruning old steps")
+        let cutoff_time = current_time.saturating_sub(max_age);
+
+        // remove_while is unstable, so we use a while loop
+        while let Some(front_step) = self.steps.front() {
+            if front_step.timestamp < cutoff_time {
+                self.steps.pop_front();
+            } else {
+                break;
+            }
+        }
     }
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
