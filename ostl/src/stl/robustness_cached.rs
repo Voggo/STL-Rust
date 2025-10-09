@@ -1,14 +1,107 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
-use crate::stl::core::{
-    RobustnessSemantics, StlOperatorTrait, TimeInterval
-};
+use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 use std::fmt::Display;
+
+fn process_binary_operator_caches<C, Y, F>(
+    left_cache: &mut C,
+    right_cache: &mut C,
+    left_last_known: &mut Option<Y>,
+    right_last_known: &mut Option<Y>,
+    combine_op: F,
+) -> Vec<Step<Option<Y>>>
+where
+    C: RingBufferTrait<Value = Option<Y>>,
+    Y: RobustnessSemantics,
+    F: Fn(Y, Y) -> Y,
+{
+    let mut output_robustness = Vec::new();
+
+    loop {
+        match (left_cache.get_front(), right_cache.get_front()) {
+            (Some(left_step), Some(right_step)) => {
+                let new_step = if left_step.timestamp < right_step.timestamp {
+                    let combined_value = left_step.value.as_ref().and_then(|l_val| {
+                        right_last_known
+                            .as_ref()
+                            .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+                    });
+                    *left_last_known = left_step.value.clone();
+                    let step = left_cache.pop_front().unwrap();
+                    Step {
+                        value: combined_value,
+                        timestamp: step.timestamp,
+                    }
+                } else if right_step.timestamp < left_step.timestamp {
+                    let combined_value = right_step.value.as_ref().and_then(|r_val| {
+                        left_last_known
+                            .as_ref()
+                            .map(|l_val| combine_op(l_val.clone(), r_val.clone()))
+                    });
+                    *right_last_known = right_step.value.clone();
+                    let step = right_cache.pop_front().unwrap();
+                    Step {
+                        value: combined_value,
+                        timestamp: step.timestamp,
+                    }
+                } else {
+                    let combined_value = left_step.value.as_ref().and_then(|l_val| {
+                        right_step
+                            .value
+                            .as_ref()
+                            .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+                    });
+                    *left_last_known = left_step.value.clone();
+                    *right_last_known = right_step.value.clone();
+                    let step = left_cache.pop_front().unwrap();
+                    right_cache.pop_front();
+                    Step {
+                        value: combined_value,
+                        timestamp: step.timestamp,
+                    }
+                };
+                output_robustness.push(new_step);
+            }
+            (Some(left_step), None) => {
+                let combined_value = left_step.value.as_ref().and_then(|l_val| {
+                    right_last_known
+                        .as_ref()
+                        .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+                });
+                *left_last_known = left_step.value.clone();
+                let step = left_cache.pop_front().unwrap();
+                output_robustness.push(Step {
+                    value: combined_value,
+                    timestamp: step.timestamp,
+                });
+            }
+            (None, Some(right_step)) => {
+                let combined_value = right_step.value.as_ref().and_then(|r_val| {
+                    left_last_known
+                        .as_ref()
+                        .map(|l_val| combine_op(l_val.clone(), r_val.clone()))
+                });
+                *right_last_known = right_step.value.clone();
+                let step = right_cache.pop_front().unwrap();
+                output_robustness.push(Step {
+                    value: combined_value,
+                    timestamp: step.timestamp,
+                });
+            }
+            (None, None) => break,
+        }
+    }
+
+    output_robustness
+}
 
 #[derive(Clone)]
 pub struct And<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub eval_buffer: C,
+    pub left_cache: C,
+    pub right_cache: C,
+    left_last_known: Option<Y>,
+    right_last_known: Option<Y>,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for And<T, C, Y>
@@ -23,16 +116,24 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        // Get the robustness of the left and right children
-        let left_robustness = self.left.robustness(step);
-        let right_robustness = self.right.robustness(step);
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let left_updates = self.left.robustness(step);
+        for update in left_updates {
+            self.left_cache.add_step(update);
+        }
 
-        // left_robustness
-        //     .zip(right_robustness)
-        //     .map(|(l, r)| Y::and(l, r))
+        let right_updates = self.right.robustness(step);
+        for update in right_updates {
+            self.right_cache.add_step(update);
+        }
 
-        vec![]
+        process_binary_operator_caches(
+            &mut self.left_cache,
+            &mut self.right_cache,
+            &mut self.left_last_known,
+            &mut self.right_last_known,
+            Y::and, // The only difference!
+        )
     }
 }
 
@@ -40,7 +141,10 @@ where
 pub struct Or<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub eval_buffer: C,
+    pub left_cache: C,
+    pub right_cache: C,
+    left_last_known: Option<Y>,
+    right_last_known: Option<Y>,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Or<T, C, Y>
@@ -55,29 +159,35 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        // Get the robustness of the left and right children
-        let left_robustness = self.left.robustness(step);
-        let right_robustness = self.right.robustness(step);
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let left_updates = self.left.robustness(step);
+        for update in left_updates {
+            self.left_cache.add_step(update);
+        }
 
-        // left_robustness
-        //     .zip(right_robustness)
-        //     .map(|(l, r)| Y::or(l, r));
+        let right_updates = self.right.robustness(step);
+        for update in right_updates {
+            self.right_cache.add_step(update);
+        }
 
-        vec![]
+        process_binary_operator_caches(
+            &mut self.left_cache,
+            &mut self.right_cache,
+            &mut self.left_last_known,
+            &mut self.right_last_known,
+            Y::or, // The only difference!
+        )
     }
 }
 
 #[derive(Clone)]
-pub struct Not<T, C, Y> {
+pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub eval_buffer: C,
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for Not<T, C, Y>
+impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
@@ -86,9 +196,21 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        // self.operand.robustness(step).map(Y::not)
-        vec![]
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let operand_updates = self.operand.robustness(step);
+
+        let output_robustness: Vec<Step<Option<Y>>> = operand_updates
+            .into_iter()
+            .map(|step| {
+                let negated_value = step.value.map(Y::not);
+                Step {
+                    value: negated_value,
+                    timestamp: step.timestamp,
+                }
+            })
+            .collect();
+
+        output_robustness
     }
 }
 
@@ -96,7 +218,10 @@ where
 pub struct Implies<T, C, Y> {
     pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub eval_buffer: C,
+    pub left_cache: C,
+    pub right_cache: C,
+    pub left_last_known: Option<Y>,
+    pub right_last_known: Option<Y>,
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
@@ -111,16 +236,24 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        // Get the robustness of the antecedent and consequent
-        let antecedent_robustness = self.antecedent.robustness(step);
-        let consequent_robustness = self.consequent.robustness(step);
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let left_updates = self.antecedent.robustness(step);
+        for update in left_updates {
+            self.left_cache.add_step(update);
+        }
 
-        // antecedent_robustness
-        //     .zip(consequent_robustness)
-        //     .map(|(a, c)| Y::implies(a, c))
+        let right_updates = self.consequent.robustness(step);
+        for update in right_updates {
+            self.right_cache.add_step(update);
+        }
 
-        vec![]
+        process_binary_operator_caches(
+            &mut self.left_cache,
+            &mut self.right_cache,
+            &mut self.left_last_known,
+            &mut self.right_last_known,
+            Y::and, // The only difference!
+        )
     }
 }
 
@@ -144,19 +277,68 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        // Use the identity and combining function from the trait
-        let sub_robustness_vec = self.operand.robustness(step).to_vec();
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let sub_robustness_vec = self.operand.robustness(step);
+        let mut output_robustness = Vec::new();
 
-        sub_robustness_vec
-            .into_iter()
-            .for_each(|step| self.cache.add_step(step));
+        // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
+        for sub_step in sub_robustness_vec {
+            self.cache.add_step(sub_step.clone());
+            // Add a task to the evaluation buffer for this new timestamp.
+            // The `value` is None because it's just a placeholder for a pending task.
+            self.eval_buffer.add_step(Step {
+                value: None,
+                timestamp: sub_step.timestamp,
+            });
+        }
 
-        let t = step.timestamp.saturating_sub(self.interval.end);
-        let lower_bound = t + self.interval.start;
-        let upper_bound = t + self.interval.end;
+        // 2. Process the evaluation buffer for tasks that can now be completed.
+        while let Some(eval_task) = self.eval_buffer.get_front() {
+            let t_eval = eval_task.timestamp;
+            let window_start = t_eval + self.interval.start;
+            let window_end = t_eval + self.interval.end;
 
-        vec![]
+            // Find the maximum robustness within the part of the window we have seen so far.
+            let max_in_window = self
+                .cache
+                .iter()
+                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .filter_map(|entry| entry.value.clone())
+                .fold(Y::eventually_identity(), Y::or);
+
+            // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
+            if max_in_window == Y::atomic_true() {
+                self.eval_buffer.pop_front(); // Task is done
+                output_robustness.push(Step {
+                    value: Some(max_in_window),
+                    timestamp: t_eval,
+                });
+                continue; // Move to the next task
+            }
+
+            // B. Check for normal completion: if the full time window has passed.
+            if step.timestamp >= window_end {
+                self.eval_buffer.pop_front(); // Task is done
+                output_robustness.push(Step {
+                    value: Some(max_in_window),
+                    timestamp: t_eval,
+                });
+                continue; // Move to the next task
+            }
+
+            // C. If neither condition is met, we can't resolve this task yet.
+            // Since the buffer is time-ordered, we stop for this cycle.
+            break;
+        }
+
+        // 3. Prune the cache to remove old values that are no longer needed.
+        // A value at time `t` is only needed as long as it can be in some future window.
+        // The latest possible window starts at `step.timestamp`, so we need to keep values
+        // back to `step.timestamp + interval.start - interval.end`.
+        // A simpler, safe bound is to just keep `interval.end` duration of history.
+        self.cache.prune(step.timestamp, self.interval.end);
+
+        output_robustness
     }
 }
 
@@ -180,8 +362,8 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
-        let sub_robustness_vec = self.operand.robustness(step).to_vec();
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let sub_robustness_vec = self.operand.robustness(step);
 
         // sub_robustness_vec
         //     .into_iter()
@@ -224,7 +406,7 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let right_robustness = self.right.robustness(step);
         // self.cache
         //     .add_step(self.left.robustness(step), step.timestamp);
@@ -292,26 +474,19 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>{
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let value = step.value.clone().into();
-        match self {
-            Atomic::True(_) => vec![Step {
-                value: Some(Y::atomic_true()),
-                timestamp: step.timestamp,
-            }],
-            Atomic::False(_) => vec![Step {
-                value: Some(Y::atomic_false()),
-                timestamp: step.timestamp,
-            }],
-            Atomic::GreaterThan(c, _) => vec![Step {
-                value: Some(Y::atomic_greater_than(value, *c)),
-                timestamp: step.timestamp,
-            }],
-            Atomic::LessThan(c, _) => vec![Step {
-                value: Some(Y::atomic_less_than(value, *c)),
-                timestamp: step.timestamp,
-            }],
-        }
+        let result = match self {
+            Atomic::True(_) => Y::atomic_true(),
+            Atomic::False(_) => Y::atomic_false(),
+            Atomic::GreaterThan(c, _) => Y::atomic_greater_than(value, *c),
+            Atomic::LessThan(c, _) => Y::atomic_less_than(value, *c),
+        };
+
+        vec![Step {
+            value: Some(result),
+            timestamp: step.timestamp,
+        }]
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -386,7 +561,7 @@ impl<T, C, Y> Display for Eventually<T, C, Y> {
         )
     }
 }
-impl<T, C, Y> Display for Not<T, C, Y> {
+impl<T, Y> Display for Not<T, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "¬({})", self.operand.to_string())
     }

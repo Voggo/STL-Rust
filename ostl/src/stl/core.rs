@@ -23,7 +23,7 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
-pub trait RobustnessSemantics: Clone {
+pub trait RobustnessSemantics: Clone + PartialEq {
     fn and(l: Self, r: Self) -> Self;
     fn or(l: Self, r: Self) -> Self;
     fn not(val: Self) -> Self;

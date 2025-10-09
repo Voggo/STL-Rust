@@ -24,6 +24,7 @@ pub trait RingBufferTrait {
     fn len(&self) -> usize;
     fn get_back(&self) -> Option<&Step<Self::Value>>;
     fn get_front(&self) -> Option<&Step<Self::Value>>;
+    fn pop_front(&mut self) -> Option<Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
     fn prune(&mut self, current_time: Duration, max_age: Duration);
@@ -50,6 +51,12 @@ where
     pub fn add_step(&mut self, step: Step<T>) {
         self.steps.push_back(step);
     }
+
+    pub fn pop_front(&mut self) -> Option<Step<T>> {
+        self.steps.pop_front()
+    }
+
+
 
     pub fn iter(&self) -> std::collections::vec_deque::Iter<Step<T>> {
         self.steps.iter()
@@ -81,6 +88,9 @@ where
     }
     fn get_front(&self) -> Option<&Step<T>> {
         self.steps.front()
+    }
+    fn pop_front(&mut self) -> Option<Step<Self::Value>> {
+        self.steps.pop_front()
     }
 
     fn add_step(&mut self, step: Step<T>) {
