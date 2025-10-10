@@ -77,9 +77,10 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
-        self.signal.add_step(step.value.clone(), step.timestamp);
-        self.formula.robustness_naive(&self.signal, step) // robustness for signal at step.timestamp
+    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        self.signal.add_step(step.clone());
+        let robustness = self.formula.robustness_naive(&self.signal, step); // robustness for signal at step.timestamp
+        vec![Step::new(robustness, step.timestamp)]
     }
 }
 
