@@ -2,8 +2,6 @@ use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
-use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 // The input definition of the STL formula, independent of implementation.
 // This mirrors the structure of the NaiveOperator enum for formula definition.
@@ -41,15 +39,8 @@ impl<T: Clone, Y> StlMonitor<T, Y> {
         StlMonitorBuilder::new()
     }
 
-    /// Processes a single input step and returns all finalized robustness results.
-    /// This is the unified public interface.
-    pub fn advance_and_get_future_robustness_estimates(&mut self, step: &Step<T>) -> VecDeque<Step<f64>> {
-        // self.root_operator.advance_and_get_results(step)
-        todo!("Implement advance_and_get_results for the root operator");
-    }
-
     /// Computes the instantaneous robustness for the current step.
-    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Option<Y> {
+    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> {
         self.root_operator.robustness(step)
     }
 
@@ -90,7 +81,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     /// Builds the final StlMonitor by recursively constructing the operator tree.
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
     where
-        T: Into<f64> + Copy + 'static, // Add required bounds
+        T: Into<f64> + Copy + 'static,           // Add required bounds
         Y: RobustnessSemantics + Copy + 'static, // Add required bounds
     {
         let formula_def = self
@@ -284,41 +275,48 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         Y: RobustnessSemantics + Copy + 'static,
     {
         match formula {
-            FormulaDefinition::GreaterThan(c) => Box::new(Atomic::GreaterThan(c, PhantomData)),
-            FormulaDefinition::LessThan(c) => Box::new(Atomic::LessThan(c, PhantomData)),
-            FormulaDefinition::True => Box::new(Atomic::True(PhantomData)),
-            FormulaDefinition::False => Box::new(Atomic::False(PhantomData)),
-            FormulaDefinition::And(l, r) => Box::new(And {
-                left: self.build_incremental_operator(*l),
-                right: self.build_incremental_operator(*r),
-            }),
-            FormulaDefinition::Or(l, r) => Box::new(Or {
-                left: self.build_incremental_operator(*l),
-                right: self.build_incremental_operator(*r),
-            }),
-            FormulaDefinition::Not(op) => Box::new(Not {
-                operand: self.build_incremental_operator(*op),
-            }),
-            FormulaDefinition::Implies(l, r) => Box::new(Implies {
-                antecedent: self.build_incremental_operator(*l),
-                consequent: self.build_incremental_operator(*r),
-            }),
-            FormulaDefinition::Eventually(i, op) => Box::new(Eventually {
-                interval: i,
-                operand: self.build_incremental_operator(*op),
-                cache: RingBuffer::new(),
-            }),
-            FormulaDefinition::Globally(i, op) => Box::new(Globally {
-                interval: i,
-                operand: self.build_incremental_operator(*op),
-                cache: RingBuffer::new(),
-            }),
-            FormulaDefinition::Until(i, l, r) => Box::new(Until {
-                interval: i,
-                left: self.build_incremental_operator(*l),
-                right: self.build_incremental_operator(*r),
-                cache: RingBuffer::new(),
-            }),
+            FormulaDefinition::GreaterThan(c) => Box::new(Atomic::new_greater_than(c)),
+            FormulaDefinition::LessThan(c) => Box::new(Atomic::new_less_than(c)),
+            FormulaDefinition::True => Box::new(Atomic::new_true()),
+            FormulaDefinition::False => Box::new(Atomic::new_false()),
+            FormulaDefinition::And(l, r) => Box::new(And::new(
+                self.build_incremental_operator(*l),
+                self.build_incremental_operator(*r),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
+            FormulaDefinition::Or(l, r) => Box::new(Or::new(
+                self.build_incremental_operator(*l),
+                self.build_incremental_operator(*r),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
+            FormulaDefinition::Not(op) => Box::new(Not::new(self.build_incremental_operator(*op))),
+            FormulaDefinition::Implies(l, r) => Box::new(Implies::new(
+                self.build_incremental_operator(*l),
+                self.build_incremental_operator(*r),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
+            FormulaDefinition::Eventually(i, op) => Box::new(Eventually::new(
+                i,
+                self.build_incremental_operator(*op),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
+            FormulaDefinition::Globally(i, op) => Box::new(Globally::new(
+                i,
+                self.build_incremental_operator(*op),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
+            FormulaDefinition::Until(i, l, r) => Box::new(Until::new(
+                i,
+                self.build_incremental_operator(*l),
+                self.build_incremental_operator(*r),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+            )),
         }
     }
 }
