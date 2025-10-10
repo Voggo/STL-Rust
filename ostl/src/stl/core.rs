@@ -23,7 +23,9 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
-pub trait RobustnessSemantics: Clone {
+
+// should maybe just use refs for the operations
+pub trait RobustnessSemantics: Clone + PartialEq {
     fn and(l: Self, r: Self) -> Self;
     fn or(l: Self, r: Self) -> Self;
     fn not(val: Self) -> Self;
@@ -140,19 +142,22 @@ where
 {
     fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>>;
 
-    fn robustness_unary_with<F>(
+    fn robustness_unary_with<'a, F>(
         &mut self,
         step: &Step<T>,
         initial: Self::Output,
         f: F,
-    ) -> Option<Self::Output>
+    ) -> &'a [Step<Option<Self::Output>>]
     where
         F: Fn(Self::Output, Self::Output) -> Self::Output,
         Self::Output: Clone,
         Self: Sized,
     {
-        let sub_robustness = self.operand().robustness(step);
-        self.cache().add_step(sub_robustness, step.timestamp);
+        let sub_robustness_vec = self.operand().robustness(step).to_vec();
+
+        sub_robustness_vec
+            .into_iter()
+            .for_each(|step| self.cache().add_step(step));
 
         let t = step.timestamp.saturating_sub(self.interval().end);
         let lower_bound = t + self.interval().start;
@@ -165,10 +170,8 @@ where
                 .filter(|entry| entry.timestamp >= lower_bound && entry.timestamp <= upper_bound)
                 .filter_map(|entry| entry.value.clone())
                 .fold(initial, f);
-            Some(result)
-        } else {
-            None
-        }
+        };
+        &[]
     }
 }
 
