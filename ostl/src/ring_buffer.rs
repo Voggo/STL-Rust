@@ -6,6 +6,12 @@ pub struct Step<T> {
     pub timestamp: Duration,
 }
 
+impl<T> Step<T> {
+    pub fn new(value: T, timestamp: Duration) -> Self {
+        Step { value, timestamp }
+    }
+}
+
 pub trait RingBufferTrait {
     // The type of the value stored in the signal
     type Value;
