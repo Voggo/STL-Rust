@@ -1,6 +1,5 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
-use std::cmp::max;
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -35,10 +34,7 @@ where
             // Update the last known value for the left side and pop the step.
             *left_last_known = left_step.clone();
             let step = left_cache.pop_front().unwrap();
-            Step {
-                value: combined_value,
-                timestamp: step.timestamp,
-            }
+            Step::new(combined_value, step.timestamp)
         } else if right_step.timestamp < left_step.timestamp {
             // Right is earlier. Combine its value with the last known value from the left.
             let combined_value = right_step.value.as_ref().and_then(|r_val| {
@@ -50,10 +46,7 @@ where
             // Update the last known value for the right side and pop the step.
             *right_last_known = right_step.clone();
             let step = right_cache.pop_front().unwrap();
-            Step {
-                value: combined_value,
-                timestamp: step.timestamp,
-            }
+            Step::new(combined_value, step.timestamp)
         } else {
             // Timestamps are equal. Combine their current values.
             let combined_value = left_step.value.as_ref().and_then(|l_val| {
@@ -67,10 +60,7 @@ where
             *right_last_known = right_step.clone();
             let step = left_cache.pop_front().unwrap();
             right_cache.pop_front();
-            Step {
-                value: combined_value,
-                timestamp: step.timestamp,
-            }
+            Step::new(combined_value, step.timestamp)
         };
         output_robustness.push(new_step);
     }
@@ -83,10 +73,7 @@ where
         let left_value = left.value.to_owned().unwrap();
         if default_atomic == left_value && max_timestamp <= left.timestamp {
             let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step {
-                value: Some(value),
-                timestamp: left.timestamp,
-            };
+            let new_step = Step::new(Some(value), left.timestamp);
             output_robustness.push(new_step.clone());
             left_cache.pop_front();
             *left_last_known = new_step.clone();
@@ -99,10 +86,7 @@ where
         let right_value = right.value.to_owned().unwrap();
         if default_atomic == right_value && max_timestamp <= right.timestamp {
             let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step {
-                value: Some(value),
-                timestamp: right.timestamp,
-            };
+            let new_step = Step::new(Some(value), right.timestamp);
             output_robustness.push(new_step.clone());
             right_cache.pop_front();
             *right_last_known = new_step.clone();
@@ -142,14 +126,8 @@ impl<T, C, Y> And<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
-            left_last_known: Step {
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            right_last_known: Step {
-                value: None,
-                timestamp: Duration::ZERO,
-            },
+            left_last_known: Step::new(None, Duration::ZERO),
+            right_last_known: Step::new(None, Duration::ZERO),
         }
     }
 }
@@ -184,7 +162,7 @@ where
             Y::and,            // The only difference!
             Y::atomic_false(), // Default atomic value for 'and'
         );
-        
+
         let max_timestamp = self
             .right_last_known
             .timestamp
@@ -193,7 +171,6 @@ where
         self.right_cache.prune(max_timestamp);
 
         output
-
     }
 }
 
@@ -205,6 +182,35 @@ pub struct Or<T, C, Y> {
     pub right_cache: C,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
+}
+
+impl<T, C, Y> Or<T, C, Y> {
+    pub fn new(
+        left: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        left_cache: Option<C>,
+        right_cache: Option<C>,
+    ) -> Self
+    where
+        T: Clone + 'static,
+        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Or {
+            left,
+            right,
+            left_cache: left_cache.unwrap_or_else(|| C::new()),
+            right_cache: right_cache.unwrap_or_else(|| C::new()),
+            left_last_known: Step {
+                value: None,
+                timestamp: Duration::ZERO,
+            },
+            right_last_known: Step {
+                value: None,
+                timestamp: Duration::ZERO,
+            },
+        }
+    }
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Or<T, C, Y>
@@ -229,20 +235,21 @@ where
         for update in right_updates {
             self.right_cache.add_step(update);
         }
-        let max_timestamp = self
-            .right_last_known
-            .timestamp
-            .max(self.left_last_known.timestamp);
-        self.left_cache.prune(max_timestamp);
-        self.right_cache.prune(max_timestamp);
-        process_binary_operator_caches(
+        let output = process_binary_operator_caches(
             &mut self.left_cache,
             &mut self.right_cache,
             &mut self.left_last_known,
             &mut self.right_last_known,
             Y::or,            // The only difference!
             Y::atomic_true(), // Default atomic value for 'or'
-        )
+        );
+        let max_timestamp = self
+            .right_last_known
+            .timestamp
+            .max(self.left_last_known.timestamp);
+        self.left_cache.prune(max_timestamp);
+        self.right_cache.prune(max_timestamp);
+        output
     }
 }
 
@@ -250,6 +257,16 @@ where
 pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
     // question: why no cache here ?
+}
+
+impl<T, Y> Not<T, Y> {
+    pub fn new(operand: Box<dyn StlOperatorTrait<T, Output = Y>>) -> Self
+    where
+        T: Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Not { operand }
+    }
 }
 
 impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
@@ -289,6 +306,35 @@ pub struct Implies<T, C, Y> {
     pub right_cache: C,
     pub left_last_known: Step<Option<Y>>,
     pub right_last_known: Step<Option<Y>>,
+}
+
+impl<T, C, Y> Implies<T, C, Y> {
+    pub fn new(
+        antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        left_cache: Option<C>,
+        right_cache: Option<C>,
+    ) -> Self
+    where
+        T: Clone + 'static,
+        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Implies {
+            antecedent,
+            consequent,
+            left_cache: left_cache.unwrap_or_else(|| C::new()),
+            right_cache: right_cache.unwrap_or_else(|| C::new()),
+            left_last_known: Step {
+                value: None,
+                timestamp: Duration::ZERO,
+            },
+            right_last_known: Step {
+                value: None,
+                timestamp: Duration::ZERO,
+            },
+        }
+    }
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
@@ -333,6 +379,27 @@ pub struct Eventually<T, C, Y> {
     pub eval_buffer: C,
 }
 
+impl<T, C, Y> Eventually<T, C, Y> {
+    pub fn new(
+        interval: TimeInterval,
+        operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        cache: Option<C>,
+        eval_buffer: Option<C>,
+    ) -> Self
+    where
+        T: Clone + 'static,
+        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Eventually {
+            interval,
+            operand,
+            cache: cache.unwrap_or_else(|| C::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+        }
+    }
+}
+
 impl<T, C, Y> StlOperatorTrait<T> for Eventually<T, C, Y>
 where
     T: Clone + 'static,
@@ -354,10 +421,8 @@ where
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
             // The `value` is None because it's just a placeholder for a pending task.
-            self.eval_buffer.add_step(Step {
-                value: None,
-                timestamp: sub_step.timestamp,
-            });
+            self.eval_buffer
+                .add_step(Step::new(None, sub_step.timestamp));
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
@@ -377,20 +442,14 @@ where
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
             if max_in_window == Y::atomic_true() {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step {
-                    value: Some(max_in_window),
-                    timestamp: t_eval,
-                });
+                output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= window_end {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step {
-                    value: Some(max_in_window),
-                    timestamp: t_eval,
-                });
+                output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
@@ -418,6 +477,27 @@ pub struct Globally<T, Y, C> {
     pub eval_buffer: C,
 }
 
+impl<T, C, Y> Globally<T, Y, C> {
+    pub fn new(
+        interval: TimeInterval,
+        operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        cache: Option<C>,
+        eval_buffer: Option<C>,
+    ) -> Self
+    where
+        T: Clone + 'static,
+        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Globally {
+            interval,
+            operand,
+            cache: cache.unwrap_or_else(|| C::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+        }
+    }
+}
+
 impl<T, C, Y> StlOperatorTrait<T> for Globally<T, Y, C>
 where
     T: Clone + 'static,
@@ -439,10 +519,8 @@ where
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
             // The `value` is None because it's just a placeholder for a pending task.
-            self.eval_buffer.add_step(Step {
-                value: None,
-                timestamp: sub_step.timestamp,
-            });
+            self.eval_buffer
+                .add_step(Step::new(None, sub_step.timestamp));
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
@@ -462,20 +540,14 @@ where
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
             if max_in_window == Y::atomic_false() {
                 self.eval_buffer.pop_front();
-                output_robustness.push(Step {
-                    value: Some(max_in_window),
-                    timestamp: t_eval,
-                });
+                output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= window_end {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step {
-                    value: Some(max_in_window),
-                    timestamp: t_eval,
-                });
+                output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
@@ -502,6 +574,29 @@ pub struct Until<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub cache: C,
     pub eval_buffer: C,
+}
+
+impl<T, C, Y> Until<T, C, Y> {
+    pub fn new(
+        interval: TimeInterval,
+        left: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        cache: Option<C>,
+        eval_buffer: Option<C>,
+    ) -> Self
+    where
+        T: Clone + 'static,
+        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
+        Until {
+            interval,
+            left,
+            right,
+            cache: cache.unwrap_or_else(|| C::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+        }
+    }
 }
 
 impl<T, C, Y> StlOperatorTrait<T> for Until<T, C, Y>
@@ -691,7 +786,6 @@ impl<T, C, Y> Display for Implies<T, C, Y> {
 mod tests {
     use super::*;
     use crate::ring_buffer::RingBuffer;
-    use crate::stl::core::RobustnessSemantics;
     use std::time::Duration;
     fn get_signal() -> Vec<Step<f64>> {
         let inputs = vec![
