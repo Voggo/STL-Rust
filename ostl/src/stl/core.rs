@@ -23,6 +23,8 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
+
+// should maybe just use refs for the operations
 pub trait RobustnessSemantics: Clone + PartialEq {
     fn and(l: Self, r: Self) -> Self;
     fn or(l: Self, r: Self) -> Self;
