@@ -82,10 +82,6 @@ where
         let robustness = self.formula.robustness_naive(&self.signal, step); // robustness for signal at step.timestamp
         vec![Step::new(robustness, step.timestamp)]
     }
-
-    fn get_temporal_depth(&self) -> usize {
-        self.formula.get_max_lookahead().as_secs() as usize
-    }
 }
 
 impl StlOperator {
