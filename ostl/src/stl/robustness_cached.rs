@@ -172,6 +172,12 @@ where
 
         output
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -251,6 +257,12 @@ where
         self.right_cache.prune(max_timestamp);
         output
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -295,6 +307,10 @@ where
             .collect();
 
         output_robustness
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth()
     }
 }
 
@@ -369,6 +385,12 @@ where
             Y::atomic_false(), // Default atomic value for 'implies'
         )
     }
+
+    fn get_temporal_depth(&self) -> usize {
+        let antecedent_depth = self.antecedent.get_temporal_depth();
+        let consequent_depth = self.consequent.get_temporal_depth();
+        antecedent_depth.max(consequent_depth)
+    }
 }
 
 #[derive(Clone)]
@@ -412,9 +434,15 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let sub_robustness_vec = self.operand.robustness(step);
-        let mut output_robustness = Vec::new();
+    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+        // Use the identity and combining function from the trait
+        self.robustness_unary_with(step, Y::eventually_identity(), Y::or)
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth() + self.interval.end.as_secs() as usize
+    }
+}
 
         // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
         for sub_step in sub_robustness_vec {
@@ -510,9 +538,14 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let sub_robustness_vec = self.operand.robustness(step);
-        let mut output_robustness = Vec::new();
+    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+        self.robustness_unary_with(step, Y::globally_identity(), Y::and)
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        self.operand.get_temporal_depth() + self.interval.end.as_secs() as usize
+    }
+}
 
         // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
         for sub_step in sub_robustness_vec {
@@ -611,42 +644,76 @@ where
         self
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let right_robustness = self.right.robustness(step);
-        // self.cache
-        //     .add_step(self.left.robustness(step), step.timestamp);
+    fn robustness(&mut self, step: &Step<T>) -> Option<Self::Output> {
+        let right_robustness = self.right.robustness(step)?;
+        self.cache
+            .add_step(self.left.robustness(step), step.timestamp);
 
-        // // The window of interest for the left operand's past robustness values
-        // let t = step.timestamp.saturating_sub(self.interval.end);
-        // let lower_bound_t_prime = t + self.interval.start;
-        // let upper_bound_t_prime = t + self.interval.end;
+        // The window of interest for the left operand's past robustness values
+        let t = step.timestamp.saturating_sub(self.interval.end);
+        let lower_bound_t_prime = t + self.interval.start;
+        let upper_bound_t_prime = t + self.interval.end;
 
-        // // Ensure we have enough data to evaluate the window
-        // if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
-        //     let max_robustness = self
-        //         .cache
-        //         .iter()
-        //         .filter(|entry| {
-        //             entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-        //         })
-        //         .map(|entry| {
-        //             let t_prime = entry.timestamp;
-        //             let min_left_robustness = self
-        //                 .cache
-        //                 .iter()
-        //                 .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
-        //                 .filter_map(|e| e.value.clone())
-        //                 .fold(Y::globally_identity(), Y::and);
+        // Ensure we have enough data to evaluate the window
+        if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
+            let max_robustness = self
+                .cache
+                .iter()
+                .filter(|entry| {
+                    entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
+                })
+                .map(|entry| {
+                    let t_prime = entry.timestamp;
+                    let min_left_robustness = self
+                        .cache
+                        .iter()
+                        .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
+                        .filter_map(|e| e.value.clone())
+                        .fold(Y::globally_identity(), Y::and);
 
-        //             Y::and(right_robustness.clone(), min_left_robustness) // OBS: Using clone() here !!!!!!!!!!!!!!!!!!!!!! Should maybe be changed
-        //         })
-        //         .fold(Y::eventually_identity(), Y::or);
+                    Y::and(right_robustness.clone(), min_left_robustness) // OBS: Using clone() here !!!!!!!!!!!!!!!!!!!!!! Should maybe be changed
+                })
+                .fold(Y::eventually_identity(), Y::or);
 
-        //     Some(max_robustness)
-        // } else {
-        //     None // Not enough data to evaluate
-        // }
-        vec![]
+            Some(max_robustness)
+        } else {
+            None // Not enough data to evaluate
+        }
+    }
+
+    fn get_temporal_depth(&self) -> usize {
+        let left_depth = self.left.get_temporal_depth();
+        let right_depth = self.right.get_temporal_depth();
+        left_depth.max(right_depth) + self.interval.end.as_secs() as usize
+    }
+}
+impl<T, C, Y> TemporalOperatorBaseTrait<T, C> for Until<T, C, Y>
+where
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+{
+    fn interval(&self) -> TimeInterval {
+        self.interval
+    }
+
+    fn cache(&mut self) -> &mut C {
+        &mut self.cache
+    }
+}
+
+impl<T, C, Y> BinaryTemporalOperatorTrait<T, C> for Until<T, C, Y>
+where
+    T: Clone + 'static,
+    Y: Clone + RobustnessSemantics + 'static,
+    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+{
+    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
+        &mut self.left
+    }
+
+    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>> {
+        &mut self.right
     }
 }
 
@@ -693,8 +760,12 @@ where
             timestamp: step.timestamp,
         }]
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+    fn get_temporal_depth(&self) -> usize {
+        0
     }
 }
 
