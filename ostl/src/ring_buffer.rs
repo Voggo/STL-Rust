@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, ops::Index, time::Duration};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Step<T> {
     pub value: T,
     pub timestamp: Duration,
@@ -27,7 +27,9 @@ pub trait RingBufferTrait {
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
-    fn prune(&mut self, current_time: Duration, max_age: Duration);
+    /// Prune steps older than `max_age` from the buffer.
+    /// This method removes all steps with a timestamp less than `current_time - max_age`.
+    fn prune(&mut self, max_age: Duration);
 
     // The iter method now returns the generic iterator type.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
@@ -96,12 +98,9 @@ where
     fn add_step(&mut self, step: Step<T>) {
         self.add_step(step)
     }
-
-    fn prune(&mut self, current_time: Duration, max_age: Duration) {
-        let cutoff_time = current_time.saturating_sub(max_age);
-
+    fn prune(&mut self, max_age: Duration) {
         while let Some(front_step) = self.steps.front() {
-            if front_step.timestamp < cutoff_time {
+            if front_step.timestamp <= max_age {
                 self.steps.pop_front();
             } else {
                 break;
