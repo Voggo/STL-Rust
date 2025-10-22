@@ -105,8 +105,13 @@ where
         self.add_step(step)
     }
     fn prune(&mut self, max_age: Duration) {
+        let current_time = match self.get_back() {
+            Some(step) => step.timestamp,
+            None => return, // Buffer is empty, nothing to prune
+        };
+        let max_age = current_time.saturating_sub(max_age);
         while let Some(front_step) = self.steps.front() {
-            if front_step.timestamp <= max_age {
+            if front_step.timestamp < max_age {
                 self.steps.pop_front();
             } else {
                 break;

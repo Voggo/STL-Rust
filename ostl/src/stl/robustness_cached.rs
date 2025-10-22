@@ -1,5 +1,6 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -337,6 +338,7 @@ impl<T, C, Y> Implies<T, C, Y> {
     }
 }
 
+// We need to look at this there might be problems with short-circuiting here.
 impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
 where
     T: Clone + 'static,
@@ -365,7 +367,7 @@ where
             &mut self.right_cache,
             &mut self.left_last_known,
             &mut self.right_last_known,
-            Y::implies,        // The only difference!
+            Y::implies,
             Y::atomic_false(), // Default atomic value for 'implies'
         )
     }
@@ -572,7 +574,8 @@ pub struct Until<T, C, Y> {
     pub interval: TimeInterval,
     pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
-    pub cache: C,
+    pub left_cache: C,
+    pub right_cache: C,
     pub eval_buffer: C,
 }
 
@@ -581,7 +584,8 @@ impl<T, C, Y> Until<T, C, Y> {
         interval: TimeInterval,
         left: Box<dyn StlOperatorTrait<T, Output = Y>>,
         right: Box<dyn StlOperatorTrait<T, Output = Y>>,
-        cache: Option<C>,
+        left_cache: Option<C>,
+        right_cache: Option<C>,
         eval_buffer: Option<C>,
     ) -> Self
     where
@@ -593,7 +597,8 @@ impl<T, C, Y> Until<T, C, Y> {
             interval,
             left,
             right,
-            cache: cache.unwrap_or_else(|| C::new()),
+            left_cache: left_cache.unwrap_or_else(|| C::new()),
+            right_cache: right_cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
         }
     }
@@ -612,41 +617,82 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let right_robustness = self.right.robustness(step);
-        // self.cache
-        //     .add_step(self.left.robustness(step), step.timestamp);
+        let left_updates = self.left.robustness(step);
+        let right_updates = self.right.robustness(step);
+        let mut output_robustness = Vec::new();
 
-        // // The window of interest for the left operand's past robustness values
-        // let t = step.timestamp.saturating_sub(self.interval.end);
-        // let lower_bound_t_prime = t + self.interval.start;
-        // let upper_bound_t_prime = t + self.interval.end;
+        // Add new sub-formula results to the caches
+        let mut timestamps_to_evaluate = BTreeSet::new();
 
-        // // Ensure we have enough data to evaluate the window
-        // if self.is_cache_sufficient(lower_bound_t_prime, upper_bound_t_prime, t) {
-        //     let max_robustness = self
-        //         .cache
-        //         .iter()
-        //         .filter(|entry| {
-        //             entry.timestamp >= lower_bound_t_prime && entry.timestamp <= upper_bound_t_prime
-        //         })
-        //         .map(|entry| {
-        //             let t_prime = entry.timestamp;
-        //             let min_left_robustness = self
-        //                 .cache
-        //                 .iter()
-        //                 .filter(|e| e.timestamp >= lower_bound_t_prime && e.timestamp <= t_prime)
-        //                 .filter_map(|e| e.value.clone())
-        //                 .fold(Y::globally_identity(), Y::and);
+        for left_step in left_updates {
+            self.left_cache.add_step(left_step.clone());
+            timestamps_to_evaluate.insert(left_step.timestamp);
+        }
 
-        //             Y::and(right_robustness.clone(), min_left_robustness) // OBS: Using clone() here !!!!!!!!!!!!!!!!!!!!!! Should maybe be changed
-        //         })
-        //         .fold(Y::eventually_identity(), Y::or);
+        for right_step in right_updates {
+            self.right_cache.add_step(right_step.clone());
+            timestamps_to_evaluate.insert(right_step.timestamp);
+        }
 
-        //     Some(max_robustness)
-        // } else {
-        //     None // Not enough data to evaluate
-        // }
-        vec![]
+        // Queue up new evaluation tasks for each timestamp that had new data
+        for &t_eval in &timestamps_to_evaluate {
+            // Add a task to the evaluation buffer for this new timestamp.
+            // We use `None` as a value placeholder for the pending task.
+            self.eval_buffer.add_step(Step::new(None, t_eval));
+        }
+
+        // Process the evaluation buffer for tasks that can now be completed.
+        while let Some(eval_task) = self.eval_buffer.get_front() {
+            let t_eval = eval_task.timestamp;
+            let window_start = t_eval + self.interval.start;
+            let window_end = t_eval + self.interval.end;
+
+            // Find out if the robustness values in the window allow us to conclude the until value.
+            let max_in_window = self
+                .left_cache
+                .iter()
+                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .filter_map(|entry| entry.value.clone())
+                .fold(Y::globally_identity(), Y::and);
+
+            // Short-circuit: if left is false in the window, until is false regardless of right
+            if max_in_window == Y::atomic_false() {
+                self.eval_buffer.pop_front(); // Task is done
+                output_robustness.push(Step::new(Some(Y::atomic_false()), t_eval));
+                continue; // Move to the next task
+            }
+
+            // Check if right is true at some point in the window
+            let right_in_window = self
+                .right_cache
+                .iter()
+                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .filter_map(|entry| entry.value.clone())
+                .fold(Y::eventually_identity(), Y::or);
+
+            // Short-circuit: if right is true in the window, until is true
+            if right_in_window == Y::atomic_true() {
+                self.eval_buffer.pop_front(); // Task is done
+                output_robustness.push(Step::new(Some(Y::atomic_true()), t_eval));
+                continue; // Move to the next task
+            }
+
+            // Normal completion: if the full time window has passed.
+            if step.timestamp >= window_end {
+                let until_value = Y::or(max_in_window, right_in_window);
+                self.eval_buffer.pop_front(); // Task is done
+                output_robustness.push(Step::new(Some(until_value), t_eval));
+                continue; // Move to the next task
+            }
+            // If no condition is met, we can't resolve this task yet.
+            break;
+        }
+
+        // Prune the caches.
+        self.left_cache.prune(self.interval.end);
+        self.right_cache.prune(self.interval.end);
+
+        output_robustness
     }
 }
 
@@ -879,7 +925,7 @@ mod tests {
                 timestamp: Duration::from_secs(0),
             },
         };
-
+        println!("STL formula: {}", op.to_string());
         let inputs = get_signal();
 
         for input in inputs.clone() {
@@ -938,7 +984,7 @@ mod tests {
                 timestamp: Duration::from_secs(0),
             },
         };
-
+        println!("STL formula: {}", op_global.to_string());
         let inputs = get_signal();
 
         for input in inputs.clone() {
@@ -954,6 +1000,31 @@ mod tests {
         for input in inputs {
             let res_and = op_and.robustness(&input);
             println!("Input: {:?}, Output AND: {:?}", input, res_and);
+        }
+    }
+
+    #[test]
+    fn test_3_until() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(3),
+        };
+        let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
+        let atomic_g0 = Atomic::<bool>::new_greater_than(0.0);
+
+        let mut op_until = Until {
+            interval: interval.clone(),
+            left: Box::new(atomic_g0.clone()),
+            right: Box::new(atomic_g5.clone()),
+            left_cache: RingBuffer::new(),
+            right_cache: RingBuffer::new(),
+            eval_buffer: RingBuffer::new(),
+        };
+        println!("STL formula: {}", op_until.to_string());
+        let inputs = get_signal();
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, Output UNTIL: {:?}", input, res_until);
         }
     }
 }
