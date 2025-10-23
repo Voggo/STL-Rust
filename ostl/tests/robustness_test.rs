@@ -12,7 +12,7 @@ mod tests {
         mut monitor_naive: StlMonitor<T, Y>,
         mut monitor_opt: StlMonitor<T, Y>,
         step: &Step<T>,
-        expected: Option<Y>,
+        expected: Vec<Step<Option<Y>>>,
     )
     where
         T: Clone,
@@ -22,12 +22,12 @@ mod tests {
         let robustness_opt = monitor_opt.instantaneous_robustness(step);
 
         assert_eq!(
-            robustness_naive, expected,
+            robustness_naive, expected, 
             "Naive implementation failed {:?} != {:?}",
             robustness_naive, expected
         );
         assert_eq!(
-            robustness_opt, expected,
+            robustness_opt, expected, 
             "Optimized implementation failed {:?} != {:?}",
             robustness_opt, expected
         );
@@ -42,23 +42,23 @@ mod tests {
         mut monitor_naive: StlMonitor<T, Y>,
         mut monitor_opt: StlMonitor<T, Y>,
         steps: &[Step<T>],
-        expected: &[Option<Y>],
+        expected: &[Vec<Step<Option<Y>>>],
     )
     where
         T: Clone,
         Y: RobustnessSemantics + Copy + Debug + PartialEq,
     {
-        for (step, &exp) in steps.iter().zip(expected.iter()) {
+        for (step, exp) in steps.iter().zip(expected.iter()) { 
             let robustness_naive = monitor_naive.instantaneous_robustness(step);
             let robustness_opt = monitor_opt.instantaneous_robustness(step);
 
             assert_eq!(
-                robustness_naive, exp,
+                robustness_naive, *exp,
                 "Naive implementation failed at timestep {:?}: {:?} != {:?}",
                 step.timestamp, robustness_naive, exp
             );
             assert_eq!(
-                robustness_opt, exp,
+                robustness_opt, *exp,
                 "Optimized implementation failed at timestep {:?}: {:?} != {:?}",
                 step.timestamp, robustness_opt, exp
             );
@@ -73,9 +73,9 @@ mod tests {
     fn generate_steps_and_expected(
         values: Vec<f64>,
         timestamps: Vec<u64>,
-        expected: Vec<Option<f64>>,
-    ) -> (Vec<Step<f64>>, Vec<Option<f64>>) {
-        let steps = values
+        expected_robustness_values: Vec<Option<f64>>, // This is the robustness value, not the full Step<Option<Y>>
+    ) -> (Vec<Step<f64>>, Vec<Vec<Step<Option<f64>>>>) { // Changed return type
+        let steps: Vec<Step<f64>> = values
             .into_iter()
             .zip(timestamps.into_iter())
             .map(|(value, timestamp)| Step {
@@ -83,7 +83,18 @@ mod tests {
                 timestamp: Duration::from_secs(timestamp),
             })
             .collect();
-        (steps, expected)
+
+        let expected_outputs: Vec<Vec<Step<Option<f64>>>> = expected_robustness_values
+            .into_iter()
+            .zip(steps.iter()) // Use steps to get timestamps for expected output steps
+            .map(|(expected_val, original_step)| {
+                // The instantaneous_robustness method returns a Vec<Step<Option<Y>>>
+                // For atomic and simple operators, it typically returns a single step.
+                vec![Step::new(expected_val, original_step.timestamp)]
+            })
+            .collect();
+
+        (steps, expected_outputs)
     }
 
     fn build_monitors<T, Y>(formula: FormulaDefinition) -> (StlMonitor<T, Y>, StlMonitor<T, Y>)
@@ -195,7 +206,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(f64::INFINITY));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(f64::INFINITY), step.timestamp)]);
     }
 
     #[test]
@@ -209,7 +220,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(f64::NEG_INFINITY));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(f64::NEG_INFINITY), step.timestamp)]);
     }
 
     #[test]
@@ -222,7 +233,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(-5.0));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(-5.0), step.timestamp)]);
     }
 
     #[test]
@@ -239,7 +250,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(5.0));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -256,7 +267,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(5.0));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -273,7 +284,7 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(5.0));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -301,8 +312,8 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_or_naive, monitor_or_opt, &step, Some(5.0));
-        run_robustness_test(monitor_and_naive, monitor_and_opt, &step, Some(5.0));
+        run_robustness_test(monitor_or_naive, monitor_or_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
+        run_robustness_test(monitor_and_naive, monitor_and_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -328,8 +339,8 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_implies_naive, monitor_implies_opt, &step, Some(5.0));
-        run_robustness_test(monitor_or_naive, monitor_or_opt, &step, Some(5.0));
+        run_robustness_test(monitor_implies_naive, monitor_implies_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
+        run_robustness_test(monitor_or_naive, monitor_or_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -365,9 +376,9 @@ mod tests {
             monitor_eventually_naive,
             monitor_eventually_opt,
             &step,
-            Some(5.0),
+            vec![Step::new(Some(5.0), step.timestamp)],
         );
-        run_robustness_test(monitor_until_naive, monitor_until_opt, &step, Some(5.0));
+        run_robustness_test(monitor_until_naive, monitor_until_opt, &step, vec![Step::new(Some(5.0), step.timestamp)]);
     }
 
     #[test]
@@ -404,13 +415,13 @@ mod tests {
             monitor_globally_naive,
             monitor_globally_opt,
             &step,
-            Some(5.0),
+            vec![Step::new(Some(5.0), step.timestamp)],
         );
         run_robustness_test(
             monitor_eventually_naive,
             monitor_eventually_opt,
             &step,
-            Some(5.0),
+            vec![Step::new(Some(5.0), step.timestamp)],
         );
     }
 
@@ -511,6 +522,6 @@ mod tests {
             timestamp: Duration::from_secs(5),
         };
 
-        run_robustness_test(monitor_naive, monitor_opt, &step, Some(true));
+        run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(true), step.timestamp)]);
     }
 }

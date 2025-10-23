@@ -1,4 +1,4 @@
-use crate::ring_buffer::{RingBufferTrait, Step};
+use crate::ring_buffer::Step;
 use dyn_clone::{DynClone, clone_trait_object};
 use std::fmt::Display;
 use std::time::Duration;
@@ -111,74 +111,4 @@ impl RobustnessSemantics for bool {
     }
 }
 
-pub trait TemporalOperatorBaseTrait<T, C>: StlOperatorTrait<T>
-where
-    T: Clone,
-    C: RingBufferTrait<Value = Option<Self::Output>>,
-{
-    fn interval(&self) -> TimeInterval;
-    fn cache(&mut self) -> &mut C;
 
-    fn is_cache_sufficient(
-        &mut self,
-        lower_bound: Duration,
-        upper_bound: Duration,
-        t: Duration,
-    ) -> bool {
-        self.cache().is_empty()
-            || upper_bound - lower_bound
-                <= self
-                    .cache()
-                    .get_back()
-                    .map_or(Duration::ZERO, |entry| entry.timestamp - t)
-    }
-}
-
-pub trait UnaryTemporalOperatorTrait<T, C>: TemporalOperatorBaseTrait<T, C>
-where
-    C: RingBufferTrait<Value = Option<Self::Output>>,
-    T: Clone,
-{
-    fn operand(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>>;
-
-    fn robustness_unary_with<'a, F>(
-        &mut self,
-        step: &Step<T>,
-        initial: Self::Output,
-        f: F,
-    ) -> &'a [Step<Option<Self::Output>>]
-    where
-        F: Fn(Self::Output, Self::Output) -> Self::Output,
-        Self::Output: Clone,
-        Self: Sized,
-    {
-        let sub_robustness_vec = self.operand().robustness(step).to_vec();
-
-        sub_robustness_vec
-            .into_iter()
-            .for_each(|step| self.cache().add_step(step));
-
-        let t = step.timestamp.saturating_sub(self.interval().end);
-        let lower_bound = t + self.interval().start;
-        let upper_bound = t + self.interval().end;
-
-        if self.is_cache_sufficient(lower_bound, upper_bound, t) {
-            let result = self
-                .cache()
-                .iter()
-                .filter(|entry| entry.timestamp >= lower_bound && entry.timestamp <= upper_bound)
-                .filter_map(|entry| entry.value.clone())
-                .fold(initial, f);
-        };
-        &[]
-    }
-}
-
-pub trait BinaryTemporalOperatorTrait<T, C>: TemporalOperatorBaseTrait<T, C>
-where
-    C: RingBufferTrait<Value = Option<Self::Output>>,
-    T: Clone,
-{
-    fn left(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>>;
-    fn right(&mut self) -> &mut Box<dyn StlOperatorTrait<T, Output = Self::Output>>;
-}
