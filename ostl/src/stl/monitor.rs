@@ -316,6 +316,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 self.build_incremental_operator(*r),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
             )),
         }
     }

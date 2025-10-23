@@ -1,4 +1,4 @@
-use crate::ring_buffer::{RingBufferTrait, Step};
+use crate::ring_buffer::Step;
 use dyn_clone::{DynClone, clone_trait_object};
 use std::fmt::Display;
 use std::time::Duration;
