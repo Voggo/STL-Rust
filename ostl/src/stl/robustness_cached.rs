@@ -621,25 +621,26 @@ where
         let right_updates = self.right.robustness(step);
         let mut output_robustness = Vec::new();
 
-        // Add new sub-formula results to the caches
-        let mut timestamps_to_evaluate = BTreeSet::new();
-
-        for left_step in left_updates {
-            self.left_cache.add_step(left_step.clone());
-            timestamps_to_evaluate.insert(left_step.timestamp);
-        }
-
-        for right_step in right_updates {
-            self.right_cache.add_step(right_step.clone());
-            timestamps_to_evaluate.insert(right_step.timestamp);
-        }
-
         // Queue up new evaluation tasks for each timestamp that had new data
-        for &t_eval in &timestamps_to_evaluate {
-            // Add a task to the evaluation buffer for this new timestamp.
-            // We use `None` as a value placeholder for the pending task.
-            self.eval_buffer.add_step(Step::new(None, t_eval));
+        for step in left_updates {
+            self.eval_buffer.add_step(Step::new(None, step.timestamp));
         }
+        for step in right_updates {
+            self.eval_buffer.add_step(Step::new(None, step.timestamp));
+        }
+        // remove duplicates from eval_buffer
+        
+
+
+        let t_max = self
+            .left_cache
+            .get_back()
+            .map_or(Duration::ZERO, |s| s.timestamp)
+            .min(
+                self.right_cache
+                    .get_back()
+                    .map_or(Duration::ZERO, |s| s.timestamp),
+            );
 
         // Process the evaluation buffer for tasks that can now be completed.
         while let Some(eval_task) = self.eval_buffer.get_front() {
@@ -833,7 +834,7 @@ mod tests {
     use super::*;
     use crate::ring_buffer::RingBuffer;
     use std::time::Duration;
-    fn get_signal() -> Vec<Step<f64>> {
+    fn get_signal_1() -> Vec<Step<f64>> {
         let inputs = vec![
             Step {
                 value: 0.0,
@@ -861,6 +862,40 @@ mod tests {
             },
             Step {
                 value: 7.0,
+                timestamp: Duration::from_secs(6),
+            },
+        ];
+        inputs
+    }
+
+    fn get_signal_2() -> Vec<Step<f64>> {
+        let inputs = vec![
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(0),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(1),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(2),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(3),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(4),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(5),
+            },
+            Step {
+                value: 2.0,
                 timestamp: Duration::from_secs(6),
             },
         ];
@@ -926,7 +961,7 @@ mod tests {
             },
         };
         println!("STL formula: {}", op.to_string());
-        let inputs = get_signal();
+        let inputs = get_signal_1();
 
         for input in inputs.clone() {
             let res_ev = op_ev.robustness(&input);
@@ -985,7 +1020,7 @@ mod tests {
             },
         };
         println!("STL formula: {}", op_global.to_string());
-        let inputs = get_signal();
+        let inputs = get_signal_1();
 
         for input in inputs.clone() {
             let res = op_global.robustness(&input);
@@ -1021,7 +1056,51 @@ mod tests {
             eval_buffer: RingBuffer::new(),
         };
         println!("STL formula: {}", op_until.to_string());
-        let inputs = get_signal();
+        let inputs = get_signal_1();
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, Output UNTIL: {:?}", input, res_until);
+        }
+    }
+
+    #[test]
+    fn test_4_until() {
+        let interval_eventually = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_until = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        };
+
+        let mut eventually_g3 = Eventually {
+            interval: interval_eventually.clone(),
+            operand: Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            cache: RingBuffer::new(),
+            eval_buffer: RingBuffer::new(),
+        };
+        let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
+
+        let mut op_until = Until {
+            interval: interval_until.clone(),
+            left: Box::new(eventually_g3.clone()),
+            right: Box::new(atomic_g5),
+            left_cache: RingBuffer::new(),
+            right_cache: RingBuffer::new(),
+            eval_buffer: RingBuffer::new(),
+        };
+        let inputs = get_signal_2();
+
+        println!("\n");
+        println!("STL formula: {}", eventually_g3.to_string());
+        for input in inputs.clone() {
+            let res_ev = eventually_g3.robustness(&input);
+            println!("Input: {:?}, Output EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+
+        println!("STL formula: {}", op_until.to_string());
         for input in inputs {
             let res_until = op_until.robustness(&input);
             println!("Input: {:?}, Output UNTIL: {:?}", input, res_until);
