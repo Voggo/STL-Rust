@@ -1,5 +1,6 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::time::Duration;
@@ -576,7 +577,9 @@ pub struct Until<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub left_cache: C,
     pub right_cache: C,
-    pub eval_buffer: C,
+    pub t_max: Duration,
+    pub last_eval_time: Option<Duration>,
+    pub eval_buffer: BTreeSet<Duration>,
 }
 
 impl<T, C, Y> Until<T, C, Y> {
@@ -586,7 +589,6 @@ impl<T, C, Y> Until<T, C, Y> {
         right: Box<dyn StlOperatorTrait<T, Output = Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
-        eval_buffer: Option<C>,
     ) -> Self
     where
         T: Clone + 'static,
@@ -599,7 +601,9 @@ impl<T, C, Y> Until<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+            t_max: Duration::ZERO,
+            last_eval_time: None,
+            eval_buffer: BTreeSet::new(),
         }
     }
 }
@@ -621,30 +625,44 @@ where
         let right_updates = self.right.robustness(step);
         let mut output_robustness = Vec::new();
 
-        // Queue up new evaluation tasks for each timestamp that had new data
-        for step in left_updates {
-            self.eval_buffer.add_step(Step::new(None, step.timestamp));
-        }
-        for step in right_updates {
-            self.eval_buffer.add_step(Step::new(None, step.timestamp));
-        }
-        // remove duplicates from eval_buffer
-        
+        // Add new sub-formula results to the cache and queue up new evaluation tasks.
+        for update in left_updates {
+            self.left_cache.add_step(update.clone());
 
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.eval_buffer.insert(update.timestamp);
+                }
+            } else {
+                self.eval_buffer.insert(update.timestamp);
+            }
+        }
+        for update in right_updates {
+            self.right_cache.add_step(update.clone());
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.eval_buffer.insert(update.timestamp);
+                }
+            } else {
+                self.eval_buffer.insert(update.timestamp);
+            }
+        }
 
-        let t_max = self
+        // t_max is the latest time we can evaluate up to, based on available data.
+        self.t_max = self
             .left_cache
-            .get_back()
-            .map_or(Duration::ZERO, |s| s.timestamp)
+            .iter()
+            .last()
+            .map_or(self.t_max, |s| s.timestamp)
             .min(
                 self.right_cache
-                    .get_back()
-                    .map_or(Duration::ZERO, |s| s.timestamp),
+                    .iter()
+                    .last()
+                    .map_or(self.t_max, |s| s.timestamp),
             );
 
         // Process the evaluation buffer for tasks that can now be completed.
-        while let Some(eval_task) = self.eval_buffer.get_front() {
-            let t_eval = eval_task.timestamp;
+        while let Some(&t_eval) = self.eval_buffer.first() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
@@ -658,7 +676,7 @@ where
 
             // Short-circuit: if left is false in the window, until is false regardless of right
             if max_in_window == Y::atomic_false() {
-                self.eval_buffer.pop_front(); // Task is done
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(Y::atomic_false()), t_eval));
                 continue; // Move to the next task
             }
@@ -672,8 +690,8 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // Short-circuit: if right is true in the window, until is true
-            if right_in_window == Y::atomic_true() {
-                self.eval_buffer.pop_front(); // Task is done
+            if right_in_window == Y::atomic_true() && self.t_max >= t_eval {
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(Y::atomic_true()), t_eval));
                 continue; // Move to the next task
             }
@@ -681,7 +699,7 @@ where
             // Normal completion: if the full time window has passed.
             if step.timestamp >= window_end {
                 let until_value = Y::or(max_in_window, right_in_window);
-                self.eval_buffer.pop_front(); // Task is done
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(until_value), t_eval));
                 continue; // Move to the next task
             }
@@ -693,6 +711,11 @@ where
         self.left_cache.prune(self.interval.end);
         self.right_cache.prune(self.interval.end);
 
+        // update last eval time to max in output_robustness
+        if let Some(last_step) = output_robustness.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        }
+        
         output_robustness
     }
 }
@@ -898,6 +921,71 @@ mod tests {
                 value: 2.0,
                 timestamp: Duration::from_secs(6),
             },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(7),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(8),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(9),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(10),
+            },
+        ];
+        inputs
+    }
+    fn get_signal_3() -> Vec<Step<f64>> {
+        let inputs = vec![
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(0),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(1),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(2),
+            },
+            Step {
+                value: 2.0,
+                timestamp: Duration::from_secs(3),
+            },
+            Step {
+                value: 3.0,
+                timestamp: Duration::from_secs(4),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(5),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(6),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(7),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(8),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(9),
+            },
+            Step {
+                value: 2.0,
+                timestamp: Duration::from_secs(10),
+            },
         ];
         inputs
     }
@@ -1053,7 +1141,9 @@ mod tests {
             right: Box::new(atomic_g5.clone()),
             left_cache: RingBuffer::new(),
             right_cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
+            t_max: Duration::ZERO,
+            last_eval_time: None,
+            eval_buffer: BTreeSet::new(),
         };
         println!("STL formula: {}", op_until.to_string());
         let inputs = get_signal_1();
@@ -1088,7 +1178,9 @@ mod tests {
             right: Box::new(atomic_g5),
             left_cache: RingBuffer::new(),
             right_cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
+            t_max: Duration::ZERO,
+            last_eval_time: None,
+            eval_buffer: BTreeSet::new(),
         };
         let inputs = get_signal_2();
 
@@ -1096,14 +1188,71 @@ mod tests {
         println!("STL formula: {}", eventually_g3.to_string());
         for input in inputs.clone() {
             let res_ev = eventually_g3.robustness(&input);
-            println!("Input: {:?}, Output EV: {:?}", input, res_ev);
+            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
         }
         println!("\n");
 
         println!("STL formula: {}", op_until.to_string());
         for input in inputs {
             let res_until = op_until.robustness(&input);
-            println!("Input: {:?}, Output UNTIL: {:?}", input, res_until);
+            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+        }
+    }
+    #[test]
+    fn test_5_until() {
+        let interval_globally = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_eventually = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_until = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        };
+        let mut globally_g0 = Globally {
+            interval: interval_globally.clone(),
+            operand: Box::new(Atomic::<bool>::new_greater_than(0.0)),
+            cache: RingBuffer::new(),
+            eval_buffer: RingBuffer::new(),
+        };
+        let mut eventually_g3 = Eventually {
+            interval: interval_eventually.clone(),
+            operand: Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            cache: RingBuffer::new(),
+            eval_buffer: RingBuffer::new(),
+        };
+        let mut op_until = Until {
+            interval: interval_until.clone(),
+            left: Box::new(globally_g0.clone()),
+            right: Box::new(eventually_g3.clone()),
+            left_cache: RingBuffer::new(),
+            right_cache: RingBuffer::new(),
+            t_max: Duration::ZERO,
+            last_eval_time: None,
+            eval_buffer: BTreeSet::new(),
+        };
+        let inputs = get_signal_3();
+
+        println!("\n");
+        println!("STL formula: {}", globally_g0.to_string());
+        for input in inputs.clone() {
+            let res_global = globally_g0.robustness(&input);
+            println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
+        }
+        println!("\n");
+        println!("STL formula: {}", eventually_g3.to_string());
+        for input in inputs.clone() {
+            let res_ev = eventually_g3.robustness(&input);
+            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+        println!("STL formula: {}", op_until.to_string());
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
         }
     }
 }
