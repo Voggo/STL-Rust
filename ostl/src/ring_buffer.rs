@@ -139,7 +139,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ring_buffer_test() {
+    fn ring_creation() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
             value: 1,
@@ -156,11 +156,33 @@ mod tests {
 
         for i in 0..3 {
             signal.steps.get(i).map(|step| {
-                println!(
-                    "Step {}: value = {}, timestamp = {:?}",
-                    i, step.value, step.timestamp
-                );
+                assert_eq!(step.value, i + 1);
             });
         }
+    }
+
+    #[test]
+    fn ring_prune() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+
+        // Prune steps older than 1 second from the latest timestamp (which is 3 seconds)
+        // This should remove the step with timestamp 1 second
+        signal.prune(Duration::from_secs(1));
+
+        assert_eq!(signal.len(), 2);
+        assert_eq!(signal.get_front().unwrap().value, 2);
+        assert_eq!(signal.get_back().unwrap().value, 3);
     }
 }
