@@ -241,14 +241,11 @@ mod tests {
             vec![
                 Step::new(Some(false), Duration::from_secs(1)),
                 Step::new(Some(false), Duration::from_secs(2)),
-            ],
-            vec![
                 Step::new(Some(false), Duration::from_secs(3)),
             ],
             vec![],
-            vec![
-                Step::new(Some(true), Duration::from_secs(4)),
-            ],
+            vec![],
+            vec![Step::new(Some(true), Duration::from_secs(4))],
         ]
     }
 
@@ -258,22 +255,92 @@ mod tests {
 
     #[rstest]
     // --- Cases for Formula 1, Signal 1 ---
-    #[case::f1_s1_naive_f64_strict(formula_1(), signal_1(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f1_s1_f64_strict())]
-    #[case::f1_s1_inc_f64_strict(formula_1(), signal_1(), MonitoringStrategy::Incremental, EvaluationMode::Strict, exp_f1_s1_f64_strict())]
-    #[case::f1_s1_naive_bool_strict(formula_1(), signal_1(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f1_s1_bool_strict())]
-    #[case::f1_s1_inc_bool_eager(formula_1(), signal_1(), MonitoringStrategy::Incremental, EvaluationMode::Eager, exp_f1_s1_bool_eager())]
-    
+    #[case::f1_s1_naive_f64_strict(
+        formula_1(),
+        signal_1(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f1_s1_f64_strict()
+    )]
+    #[case::f1_s1_inc_f64_strict(
+        formula_1(),
+        signal_1(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Strict,
+        exp_f1_s1_f64_strict()
+    )]
+    #[case::f1_s1_naive_bool_strict(
+        formula_1(),
+        signal_1(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f1_s1_bool_strict()
+    )]
+    #[case::f1_s1_inc_bool_eager(
+        formula_1(),
+        signal_1(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Eager,
+        exp_f1_s1_bool_eager()
+    )]
     // --- Cases for Formula 2, Signal 2 ---
-    #[case::f2_s2_inc_bool_eager(formula_2(), signal_2(), MonitoringStrategy::Incremental, EvaluationMode::Eager, exp_f2_s2_bool_eager())]
-    #[case::f2_s2_naive_bool_strict(formula_2(), signal_2(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f2_s2_bool_strict())]
-    #[case::f2_s2_naive_f64_strict(formula_2(), signal_2(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f2_s2_f64_strict())]
-    #[case::f2_s2_inc_f64_strict(formula_2(), signal_2(), MonitoringStrategy::Incremental, EvaluationMode::Strict, exp_f2_s2_f64_strict())]
-
+    #[case::f2_s2_inc_bool_eager(
+        formula_2(),
+        signal_2(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Eager,
+        exp_f2_s2_bool_eager()
+    )]
+    #[case::f2_s2_naive_bool_strict(
+        formula_2(),
+        signal_2(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f2_s2_bool_strict()
+    )]
+    #[case::f2_s2_naive_f64_strict(
+        formula_2(),
+        signal_2(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f2_s2_f64_strict()
+    )]
+    #[case::f2_s2_inc_f64_strict(
+        formula_2(),
+        signal_2(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Strict,
+        exp_f2_s2_f64_strict()
+    )]
     // --- Cases for Formula 3, Signal 3 ---
-    #[case::f3_s3_inc_bool_eager(formula_3(), signal_3(), MonitoringStrategy::Incremental, EvaluationMode::Eager, exp_f3_s3_bool_eager())]
-    #[case::f3_s3_naive_bool_strict(formula_3(), signal_3(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f3_s3_bool_strict())]
-    #[case::f3_s3_naive_f64_strict(formula_3(), signal_3(), MonitoringStrategy::Naive, EvaluationMode::Strict, exp_f3_s3_f64_strict())]
-    #[case::f3_s3_inc_f64_strict(formula_3(), signal_3(), MonitoringStrategy::Incremental, EvaluationMode::Strict, exp_f3_s3_f64_strict())]
+    #[case::f3_s3_inc_bool_eager(
+        formula_3(),
+        signal_3(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Eager,
+        exp_f3_s3_bool_eager()
+    )]
+    #[case::f3_s3_naive_bool_strict(
+        formula_3(),
+        signal_3(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f3_s3_bool_strict()
+    )]
+    #[case::f3_s3_naive_f64_strict(
+        formula_3(),
+        signal_3(),
+        MonitoringStrategy::Naive,
+        EvaluationMode::Strict,
+        exp_f3_s3_f64_strict()
+    )]
+    #[case::f3_s3_inc_f64_strict(
+        formula_3(),
+        signal_3(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Strict,
+        exp_f3_s3_f64_strict()
+    )]
     fn test_monitor_matrix<Y>(
         #[case] formula: FormulaDefinition,
         #[case] signal: Vec<Step<f64>>,
