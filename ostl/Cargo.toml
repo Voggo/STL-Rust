@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+criterion = "0.7.0"
 dyn-clone = "1.0.20"
 proptest = "1.8.0"
 rstest = "0.26.1"
+
+[[bench]]
+name = "monitor_benchmark"
+harness = false
