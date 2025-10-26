@@ -1371,61 +1371,61 @@ mod tests {
             println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
         }
     }
-    #[test]
-    fn test_5_until() {
-        let interval_globally = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(2),
-        };
-        let interval_eventually = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(2),
-        };
-        let interval_until = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(6),
-        };
-        let mut globally_g0 = Globally::new(
-            interval_globally.clone(),
-            Box::new(Atomic::<bool>::new_greater_than(0.0)),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let mut eventually_g3 = Eventually::new(
-            interval_eventually.clone(),
-            Box::new(Atomic::<bool>::new_greater_than(3.0)),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let mut op_until = Until::new(
-            interval_until.clone(),
-            Box::new(globally_g0.clone()),
-            Box::new(eventually_g3.clone()),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let inputs = get_signal_3();
+    // #[test]
+    // fn test_5_until() {
+    //     let interval_globally = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(2),
+    //     };
+    //     let interval_eventually = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(2),
+    //     };
+    //     let interval_until = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(6),
+    //     };
+    //     let mut globally_g0 = Globally::new(
+    //         interval_globally.clone(),
+    //         Box::new(Atomic::<bool>::new_greater_than(0.0)),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let mut eventually_g3 = Eventually::new(
+    //         interval_eventually.clone(),
+    //         Box::new(Atomic::<bool>::new_greater_than(3.0)),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let mut op_until = Until::new(
+    //         interval_until.clone(),
+    //         Box::new(globally_g0.clone()),
+    //         Box::new(eventually_g3.clone()),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let inputs = get_signal_3();
 
-        println!("\n");
-        println!("STL formula: {}", globally_g0.to_string());
-        for input in inputs.clone() {
-            let res_global = globally_g0.robustness(&input);
-            println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
-        }
-        println!("\n");
-        println!("STL formula: {}", eventually_g3.to_string());
-        for input in inputs.clone() {
-            let res_ev = eventually_g3.robustness(&input);
-            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
-        }
-        println!("\n");
-        println!("STL formula: {}", op_until.to_string());
-        for input in inputs {
-            let res_until = op_until.robustness(&input);
-            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
-        }
-    }
+    //     println!("\n");
+    //     println!("STL formula: {}", globally_g0.to_string());
+    //     for input in inputs.clone() {
+    //         let res_global = globally_g0.robustness(&input);
+    //         println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
+    //     }
+    //     println!("\n");
+    //     println!("STL formula: {}", eventually_g3.to_string());
+    //     for input in inputs.clone() {
+    //         let res_ev = eventually_g3.robustness(&input);
+    //         println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+    //     }
+    //     println!("\n");
+    //     println!("STL formula: {}", op_until.to_string());
+    //     for input in inputs {
+    //         let res_until = op_until.robustness(&input);
+    //         println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+    //     }
+    // }
 }

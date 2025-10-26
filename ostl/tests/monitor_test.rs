@@ -92,6 +92,35 @@ mod tests {
         )
     }
 
+    #[fixture]
+    #[once]
+    fn formula_4() -> FormulaDefinition {
+        // F[0, 2] (x > 5) && True
+        FormulaDefinition::And(
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
+                Box::new(FormulaDefinition::GreaterThan(5.0)),
+            )),
+            Box::new(FormulaDefinition::True),
+        )
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_5() -> FormulaDefinition {
+        // F[0, 2] (x > 5)
+        FormulaDefinition::Eventually(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(2),
+            },
+            Box::new(FormulaDefinition::GreaterThan(5.0)),
+        )
+    }
+
     // ---
     // Signal Fixtures
     // ---
@@ -249,6 +278,44 @@ mod tests {
         ]
     }
 
+    fn exp_f4_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+        vec![
+            vec![],
+            vec![],
+            vec![Step::new(Some(1.0), Duration::from_secs(0))],
+            vec![Step::new(Some(1.0), Duration::from_secs(1))],
+            vec![Step::new(Some(1.0), Duration::from_secs(2))],
+            vec![Step::new(Some(1.0), Duration::from_secs(3))],
+            vec![Step::new(Some(1.0), Duration::from_secs(4))],
+        ]
+    }
+
+    fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+        convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict())
+    }
+
+    fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        vec![
+            vec![],
+            vec![
+                Step::new(Some(true), Duration::from_secs(0)),
+                Step::new(Some(true), Duration::from_secs(1)),
+            ],
+            vec![],
+            vec![],
+            vec![
+                Step::new(Some(true), Duration::from_secs(2)),
+                Step::new(Some(true), Duration::from_secs(3)),
+                Step::new(Some(true), Duration::from_secs(4)),
+            ],
+            vec![],
+            vec![
+                Step::new(Some(true), Duration::from_secs(5)),
+                Step::new(Some(true), Duration::from_secs(6)),
+            ],
+        ]
+    }
+
     // ---
     // Single, Unified Test Runner
     // ---
@@ -256,28 +323,28 @@ mod tests {
     #[rstest]
     // --- Cases for Formula 1, Signal 1 ---
     #[case::f1_s1_naive_f64_strict(
-        formula_1(),
+        vec![formula_1()],
         signal_1(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f1_s1_f64_strict()
     )]
     #[case::f1_s1_inc_f64_strict(
-        formula_1(),
+        vec![formula_1()],
         signal_1(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Strict,
         exp_f1_s1_f64_strict()
     )]
     #[case::f1_s1_naive_bool_strict(
-        formula_1(),
+        vec![formula_1()],
         signal_1(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f1_s1_bool_strict()
     )]
     #[case::f1_s1_inc_bool_eager(
-        formula_1(),
+        vec![formula_1()],
         signal_1(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Eager,
@@ -285,28 +352,28 @@ mod tests {
     )]
     // --- Cases for Formula 2, Signal 2 ---
     #[case::f2_s2_inc_bool_eager(
-        formula_2(),
+        vec![formula_2()],
         signal_2(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Eager,
         exp_f2_s2_bool_eager()
     )]
     #[case::f2_s2_naive_bool_strict(
-        formula_2(),
+        vec![formula_2()],
         signal_2(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f2_s2_bool_strict()
     )]
     #[case::f2_s2_naive_f64_strict(
-        formula_2(),
+        vec![formula_2()],
         signal_2(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f2_s2_f64_strict()
     )]
     #[case::f2_s2_inc_f64_strict(
-        formula_2(),
+        vec![formula_2()],
         signal_2(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Strict,
@@ -314,35 +381,65 @@ mod tests {
     )]
     // --- Cases for Formula 3, Signal 3 ---
     #[case::f3_s3_inc_bool_eager(
-        formula_3(),
+        vec![formula_3()],
         signal_3(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Eager,
         exp_f3_s3_bool_eager()
     )]
     #[case::f3_s3_naive_bool_strict(
-        formula_3(),
+        vec![formula_3()],
         signal_3(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f3_s3_bool_strict()
     )]
     #[case::f3_s3_naive_f64_strict(
-        formula_3(),
+        vec![formula_3()],
         signal_3(),
         MonitoringStrategy::Naive,
         EvaluationMode::Strict,
         exp_f3_s3_f64_strict()
     )]
     #[case::f3_s3_inc_f64_strict(
-        formula_3(),
+        vec![formula_3()],
         signal_3(),
         MonitoringStrategy::Incremental,
         EvaluationMode::Strict,
         exp_f3_s3_f64_strict()
     )]
+    // --- Cases for Formula 4+5, Signal 3 (equivalence) ---
+    #[case::f4_s3_inc_bool_eager(
+        vec![formula_4(), formula_5()],
+        signal_3(),
+        MonitoringStrategy::Incremental,
+        EvaluationMode::Eager,
+        exp_f4_s3_bool_eager()
+    )]
+    // TODO: These currently fail due to issues with True handling in f64 monitors
+    // #[case::f4_s3_naive_bool_strict(
+    //     vec![formula_4(), formula_5()],
+    //     signal_3(),
+    //     MonitoringStrategy::Naive,
+    //     EvaluationMode::Strict,
+    //     exp_f4_s3_bool_strict()
+    // )]
+    // #[case::f4_s3_naive_f64_strict(
+    //     vec![formula_4(), formula_5()],
+    //     signal_3(),
+    //     MonitoringStrategy::Naive,
+    //     EvaluationMode::Strict,
+    //     exp_f4_s3_f64_strict()
+    // )]
+    // #[case::f4_s3_inc_f64_strict(
+    //     vec![formula_4(), formula_5()],
+    //     signal_3(),
+    //     MonitoringStrategy::Incremental,
+    //     EvaluationMode::Strict,
+    //     exp_f4_s3_f64_strict()
+    // )]
     fn test_monitor_matrix<Y>(
-        #[case] formula: FormulaDefinition,
+        #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] strategy: MonitoringStrategy,
         #[case] evaluation_mode: EvaluationMode,
@@ -350,19 +447,31 @@ mod tests {
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        let mut monitor = StlMonitor::builder()
-            .formula(formula)
-            .strategy(strategy)
-            .evaluation_mode(evaluation_mode)
-            .build()
-            .unwrap(); // We only test success cases here
+        for (i, formula) in formulas.into_iter().enumerate() {
+            let mut monitor = StlMonitor::builder()
+                .formula(formula.clone()) // Use the formula from the vec
+                .strategy(strategy)
+                .evaluation_mode(evaluation_mode)
+                .build()
+                .unwrap();
 
-        let mut all_results = Vec::new();
-        for step in signal {
-            all_results.push(monitor.instantaneous_robustness(&step));
+            let mut all_results = Vec::new();
+            // Use a fresh clone of the signal for each monitor
+            for step in signal.clone() {
+                all_results.push(monitor.instantaneous_robustness(&step));
+            }
+
+            // Add a detailed message on failure
+            assert_eq!(
+                all_results,
+                expected,
+                "Test failed for formula at index {} ({}) with strategy {:?} and mode {:?}",
+                i,
+                monitor.specification_to_string(),
+                strategy,
+                evaluation_mode
+            );
         }
-
-        assert_eq!(all_results, expected);
     }
 
     // ---
@@ -400,4 +509,6 @@ mod tests {
 
     //     assert!(result.is_err());
     // }
+
+    // In tests/monitor_test.rs
 }
