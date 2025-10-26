@@ -83,7 +83,7 @@ where
 
         //if None, return empty vec; wrap inner Y into Option<Y> so types match Vec<Step<Option<Y>>>
         match robustness {
-            Some(r) => vec![Step::new(Some(r.value), r.timestamp)],
+            Some(robustness_step) => vec![Step::new(Some(robustness_step.value), robustness_step.timestamp)],
             None => vec![],
         }
     }
@@ -272,7 +272,11 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        let t = current_step.timestamp.saturating_sub(interval.end);
+        let max_lookahead = self.get_max_lookahead();
+        if current_step.timestamp < max_lookahead {
+            return None; // Not enough data to evaluate
+        }
+        let t = current_step.timestamp.saturating_sub(max_lookahead);
         let lower_bound_t_prime = t + interval.start;
         let upper_bound_t_prime = t + interval.end;
         let back = signal.get_back()?.timestamp;
@@ -287,9 +291,9 @@ impl StlOperator {
             })
             .map(|step| phi.robustness_naive(signal, step))
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(v)) => Some(Y::or(a, v.value)), // FIXED: used v.value
+                (Some(a), Some(current_step)) => Some(Y::or(a, current_step.value)),
                 (Some(a), None) => Some(a),
-                (None, Some(v)) => Some(v.value), // FIXED: used v.value
+                (None, Some(current_step)) => Some(current_step.value),
                 (None, None) => None,
             })?;
 
@@ -309,7 +313,14 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        let t = current_step.timestamp.saturating_sub(interval.end);
+        let max_lookahead = self.get_max_lookahead();
+
+        if current_step.timestamp < max_lookahead {
+            return None; // Not enough data to evaluate
+        }
+
+        let t = current_step.timestamp.saturating_sub(max_lookahead);
+        
         let lower_bound_t_prime = t + interval.start;
         let upper_bound_t_prime = t + interval.end;
         let back = signal.get_back()?.timestamp;
@@ -324,9 +335,9 @@ impl StlOperator {
             })
             .map(|step| phi.robustness_naive(signal, step))
             .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(v)) => Some(Y::and(a, v.value)),
+                (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
                 (Some(a), None) => Some(a),
-                (None, Some(v)) => Some(v.value),
+                (None, Some(current_step)) => Some(current_step.value),
                 (None, None) => None,
             })?;
         Some(Step::new(result, t))
@@ -345,7 +356,11 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        let t = current_step.timestamp.saturating_sub(interval.end);
+        let max_lookahead = self.get_max_lookahead();
+        if current_step.timestamp < max_lookahead {
+            return None; // Not enough data to evaluate
+        }
+        let t = current_step.timestamp.saturating_sub(max_lookahead);
         let lower_bound_t_prime = t + interval.start;
         let upper_bound_t_prime = t + interval.end;
         let back = signal.get_back()?.timestamp;
@@ -366,9 +381,9 @@ impl StlOperator {
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp <= t_prime)
                     .map(|s| phi.robustness_naive(signal, s)) // This is Option<Step<Y>>
                     .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
-                        (Some(a), Some(v)) => Some(Y::and(a, v.value)), // FIXED
+                        (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)), // FIXED
                         (Some(a), None) => Some(a),
-                        (None, Some(v)) => Some(v.value), // FIXED
+                        (None, Some(current_step)) => Some(current_step.value), // FIXED
                         (None, None) => None,
                     });
 
@@ -380,9 +395,9 @@ impl StlOperator {
                     })
             })
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(v_val)) => Some(Y::or(a, v_val)), // FIXED (v_val is Y)
+                (Some(a), Some(robustness_value)) => Some(Y::or(a, robustness_value)), // FIXED (robustness_value is Y)
                 (Some(a), None) => Some(a),
-                (None, Some(v_val)) => Some(v_val), // FIXED (v_val is Y)
+                (None, Some(robustness_value)) => Some(robustness_value), // FIXED (robustness_value is Y)
                 (None, None) => None,
             })?;
 
