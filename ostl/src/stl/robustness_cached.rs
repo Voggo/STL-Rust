@@ -157,6 +157,7 @@ pub struct And<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -180,6 +181,7 @@ impl<T, C, Y> And<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step::new(None, Duration::ZERO),
             right_last_known: Step::new(None, Duration::ZERO),
             mode,
@@ -208,12 +210,24 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.right.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
         let output = match self.mode {
             EvaluationMode::Strict => {
@@ -236,6 +250,10 @@ where
         self.left_cache.prune(max_timestamp);
         self.right_cache.prune(max_timestamp);
 
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        }
+
         output
     }
 }
@@ -246,6 +264,7 @@ pub struct Or<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -269,6 +288,7 @@ impl<T, C, Y> Or<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step {
                 value: None,
                 timestamp: Duration::ZERO,
@@ -303,19 +323,29 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.right.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
         let output = match self.mode {
-            EvaluationMode::Strict => process_binary_strict(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                Y::or,
-            ),
+            EvaluationMode::Strict => {
+                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::or)
+            }
             EvaluationMode::Eager => process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
@@ -331,6 +361,9 @@ where
             .max(self.left_last_known.timestamp);
         self.left_cache.prune(max_timestamp);
         self.right_cache.prune(max_timestamp);
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        }
         output
     }
 }
@@ -389,6 +422,7 @@ pub struct Implies<T, C, Y> {
     pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     pub left_last_known: Step<Option<Y>>,
     pub right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -412,6 +446,7 @@ impl<T, C, Y> Implies<T, C, Y> {
             consequent,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step {
                 value: None,
                 timestamp: Duration::ZERO,
@@ -447,20 +482,30 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.antecedent.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.consequent.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
 
-        match self.mode {
-            EvaluationMode::Strict => process_binary_strict(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                Y::implies,
-            ),
+        let output = match self.mode {
+            EvaluationMode::Strict => {
+                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
+            }
             EvaluationMode::Eager => process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
@@ -469,7 +514,19 @@ where
                 Y::implies,
                 Y::atomic_false(), // Default atomic value for 'implies'
             ),
-        }
+        };
+
+        let max_timestamp = self
+            .right_last_known
+            .timestamp
+            .max(self.left_last_known.timestamp);
+
+        self.left_cache.prune(max_timestamp);
+        self.right_cache.prune(max_timestamp);
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        };
+        output
     }
 }
 
