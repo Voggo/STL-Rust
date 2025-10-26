@@ -34,7 +34,7 @@ where
             let step = right_cache.pop_front().unwrap();
             Step::new(None, step.timestamp)
         } else {
-            // Timestamps are equal. Combine their current values.j
+            // Timestamps are equal. Combine their current values.
             // This is the only time we produce a Some(value).
             let combined_value = left_step.value.as_ref().and_then(|l_val| {
                 right_step
@@ -322,7 +322,7 @@ where
                 &mut self.left_last_known,
                 &mut self.right_last_known,
                 Y::or,
-                Y::atomic_false(),
+                Y::atomic_true(),
             ),
         };
         let max_timestamp = self
@@ -559,7 +559,6 @@ where
             }
 
             // B. Check for normal completion: if the full time window has passed.
-            // if step.timestamp >= (t_eval + self.max_lookahead) {
             if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_front(); // Task is done
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));

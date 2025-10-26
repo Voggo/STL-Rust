@@ -118,7 +118,7 @@ mod tests {
 
     #[fixture]
     #[once]
-    fn signal_3 () -> Vec<Step<f64>> {
+    fn signal_3() -> Vec<Step<f64>> {
         vec![
             Step::new(0.0, Duration::from_secs(0)),
             Step::new(6.0, Duration::from_secs(1)),
