@@ -388,12 +388,14 @@ mod tests {
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
 
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
 
@@ -423,12 +425,14 @@ mod tests {
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
 
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
 
@@ -467,11 +471,13 @@ mod tests {
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
             .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
             .strategy(MonitoringStrategy::Naive)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
         assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
