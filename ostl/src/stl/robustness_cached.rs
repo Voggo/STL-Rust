@@ -1,11 +1,61 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
-use std::cmp::Reverse;
+use crate::stl::monitor::EvaluationMode;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::time::Duration;
 
-fn process_binary_operator_caches<C, Y, F>(
+// This is the new function for Strict mode
+fn process_binary_strict<C, Y, F>(
+    left_cache: &mut C,
+    right_cache: &mut C,
+    combine_op: F,
+) -> Vec<Step<Option<Y>>>
+where
+    C: RingBufferTrait<Value = Option<Y>>,
+    Y: RobustnessSemantics,
+    F: Fn(Y, Y) -> Y,
+{
+    let mut output_robustness = Vec::new();
+
+    // In Strict mode, we only process when timestamps align.
+    // We cannot use "last_known" values.
+    while let (Some(left_step), Some(right_step)) =
+        (left_cache.get_front(), right_cache.get_front())
+    {
+        let new_step = if left_step.timestamp < right_step.timestamp {
+            // Left is earlier. Right has no value for this time.
+            // Strict propagation of None.
+            let step = left_cache.pop_front().unwrap();
+            Step::new(None, step.timestamp)
+        } else if right_step.timestamp < left_step.timestamp {
+            // Right is earlier. Left has no value for this time.
+            // Strict propagation of None.
+            let step = right_cache.pop_front().unwrap();
+            Step::new(None, step.timestamp)
+        } else {
+            // Timestamps are equal. Combine their current values.j
+            // This is the only time we produce a Some(value).
+            let combined_value = left_step.value.as_ref().and_then(|l_val| {
+                right_step
+                    .value
+                    .as_ref()
+                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+            });
+
+            let step = left_cache.pop_front().unwrap();
+            right_cache.pop_front();
+            Step::new(combined_value, step.timestamp)
+        };
+        output_robustness.push(new_step);
+    }
+
+    // In strict mode, if one cache has data and the other is empty,
+    // we can't compute anything. We must wait.
+    output_robustness
+}
+
+fn process_binary_eager<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
     left_last_known: &mut Step<Option<Y>>,
@@ -109,6 +159,7 @@ pub struct And<T, C, Y> {
     pub right_cache: C,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
+    mode: EvaluationMode,
 }
 
 impl<T, C, Y> And<T, C, Y> {
@@ -117,6 +168,7 @@ impl<T, C, Y> And<T, C, Y> {
         right: Box<dyn StlOperatorTrait<T, Output = Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -130,6 +182,7 @@ impl<T, C, Y> And<T, C, Y> {
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             left_last_known: Step::new(None, Duration::ZERO),
             right_last_known: Step::new(None, Duration::ZERO),
+            mode,
         }
     }
 }
@@ -146,6 +199,12 @@ where
         self
     }
 
+    fn get_max_lookahead(&self) -> Duration {
+        let left_lookahead = self.left.get_max_lookahead();
+        let right_lookahead = self.right.get_max_lookahead();
+        left_lookahead.max(right_lookahead)
+    }
+
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
@@ -156,14 +215,19 @@ where
         for update in right_updates {
             self.right_cache.add_step(update);
         }
-        let output = process_binary_operator_caches(
-            &mut self.left_cache,
-            &mut self.right_cache,
-            &mut self.left_last_known,
-            &mut self.right_last_known,
-            Y::and,            // The only difference!
-            Y::atomic_false(), // Default atomic value for 'and'
-        );
+        let output = match self.mode {
+            EvaluationMode::Strict => {
+                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::and)
+            }
+            EvaluationMode::Eager => process_binary_eager(
+                &mut self.left_cache,
+                &mut self.right_cache,
+                &mut self.left_last_known,
+                &mut self.right_last_known,
+                Y::and,            // The only difference!
+                Y::atomic_false(), // Default atomic value for 'and'
+            ),
+        };
 
         let max_timestamp = self
             .right_last_known
@@ -184,6 +248,7 @@ pub struct Or<T, C, Y> {
     pub right_cache: C,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
+    mode: EvaluationMode,
 }
 
 impl<T, C, Y> Or<T, C, Y> {
@@ -192,6 +257,7 @@ impl<T, C, Y> Or<T, C, Y> {
         right: Box<dyn StlOperatorTrait<T, Output = Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -211,6 +277,7 @@ impl<T, C, Y> Or<T, C, Y> {
                 value: None,
                 timestamp: Duration::ZERO,
             },
+            mode,
         }
     }
 }
@@ -227,6 +294,12 @@ where
         self
     }
 
+    fn get_max_lookahead(&self) -> Duration {
+        let left_lookahead = self.left.get_max_lookahead();
+        let right_lookahead = self.right.get_max_lookahead();
+        left_lookahead.max(right_lookahead)
+    }
+
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
@@ -237,14 +310,21 @@ where
         for update in right_updates {
             self.right_cache.add_step(update);
         }
-        let output = process_binary_operator_caches(
-            &mut self.left_cache,
-            &mut self.right_cache,
-            &mut self.left_last_known,
-            &mut self.right_last_known,
-            Y::or,            // The only difference!
-            Y::atomic_true(), // Default atomic value for 'or'
-        );
+        let output = match self.mode {
+            EvaluationMode::Strict => process_binary_strict(
+                &mut self.left_cache,
+                &mut self.right_cache,
+                Y::or,
+            ),
+            EvaluationMode::Eager => process_binary_eager(
+                &mut self.left_cache,
+                &mut self.right_cache,
+                &mut self.left_last_known,
+                &mut self.right_last_known,
+                Y::or,
+                Y::atomic_false(),
+            ),
+        };
         let max_timestamp = self
             .right_last_known
             .timestamp
@@ -258,7 +338,6 @@ where
 #[derive(Clone)]
 pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    // question: why no cache here ?
 }
 
 impl<T, Y> Not<T, Y> {
@@ -280,6 +359,10 @@ where
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn get_max_lookahead(&self) -> Duration {
+        self.operand.get_max_lookahead()
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -308,6 +391,7 @@ pub struct Implies<T, C, Y> {
     pub right_cache: C,
     pub left_last_known: Step<Option<Y>>,
     pub right_last_known: Step<Option<Y>>,
+    mode: EvaluationMode,
 }
 
 impl<T, C, Y> Implies<T, C, Y> {
@@ -316,6 +400,7 @@ impl<T, C, Y> Implies<T, C, Y> {
         consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -335,6 +420,7 @@ impl<T, C, Y> Implies<T, C, Y> {
                 value: None,
                 timestamp: Duration::ZERO,
             },
+            mode,
         }
     }
 }
@@ -352,6 +438,12 @@ where
         self
     }
 
+    fn get_max_lookahead(&self) -> Duration {
+        let left_lookahead = self.antecedent.get_max_lookahead();
+        let right_lookahead = self.consequent.get_max_lookahead();
+        left_lookahead.max(right_lookahead)
+    }
+
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.antecedent.robustness(step);
         for update in left_updates {
@@ -363,14 +455,21 @@ where
             self.right_cache.add_step(update);
         }
 
-        process_binary_operator_caches(
-            &mut self.left_cache,
-            &mut self.right_cache,
-            &mut self.left_last_known,
-            &mut self.right_last_known,
-            Y::implies,
-            Y::atomic_false(), // Default atomic value for 'implies'
-        )
+        match self.mode {
+            EvaluationMode::Strict => process_binary_strict(
+                &mut self.left_cache,
+                &mut self.right_cache,
+                Y::implies,
+            ),
+            EvaluationMode::Eager => process_binary_eager(
+                &mut self.left_cache,
+                &mut self.right_cache,
+                &mut self.left_last_known,
+                &mut self.right_last_known,
+                Y::implies,
+                Y::atomic_false(), // Default atomic value for 'implies'
+            ),
+        }
     }
 }
 
@@ -380,6 +479,8 @@ pub struct Eventually<T, C, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub cache: C,
     pub eval_buffer: C,
+    pub mode: EvaluationMode,
+    max_lookahead: Duration,
 }
 
 impl<T, C, Y> Eventually<T, C, Y> {
@@ -388,17 +489,21 @@ impl<T, C, Y> Eventually<T, C, Y> {
         operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
         cache: Option<C>,
         eval_buffer: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
         C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        let max_lookahead = interval.end + operand.get_max_lookahead();
         Eventually {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+            mode,
+            max_lookahead,
         }
     }
 }
@@ -413,6 +518,10 @@ where
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn get_max_lookahead(&self) -> Duration {
+        self.max_lookahead
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -443,14 +552,15 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if max_in_window == Y::atomic_true() {
+            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_true() {
                 self.eval_buffer.pop_front(); // Task is done
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= window_end {
+            // if step.timestamp >= (t_eval + self.max_lookahead) {
+            if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_front(); // Task is done
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
@@ -478,6 +588,8 @@ pub struct Globally<T, Y, C> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
     pub cache: C,
     pub eval_buffer: C,
+    pub mode: EvaluationMode,
+    max_lookahead: Duration,
 }
 
 impl<T, C, Y> Globally<T, Y, C> {
@@ -486,17 +598,21 @@ impl<T, C, Y> Globally<T, Y, C> {
         operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
         cache: Option<C>,
         eval_buffer: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
         C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        let max_lookahead = interval.end + operand.get_max_lookahead();
         Globally {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+            mode,
+            max_lookahead,
         }
     }
 }
@@ -511,6 +627,9 @@ where
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+    fn get_max_lookahead(&self) -> Duration {
+        self.max_lookahead
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -541,14 +660,14 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
                 self.eval_buffer.pop_front();
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= window_end {
+            if step.timestamp >= (t_eval + self.max_lookahead) {
                 self.eval_buffer.pop_front(); // Task is done
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));
                 continue; // Move to the next task
@@ -580,6 +699,8 @@ pub struct Until<T, C, Y> {
     pub t_max: Duration,
     pub last_eval_time: Option<Duration>,
     pub eval_buffer: BTreeSet<Duration>,
+    pub mode: EvaluationMode,
+    max_lookahead: Duration,
 }
 
 impl<T, C, Y> Until<T, C, Y> {
@@ -589,12 +710,14 @@ impl<T, C, Y> Until<T, C, Y> {
         right: Box<dyn StlOperatorTrait<T, Output = Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
+        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
         C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        let max_lookahead = interval.end + left.get_max_lookahead().max(right.get_max_lookahead());
         Until {
             interval,
             left,
@@ -604,6 +727,8 @@ impl<T, C, Y> Until<T, C, Y> {
             t_max: Duration::ZERO,
             last_eval_time: None,
             eval_buffer: BTreeSet::new(),
+            mode,
+            max_lookahead,
         }
     }
 }
@@ -618,6 +743,9 @@ where
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+    fn get_max_lookahead(&self) -> Duration {
+        self.max_lookahead
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -675,7 +803,7 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // Short-circuit: if left is false in the window, until is false regardless of right
-            if max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(Y::atomic_false()), t_eval));
                 continue; // Move to the next task
@@ -690,14 +818,17 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // Short-circuit: if right is true in the window, until is true
-            if right_in_window == Y::atomic_true() && self.t_max >= t_eval {
+            if self.mode == EvaluationMode::Eager
+                && right_in_window == Y::atomic_true()
+                && self.t_max >= t_eval
+            {
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(Y::atomic_true()), t_eval));
                 continue; // Move to the next task
             }
 
             // Normal completion: if the full time window has passed.
-            if step.timestamp >= window_end {
+            if step.timestamp >= (t_eval + self.max_lookahead) {
                 let until_value = Y::or(max_in_window, right_in_window);
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new(Some(until_value), t_eval));
@@ -715,7 +846,7 @@ where
         if let Some(last_step) = output_robustness.last() {
             self.last_eval_time = Some(last_step.timestamp);
         }
-        
+
         output_robustness
     }
 }
@@ -765,6 +896,10 @@ where
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn get_max_lookahead(&self) -> Duration {
+        Duration::ZERO
     }
 }
 
@@ -998,56 +1133,46 @@ mod tests {
         };
         let atomic = Atomic::<bool>::new_greater_than(5.0);
 
-        let mut op = And {
-            left: Box::new(Eventually {
-                interval: interval.clone(),
-                operand: Box::new(atomic.clone()),
-                cache: RingBuffer::new(),
-                eval_buffer: RingBuffer::new(),
-            }),
-            right: Box::new(Atomic::<bool>::new_true()),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            left_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-            right_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-        };
-        let mut op_ev = Eventually {
-            interval: interval.clone(),
-            operand: Box::new(atomic.clone()),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut op_global = Globally {
-            interval: interval.clone(),
-            operand: Box::new(atomic.clone()),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut op_or = Or {
-            left: Box::new(Eventually {
-                interval: interval.clone(),
-                operand: Box::new(atomic.clone()),
-                cache: RingBuffer::new(),
-                eval_buffer: RingBuffer::new(),
-            }),
-            right: Box::new(Atomic::<bool>::new_true()),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            left_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-            right_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-        };
+        let mut op = And::new(
+            Box::new(Eventually::new(
+                interval.clone(),
+                Box::new(atomic.clone()),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+                EvaluationMode::Eager,
+            )),
+            Box::new(Atomic::<bool>::new_true()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_ev = Eventually::new(
+            interval.clone(),
+            Box::new(atomic.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_global = Globally::new(
+            interval.clone(),
+            Box::new(atomic.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_or = Or::new(
+            Box::new(Eventually::new(
+                interval.clone(),
+                Box::new(atomic.clone()),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+                EvaluationMode::Eager,
+            )),
+            Box::new(Atomic::<bool>::new_true()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         println!("STL formula: {}", op.to_string());
         let inputs = get_signal_1();
 
@@ -1081,32 +1206,27 @@ mod tests {
         let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
         let atomic_g0 = Atomic::<bool>::new_greater_than(0.0);
 
-        let mut op_global = Globally {
-            interval: interval.clone(),
-            operand: Box::new(atomic_g0.clone()),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut op_ev = Eventually {
-            interval: interval.clone(),
-            operand: Box::new(atomic_g5.clone()),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut op_and = And {
-            left: Box::new(op_ev.clone()),
-            right: Box::new(op_global.clone()),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            left_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-            right_last_known: Step {
-                value: None,
-                timestamp: Duration::from_secs(0),
-            },
-        };
+        let mut op_global = Globally::new(
+            interval.clone(),
+            Box::new(atomic_g0.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_ev = Eventually::new(
+            interval.clone(),
+            Box::new(atomic_g5.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_and = And::new(
+            Box::new(op_ev.clone()),
+            Box::new(op_global.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         println!("STL formula: {}", op_global.to_string());
         let inputs = get_signal_1();
 
@@ -1135,16 +1255,14 @@ mod tests {
         let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
         let atomic_g0 = Atomic::<bool>::new_greater_than(0.0);
 
-        let mut op_until = Until {
-            interval: interval.clone(),
-            left: Box::new(atomic_g0.clone()),
-            right: Box::new(atomic_g5.clone()),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            t_max: Duration::ZERO,
-            last_eval_time: None,
-            eval_buffer: BTreeSet::new(),
-        };
+        let mut op_until = Until::new(
+            interval.clone(),
+            Box::new(atomic_g0.clone()),
+            Box::new(atomic_g5.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         println!("STL formula: {}", op_until.to_string());
         let inputs = get_signal_1();
         for input in inputs {
@@ -1164,24 +1282,23 @@ mod tests {
             end: Duration::from_secs(6),
         };
 
-        let mut eventually_g3 = Eventually {
-            interval: interval_eventually.clone(),
-            operand: Box::new(Atomic::<bool>::new_greater_than(3.0)),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
+        let mut eventually_g3 = Eventually::new(
+            interval_eventually.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
 
-        let mut op_until = Until {
-            interval: interval_until.clone(),
-            left: Box::new(eventually_g3.clone()),
-            right: Box::new(atomic_g5),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            t_max: Duration::ZERO,
-            last_eval_time: None,
-            eval_buffer: BTreeSet::new(),
-        };
+        let mut op_until = Until::new(
+            interval_until.clone(),
+            Box::new(eventually_g3.clone()),
+            Box::new(atomic_g5),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         let inputs = get_signal_2();
 
         println!("\n");
@@ -1212,28 +1329,28 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(6),
         };
-        let mut globally_g0 = Globally {
-            interval: interval_globally.clone(),
-            operand: Box::new(Atomic::<bool>::new_greater_than(0.0)),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut eventually_g3 = Eventually {
-            interval: interval_eventually.clone(),
-            operand: Box::new(Atomic::<bool>::new_greater_than(3.0)),
-            cache: RingBuffer::new(),
-            eval_buffer: RingBuffer::new(),
-        };
-        let mut op_until = Until {
-            interval: interval_until.clone(),
-            left: Box::new(globally_g0.clone()),
-            right: Box::new(eventually_g3.clone()),
-            left_cache: RingBuffer::new(),
-            right_cache: RingBuffer::new(),
-            t_max: Duration::ZERO,
-            last_eval_time: None,
-            eval_buffer: BTreeSet::new(),
-        };
+        let mut globally_g0 = Globally::new(
+            interval_globally.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(0.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut eventually_g3 = Eventually::new(
+            interval_eventually.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_until = Until::new(
+            interval_until.clone(),
+            Box::new(globally_g0.clone()),
+            Box::new(eventually_g3.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
         let inputs = get_signal_3();
 
         println!("\n");

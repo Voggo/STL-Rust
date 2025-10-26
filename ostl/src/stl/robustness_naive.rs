@@ -77,6 +77,10 @@ where
         self
     }
 
+    fn get_max_lookahead(&self) -> Duration {
+        self.formula.get_max_lookahead()
+    }
+
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         self.signal.add_step(step.clone());
         let robustness = self.formula.robustness_naive(&self.signal, step); // robustness for signal at step.timestamp
