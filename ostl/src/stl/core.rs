@@ -18,6 +18,7 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     // Added as_any for downcasting
     fn as_any(&self) -> &dyn std::any::Any;
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>;
+    fn get_max_lookahead(&self) -> Duration;
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);

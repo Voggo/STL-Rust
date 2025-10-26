@@ -66,7 +66,7 @@ where
 
 
 
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<Step<T>> {
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_,Step<T>> {
         self.steps.iter()
     }
 }
@@ -131,5 +131,58 @@ where
     type Output = Step<T>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.steps[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_creation() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::new(0, 0),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::new(0, 0),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::new(0, 0),
+        });
+
+        for i in 0..3 {
+            signal.steps.get(i).map(|step| {
+                assert_eq!(step.value, i + 1);
+            });
+        }
+    }
+
+    #[test]
+    fn ring_prune() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+
+        // Prune steps older than 1 second from the latest timestamp (which is 3 seconds)
+        // This should remove the step with timestamp 1 second
+        signal.prune(Duration::from_secs(1));
+
+        assert_eq!(signal.len(), 2);
+        assert_eq!(signal.get_front().unwrap().value, 2);
+        assert_eq!(signal.get_back().unwrap().value, 3);
     }
 }

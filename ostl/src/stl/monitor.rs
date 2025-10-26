@@ -3,6 +3,8 @@ use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
+use std::any::TypeId;
+
 // The input definition of the STL formula, independent of implementation.
 // This mirrors the structure of the NaiveOperator enum for formula definition.
 #[derive(Clone, Debug)]
@@ -25,6 +27,13 @@ pub enum FormulaDefinition {
 pub enum MonitoringStrategy {
     Naive,
     Incremental,
+}
+
+/// Defines the evaluation mode
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EvaluationMode {
+    Eager,
+    Strict,
 }
 
 /// The final monitor struct that handles the input stream.
@@ -54,6 +63,7 @@ impl<T: Clone, Y> StlMonitor<T, Y> {
 pub struct StlMonitorBuilder<T, Y> {
     formula: Option<FormulaDefinition>,
     strategy: MonitoringStrategy,
+    evaluation_mode: EvaluationMode,
     _phantom: std::marker::PhantomData<(T, Y)>,
 }
 
@@ -62,6 +72,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         StlMonitorBuilder {
             formula: None,
             strategy: MonitoringStrategy::Incremental, // Default
+            evaluation_mode: EvaluationMode::Eager,    // Default
             _phantom: std::marker::PhantomData,
         }
     }
@@ -77,6 +88,11 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         self.strategy = strategy;
         self
     }
+    /// Configures the evaluation mode (Eager or Strict).
+    pub fn evaluation_mode(mut self, mode: EvaluationMode) -> Self {
+        self.evaluation_mode = mode;
+        self
+    }
 
     /// Builds the final StlMonitor by recursively constructing the operator tree.
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
@@ -84,15 +100,35 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         T: Into<f64> + Copy + 'static,           // Add required bounds
         Y: RobustnessSemantics + Copy + 'static, // Add required bounds
     {
+        let is_bool = TypeId::of::<Y>() == TypeId::of::<bool>();
+        let is_f64 = TypeId::of::<Y>() == TypeId::of::<f64>();
+        let identifier = if is_bool {
+            "bool"
+        } else if is_f64 {
+            "f64"
+        } else {
+            return Err("Unsupported output type for robustness semantics");
+        };
+
         let formula_def = self
             .formula
             .clone()
             .ok_or("Formula definition is required")?;
 
         // Factory pattern: Build the correct operator tree based on the strategy
-        let root_operator = match self.strategy {
-            MonitoringStrategy::Incremental => self.build_incremental_operator(formula_def),
-            MonitoringStrategy::Naive => self.build_naive_operator(formula_def),
+        let root_operator = match (self.strategy, self.evaluation_mode, identifier) {
+            (_, EvaluationMode::Eager, "f64") => {
+                return Err("Eager evaluation mode is not supported for f64 output type");
+            }
+            (MonitoringStrategy::Incremental, _, _) => {
+                self.build_incremental_operator(formula_def, self.evaluation_mode)
+            }
+            (MonitoringStrategy::Naive, EvaluationMode::Strict, _) => {
+                self.build_naive_operator(formula_def, self.evaluation_mode)
+            }
+            (_, _, _) => {
+                return Err("Chosen strategy and evaluation mode combination is not supported");
+            }
         };
 
         Ok(StlMonitor {
@@ -106,6 +142,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     fn build_naive_operator(
         &self,
         formula: FormulaDefinition,
+        mode: EvaluationMode,
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
@@ -135,7 +172,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::And(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::And(
                     Box::new(
-                        self.build_naive_operator(*l)
+                        self.build_naive_operator(*l, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -143,7 +180,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                             .clone(),
                     ),
                     Box::new(
-                        self.build_naive_operator(*r)
+                        self.build_naive_operator(*r, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -157,7 +194,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::Or(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Or(
                     Box::new(
-                        self.build_naive_operator(*l)
+                        self.build_naive_operator(*l, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -165,7 +202,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                             .clone(),
                     ),
                     Box::new(
-                        self.build_naive_operator(*r)
+                        self.build_naive_operator(*r, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -178,7 +215,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             }),
             FormulaDefinition::Not(op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Not(Box::new(
-                    self.build_naive_operator(*op)
+                    self.build_naive_operator(*op, mode)
                         .as_any()
                         .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                         .unwrap()
@@ -191,7 +228,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::Implies(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
                 formula: StlOperator::Implies(
                     Box::new(
-                        self.build_naive_operator(*l)
+                        self.build_naive_operator(*l, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -199,7 +236,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                             .clone(),
                     ),
                     Box::new(
-                        self.build_naive_operator(*r)
+                        self.build_naive_operator(*r, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -214,7 +251,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 formula: StlOperator::Eventually(
                     i,
                     Box::new(
-                        self.build_naive_operator(*op)
+                        self.build_naive_operator(*op, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -229,7 +266,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 formula: StlOperator::Globally(
                     i,
                     Box::new(
-                        self.build_naive_operator(*op)
+                        self.build_naive_operator(*op, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -244,7 +281,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 formula: StlOperator::Until(
                     i,
                     Box::new(
-                        self.build_naive_operator(*l)
+                        self.build_naive_operator(*l, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -252,7 +289,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                             .clone(),
                     ),
                     Box::new(
-                        self.build_naive_operator(*r)
+                        self.build_naive_operator(*r, mode)
                             .as_any()
                             .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
                             .unwrap()
@@ -269,6 +306,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     fn build_incremental_operator(
         &self,
         formula: FormulaDefinition,
+        mode: EvaluationMode,
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
@@ -280,42 +318,50 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::True => Box::new(Atomic::new_true()),
             FormulaDefinition::False => Box::new(Atomic::new_false()),
             FormulaDefinition::And(l, r) => Box::new(And::new(
-                self.build_incremental_operator(*l),
-                self.build_incremental_operator(*r),
+                self.build_incremental_operator(*l, mode),
+                self.build_incremental_operator(*r, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
             FormulaDefinition::Or(l, r) => Box::new(Or::new(
-                self.build_incremental_operator(*l),
-                self.build_incremental_operator(*r),
+                self.build_incremental_operator(*l, mode),
+                self.build_incremental_operator(*r, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
-            FormulaDefinition::Not(op) => Box::new(Not::new(self.build_incremental_operator(*op))),
+            FormulaDefinition::Not(op) => {
+                Box::new(Not::new(self.build_incremental_operator(*op, mode)))
+            }
             FormulaDefinition::Implies(l, r) => Box::new(Implies::new(
-                self.build_incremental_operator(*l),
-                self.build_incremental_operator(*r),
+                self.build_incremental_operator(*l, mode),
+                self.build_incremental_operator(*r, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
             FormulaDefinition::Eventually(i, op) => Box::new(Eventually::new(
                 i,
-                self.build_incremental_operator(*op),
+                self.build_incremental_operator(*op, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
             FormulaDefinition::Globally(i, op) => Box::new(Globally::new(
                 i,
-                self.build_incremental_operator(*op),
+                self.build_incremental_operator(*op, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
             FormulaDefinition::Until(i, l, r) => Box::new(Until::new(
                 i,
-                self.build_incremental_operator(*l),
-                self.build_incremental_operator(*r),
+                self.build_incremental_operator(*l, mode),
+                self.build_incremental_operator(*r, mode),
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
+                mode,
             )),
         }
     }
