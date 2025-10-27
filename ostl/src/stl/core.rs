@@ -38,19 +38,22 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn atomic_greater_than(value: f64, c: f64) -> Self;
     fn atomic_less_than(value: f64, c: f64) -> Self;
 }
-
 impl RobustnessSemantics for f64 {
     fn and(l: f64, r: f64) -> f64 {
-        l.min(r)
+        let result = l.min(r);
+        if result == -0.0 { 0.0 } else { result }
     }
     fn or(l: f64, r: f64) -> f64 {
-        l.max(r)
+        let result = l.max(r);
+        if result == -0.0 { 0.0 } else { result }
     }
     fn not(val: f64) -> f64 {
-        -val
+        let result = -val;
+        if result == -0.0 { 0.0 } else { result }
     }
     fn implies(antecedent: f64, consequent: f64) -> f64 {
-        (-antecedent).max(consequent)
+        let result = (-antecedent).max(consequent);
+        if result == -0.0 { 0.0 } else { result }
     }
     fn eventually_identity() -> Self {
         f64::NEG_INFINITY
@@ -68,10 +71,12 @@ impl RobustnessSemantics for f64 {
         f64::NEG_INFINITY
     }
     fn atomic_greater_than(value: f64, c: f64) -> Self {
-        value - c
+        let result = value - c;
+        if result == -0.0 { 0.0 } else { result }
     }
     fn atomic_less_than(value: f64, c: f64) -> Self {
-        c - value
+        let result = c - value;
+        if result == -0.0 { 0.0 } else { result }
     }
 }
 
