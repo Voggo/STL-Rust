@@ -210,9 +210,6 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        // phi.robustness_naive(signal, current_step)
-        //     .zip(psi.robustness_naive(signal, current_step))
-        //     .map(|(r1, r2)| Y::and(r1, r2))
         phi.robustness_naive(signal, current_step)
             .zip(psi.robustness_naive(signal, current_step))
             .map(|(step1, step2)| {

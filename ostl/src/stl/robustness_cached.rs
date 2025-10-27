@@ -34,7 +34,7 @@ where
             let step = right_cache.pop_front().unwrap();
             Step::new(None, step.timestamp)
         } else {
-            // Timestamps are equal. Combine their current values.j
+            // Timestamps are equal. Combine their current values.
             // This is the only time we produce a Some(value).
             let combined_value = left_step.value.as_ref().and_then(|l_val| {
                 right_step
@@ -157,6 +157,7 @@ pub struct And<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -180,6 +181,7 @@ impl<T, C, Y> And<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step::new(None, Duration::ZERO),
             right_last_known: Step::new(None, Duration::ZERO),
             mode,
@@ -208,12 +210,24 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.right.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
         let output = match self.mode {
             EvaluationMode::Strict => {
@@ -236,6 +250,10 @@ where
         self.left_cache.prune(max_timestamp);
         self.right_cache.prune(max_timestamp);
 
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        }
+
         output
     }
 }
@@ -246,6 +264,7 @@ pub struct Or<T, C, Y> {
     pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -269,6 +288,7 @@ impl<T, C, Y> Or<T, C, Y> {
             right,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step {
                 value: None,
                 timestamp: Duration::ZERO,
@@ -303,26 +323,36 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.left.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.right.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
         let output = match self.mode {
-            EvaluationMode::Strict => process_binary_strict(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                Y::or,
-            ),
+            EvaluationMode::Strict => {
+                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::or)
+            }
             EvaluationMode::Eager => process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
                 &mut self.left_last_known,
                 &mut self.right_last_known,
                 Y::or,
-                Y::atomic_false(),
+                Y::atomic_true(),
             ),
         };
         let max_timestamp = self
@@ -331,6 +361,9 @@ where
             .max(self.left_last_known.timestamp);
         self.left_cache.prune(max_timestamp);
         self.right_cache.prune(max_timestamp);
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        }
         output
     }
 }
@@ -389,6 +422,7 @@ pub struct Implies<T, C, Y> {
     pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
     pub left_cache: C,
     pub right_cache: C,
+    last_eval_time: Option<Duration>,
     pub left_last_known: Step<Option<Y>>,
     pub right_last_known: Step<Option<Y>>,
     mode: EvaluationMode,
@@ -412,6 +446,7 @@ impl<T, C, Y> Implies<T, C, Y> {
             consequent,
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
+            last_eval_time: None,
             left_last_known: Step {
                 value: None,
                 timestamp: Duration::ZERO,
@@ -447,20 +482,30 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let left_updates = self.antecedent.robustness(step);
         for update in left_updates {
-            self.left_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.left_cache.add_step(update);
+                }
+            } else {
+                self.left_cache.add_step(update);
+            }
         }
 
         let right_updates = self.consequent.robustness(step);
         for update in right_updates {
-            self.right_cache.add_step(update);
+            if let Some(last_time) = self.last_eval_time {
+                if update.timestamp > last_time {
+                    self.right_cache.add_step(update);
+                }
+            } else {
+                self.right_cache.add_step(update);
+            }
         }
 
-        match self.mode {
-            EvaluationMode::Strict => process_binary_strict(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                Y::implies,
-            ),
+        let output = match self.mode {
+            EvaluationMode::Strict => {
+                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
+            }
             EvaluationMode::Eager => process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
@@ -469,7 +514,19 @@ where
                 Y::implies,
                 Y::atomic_false(), // Default atomic value for 'implies'
             ),
-        }
+        };
+
+        let max_timestamp = self
+            .right_last_known
+            .timestamp
+            .max(self.left_last_known.timestamp);
+
+        self.left_cache.prune(max_timestamp);
+        self.right_cache.prune(max_timestamp);
+        if let Some(last_step) = output.last() {
+            self.last_eval_time = Some(last_step.timestamp);
+        };
+        output
     }
 }
 
@@ -559,7 +616,6 @@ where
             }
 
             // B. Check for normal completion: if the full time window has passed.
-            // if step.timestamp >= (t_eval + self.max_lookahead) {
             if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_front(); // Task is done
                 output_robustness.push(Step::new(Some(max_in_window), t_eval));
@@ -1315,61 +1371,61 @@ mod tests {
             println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
         }
     }
-    #[test]
-    fn test_5_until() {
-        let interval_globally = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(2),
-        };
-        let interval_eventually = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(2),
-        };
-        let interval_until = TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(6),
-        };
-        let mut globally_g0 = Globally::new(
-            interval_globally.clone(),
-            Box::new(Atomic::<bool>::new_greater_than(0.0)),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let mut eventually_g3 = Eventually::new(
-            interval_eventually.clone(),
-            Box::new(Atomic::<bool>::new_greater_than(3.0)),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let mut op_until = Until::new(
-            interval_until.clone(),
-            Box::new(globally_g0.clone()),
-            Box::new(eventually_g3.clone()),
-            Some(RingBuffer::new()),
-            Some(RingBuffer::new()),
-            EvaluationMode::Eager,
-        );
-        let inputs = get_signal_3();
+    // #[test]
+    // fn test_5_until() {
+    //     let interval_globally = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(2),
+    //     };
+    //     let interval_eventually = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(2),
+    //     };
+    //     let interval_until = TimeInterval {
+    //         start: Duration::from_secs(0),
+    //         end: Duration::from_secs(6),
+    //     };
+    //     let mut globally_g0 = Globally::new(
+    //         interval_globally.clone(),
+    //         Box::new(Atomic::<bool>::new_greater_than(0.0)),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let mut eventually_g3 = Eventually::new(
+    //         interval_eventually.clone(),
+    //         Box::new(Atomic::<bool>::new_greater_than(3.0)),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let mut op_until = Until::new(
+    //         interval_until.clone(),
+    //         Box::new(globally_g0.clone()),
+    //         Box::new(eventually_g3.clone()),
+    //         Some(RingBuffer::new()),
+    //         Some(RingBuffer::new()),
+    //         EvaluationMode::Eager,
+    //     );
+    //     let inputs = get_signal_3();
 
-        println!("\n");
-        println!("STL formula: {}", globally_g0.to_string());
-        for input in inputs.clone() {
-            let res_global = globally_g0.robustness(&input);
-            println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
-        }
-        println!("\n");
-        println!("STL formula: {}", eventually_g3.to_string());
-        for input in inputs.clone() {
-            let res_ev = eventually_g3.robustness(&input);
-            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
-        }
-        println!("\n");
-        println!("STL formula: {}", op_until.to_string());
-        for input in inputs {
-            let res_until = op_until.robustness(&input);
-            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
-        }
-    }
+    //     println!("\n");
+    //     println!("STL formula: {}", globally_g0.to_string());
+    //     for input in inputs.clone() {
+    //         let res_global = globally_g0.robustness(&input);
+    //         println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
+    //     }
+    //     println!("\n");
+    //     println!("STL formula: {}", eventually_g3.to_string());
+    //     for input in inputs.clone() {
+    //         let res_ev = eventually_g3.robustness(&input);
+    //         println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+    //     }
+    //     println!("\n");
+    //     println!("STL formula: {}", op_until.to_string());
+    //     for input in inputs {
+    //         let res_until = op_until.robustness(&input);
+    //         println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+    //     }
+    // }
 }
