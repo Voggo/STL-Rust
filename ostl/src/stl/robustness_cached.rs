@@ -23,17 +23,7 @@ where
     while let (Some(left_step), Some(right_step)) =
         (left_cache.get_front(), right_cache.get_front())
     {
-        let new_step = if left_step.timestamp < right_step.timestamp {
-            // Left is earlier. Right has no value for this time.
-            // Strict propagation of None.
-            let step = left_cache.pop_front().unwrap();
-            Step::new(None, step.timestamp)
-        } else if right_step.timestamp < left_step.timestamp {
-            // Right is earlier. Left has no value for this time.
-            // Strict propagation of None.
-            let step = right_cache.pop_front().unwrap();
-            Step::new(None, step.timestamp)
-        } else {
+        let new_step = if left_step.timestamp == right_step.timestamp {
             // Timestamps are equal. Combine their current values.
             // This is the only time we produce a Some(value).
             let combined_value = left_step.value.as_ref().and_then(|l_val| {
@@ -46,6 +36,8 @@ where
             let step = left_cache.pop_front().unwrap();
             right_cache.pop_front();
             Step::new(combined_value, step.timestamp)
+        } else {
+            break;
         };
         output_robustness.push(new_step);
     }
@@ -62,6 +54,7 @@ fn process_binary_eager<C, Y, F>(
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
     default_atomic: Y,
+    mode: EvaluationMode,
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
@@ -120,34 +113,35 @@ where
     // 'short-circuit' logic:
     // for and: if either left or right is false, result is false
     // for or: if either left or right is true, result is true
-    let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
-    while let Some(left) = left_cache.get_front() {
-        let left_value = left.value.to_owned().unwrap();
-        if default_atomic == left_value && max_timestamp <= left.timestamp {
-            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step::new(Some(value), left.timestamp);
-            output_robustness.push(new_step.clone());
-            left_cache.pop_front();
-            *left_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else {
-            break;
+    if mode == EvaluationMode::Eager {
+        let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
+        while let Some(left) = left_cache.get_front() {
+            let left_value = left.value.to_owned().unwrap();
+            if default_atomic == left_value && max_timestamp <= left.timestamp {
+                let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
+                let new_step = Step::new(Some(value), left.timestamp);
+                output_robustness.push(new_step.clone());
+                left_cache.pop_front();
+                *left_last_known = new_step.clone();
+                max_timestamp = max_timestamp.max(new_step.timestamp);
+            } else {
+                break;
+            }
+        }
+        while let Some(right) = right_cache.get_front() {
+            let right_value = right.value.to_owned().unwrap();
+            if default_atomic == right_value && max_timestamp <= right.timestamp {
+                let value = combine_op(right_value, default_atomic.clone());
+                let new_step = Step::new(Some(value), right.timestamp);
+                output_robustness.push(new_step.clone());
+                right_cache.pop_front();
+                *right_last_known = new_step.clone();
+                max_timestamp = max_timestamp.max(new_step.timestamp);
+            } else {
+                break;
+            }
         }
     }
-    while let Some(right) = right_cache.get_front() {
-        let right_value = right.value.to_owned().unwrap();
-        if default_atomic == right_value && max_timestamp <= right.timestamp {
-            let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step::new(Some(value), right.timestamp);
-            output_robustness.push(new_step.clone());
-            right_cache.pop_front();
-            *right_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else {
-            break;
-        }
-    }
-
     output_robustness
 }
 
@@ -240,15 +234,19 @@ where
                 &mut self.right_last_known,
                 Y::and,            // The only difference!
                 Y::atomic_false(), // Default atomic value for 'and'
+                self.mode,
             ),
         };
 
-        let max_timestamp = self
-            .right_last_known
-            .timestamp
-            .max(self.left_last_known.timestamp);
-        self.left_cache.prune(max_timestamp);
-        self.right_cache.prune(max_timestamp);
+        // let max_timestamp = self
+        //     .right_last_known
+        //     .timestamp
+        //     .max(self.left_last_known.timestamp);
+        // self.left_cache.prune(max_timestamp);
+        // self.right_cache.prune(max_timestamp);
+        let lookahead = self.get_max_lookahead();
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
 
         if let Some(last_step) = output.last() {
             self.last_eval_time = Some(last_step.timestamp);
@@ -353,14 +351,18 @@ where
                 &mut self.right_last_known,
                 Y::or,
                 Y::atomic_true(),
+                self.mode,
             ),
         };
-        let max_timestamp = self
-            .right_last_known
-            .timestamp
-            .max(self.left_last_known.timestamp);
-        self.left_cache.prune(max_timestamp);
-        self.right_cache.prune(max_timestamp);
+        // let max_timestamp = self
+        //     .right_last_known
+        //     .timestamp
+        //     .max(self.left_last_known.timestamp);
+        // self.left_cache.prune(max_timestamp);
+        // self.right_cache.prune(max_timestamp);
+        let lookahead = self.get_max_lookahead();
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
         if let Some(last_step) = output.last() {
             self.last_eval_time = Some(last_step.timestamp);
         }
@@ -512,17 +514,22 @@ where
                 &mut self.left_last_known,
                 &mut self.right_last_known,
                 Y::implies,
-                Y::atomic_false(), // Default atomic value for 'implies'
+                Y::atomic_true(), // Default atomic value for 'implies'
+                self.mode,
             ),
         };
 
-        let max_timestamp = self
-            .right_last_known
-            .timestamp
-            .max(self.left_last_known.timestamp);
+        // let max_timestamp = self
+        //     .right_last_known
+        //     .timestamp
+        //     .max(self.left_last_known.timestamp);
+        let lookahead = self.get_max_lookahead();
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
 
-        self.left_cache.prune(max_timestamp);
-        self.right_cache.prune(max_timestamp);
+        // self.left_cache.prune(max_timestamp);
+        // self.right_cache.prune(max_timestamp);
+
         if let Some(last_step) = output.last() {
             self.last_eval_time = Some(last_step.timestamp);
         };
@@ -1371,61 +1378,61 @@ mod tests {
             println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
         }
     }
-    // #[test]
-    // fn test_5_until() {
-    //     let interval_globally = TimeInterval {
-    //         start: Duration::from_secs(0),
-    //         end: Duration::from_secs(2),
-    //     };
-    //     let interval_eventually = TimeInterval {
-    //         start: Duration::from_secs(0),
-    //         end: Duration::from_secs(2),
-    //     };
-    //     let interval_until = TimeInterval {
-    //         start: Duration::from_secs(0),
-    //         end: Duration::from_secs(6),
-    //     };
-    //     let mut globally_g0 = Globally::new(
-    //         interval_globally.clone(),
-    //         Box::new(Atomic::<bool>::new_greater_than(0.0)),
-    //         Some(RingBuffer::new()),
-    //         Some(RingBuffer::new()),
-    //         EvaluationMode::Eager,
-    //     );
-    //     let mut eventually_g3 = Eventually::new(
-    //         interval_eventually.clone(),
-    //         Box::new(Atomic::<bool>::new_greater_than(3.0)),
-    //         Some(RingBuffer::new()),
-    //         Some(RingBuffer::new()),
-    //         EvaluationMode::Eager,
-    //     );
-    //     let mut op_until = Until::new(
-    //         interval_until.clone(),
-    //         Box::new(globally_g0.clone()),
-    //         Box::new(eventually_g3.clone()),
-    //         Some(RingBuffer::new()),
-    //         Some(RingBuffer::new()),
-    //         EvaluationMode::Eager,
-    //     );
-    //     let inputs = get_signal_3();
+    #[test]
+    fn test_5_until() {
+        let interval_globally = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_eventually = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_until = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        };
+        let mut globally_g0 = Globally::new(
+            interval_globally.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(0.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut eventually_g3 = Eventually::new(
+            interval_eventually.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_until = Until::new(
+            interval_until.clone(),
+            Box::new(globally_g0.clone()),
+            Box::new(eventually_g3.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let inputs = get_signal_3();
 
-    //     println!("\n");
-    //     println!("STL formula: {}", globally_g0.to_string());
-    //     for input in inputs.clone() {
-    //         let res_global = globally_g0.robustness(&input);
-    //         println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
-    //     }
-    //     println!("\n");
-    //     println!("STL formula: {}", eventually_g3.to_string());
-    //     for input in inputs.clone() {
-    //         let res_ev = eventually_g3.robustness(&input);
-    //         println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
-    //     }
-    //     println!("\n");
-    //     println!("STL formula: {}", op_until.to_string());
-    //     for input in inputs {
-    //         let res_until = op_until.robustness(&input);
-    //         println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
-    //     }
-    // }
+        println!("\n");
+        println!("STL formula: {}", globally_g0.to_string());
+        for input in inputs.clone() {
+            let res_global = globally_g0.robustness(&input);
+            println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
+        }
+        println!("\n");
+        println!("STL formula: {}", eventually_g3.to_string());
+        for input in inputs.clone() {
+            let res_ev = eventually_g3.robustness(&input);
+            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+        println!("STL formula: {}", op_until.to_string());
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+        }
+    }
 }
