@@ -477,38 +477,26 @@ mod tests {
     // ---
     // Test Runner for Build Failures
     // ---
+    #[rstest]
+    #[case::inc_eager_f64(MonitoringStrategy::Incremental, EvaluationMode::Eager, || 0.0)]
+    #[case::naive_eager_f64(MonitoringStrategy::Naive, EvaluationMode::Eager, || 0.0)]
+    #[case::inc_eager_bool(MonitoringStrategy::Naive, EvaluationMode::Eager, || true)]
+    #[should_panic]
+    fn test_monitor_build_fails<Y>(
+        #[case] strategy: MonitoringStrategy,
+        #[case] evaluation_mode: EvaluationMode,
+        #[case] _phantom: fn() -> Y,
+    ) 
+    where 
+        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+    {
+        let formula = formula_1(); // Use any valid formula
 
-    // #[rstest]
-    // #[case::inc_strict_bool(MonitoringStrategy::Incremental, EvaluationMode::Strict, TypeId::of::<bool>())]
-    // #[case::naive_eager_f64(MonitoringStrategy::Naive, EvaluationMode::Eager, TypeId::of::<f64>())]
-    // #[case::inc_eager_f64(MonitoringStrategy::Incremental, EvaluationMode::Eager, TypeId::of::<f64>())]
-    // fn test_monitor_build_fails(
-    //     #[case] strategy: MonitoringStrategy,
-    //     #[case] evaluation_mode: EvaluationMode,
-    //     #[case] type_id: std::any::TypeId,
-    // ) {
-    //     let formula = formula_1(); // Use any valid formula
-
-    //     let result = if type_id == std::any::TypeId::of::<bool>() {
-    //         StlMonitor::<f64, bool>::builder()
-    //             .formula(formula)
-    //             .strategy(strategy)
-    //             .evaluation_mode(evaluation_mode)
-    //             .build()
-    //     } else {
-    //         // This branch is a bit of a hack to handle the generic,
-    //         // but it's necessary for testing.
-    //         StlMonitor::<f64, f64>::builder()
-    //             .formula(formula)
-    //             .strategy(strategy)
-    //             .evaluation_mode(evaluation_mode)
-    //             .build()
-    //             .map(|_| ()) // Discard the Ok value to match types
-    //             .map_err(|e| e)
-    //     };
-
-    //     assert!(result.is_err());
-    // }
-
-    // In tests/monitor_test.rs
+        let _: StlMonitor<f64, Y> = StlMonitor::builder()
+            .formula(formula.clone()) // Use the formula from the vec
+            .strategy(strategy)
+            .evaluation_mode(evaluation_mode)
+            .build()
+            .unwrap();
+    }
 }
