@@ -6,6 +6,7 @@ mod tests {
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
     use std::time::Duration;
+    use std::vec;
 
     // ---
     // Helper Functions
@@ -13,6 +14,7 @@ mod tests {
 
     fn convert_f64_vec_to_bool_vec(
         input: Vec<Vec<Step<Option<f64>>>>,
+        zero_is_true: Option<bool>,
     ) -> Vec<Vec<Step<Option<bool>>>> {
         input
             .into_iter()
@@ -20,7 +22,7 @@ mod tests {
                 inner_vec
                     .into_iter()
                     .map(|step| {
-                        let bool_value = step.value.map(|v| v > 0.0);
+                        let bool_value = step.value.map(|v| v > 0.0 || (zero_is_true.unwrap_or(false) && v == 0.0));
                         Step::new(bool_value, step.timestamp)
                     })
                     .collect()
@@ -121,6 +123,38 @@ mod tests {
         )
     }
 
+    #[fixture]
+    #[once]
+    fn formula_6() -> FormulaDefinition {
+        // G[0, 5] (x > 0) -> F[0, 2] (x > 3)
+        FormulaDefinition::Implies(
+            Box::new(FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5),
+                },
+                Box::new(FormulaDefinition::GreaterThan(0.0)),
+            )),
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
+                Box::new(FormulaDefinition::GreaterThan(3.0)),
+            )),
+        )
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_7() -> FormulaDefinition {
+        // !x<5 || F
+        FormulaDefinition::Or(
+            Box::new(FormulaDefinition::Not(Box::new(FormulaDefinition::LessThan(5.0)))),
+            Box::new(FormulaDefinition::False),
+        )
+    }
+
     // ---
     // Signal Fixtures
     // ---
@@ -184,7 +218,7 @@ mod tests {
     }
 
     fn exp_f1_s1_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict())
+        convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict(), None)
     }
 
     fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -218,7 +252,7 @@ mod tests {
     }
 
     fn exp_f2_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict())
+        convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict(), None)
     }
 
     fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -259,7 +293,7 @@ mod tests {
     }
 
     fn exp_f3_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict())
+        convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict(), None)
     }
 
     fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -284,14 +318,14 @@ mod tests {
             vec![],
             vec![Step::new(Some(1.0), Duration::from_secs(0))],
             vec![Step::new(Some(1.0), Duration::from_secs(1))],
-            vec![Step::new(Some(1.0), Duration::from_secs(2))],
-            vec![Step::new(Some(1.0), Duration::from_secs(3))],
-            vec![Step::new(Some(1.0), Duration::from_secs(4))],
+            vec![Step::new(Some(3.0), Duration::from_secs(2))],
+            vec![Step::new(Some(3.0), Duration::from_secs(3))],
+            vec![Step::new(Some(3.0), Duration::from_secs(4))],
         ]
     }
 
     fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict())
+        convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict(), None)
     }
 
     fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -316,152 +350,100 @@ mod tests {
         ]
     }
 
-    // ---
-    // Single, Unified Test Runner
-    // ---
+    fn exp_f6_s2_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        vec![
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![
+                // step t=5s
+                Step::new(Some(false), Duration::from_secs(0)),
+            ],
+            vec![
+                // step t=6s, x=0.0, G[0,5](x>0) is false => short-circuit to true
+                Step::new(Some(true), Duration::from_secs(1)),
+                Step::new(Some(true), Duration::from_secs(2)),
+                Step::new(Some(true), Duration::from_secs(3)),
+                Step::new(Some(true), Duration::from_secs(4)),
+                Step::new(Some(true), Duration::from_secs(5)),
+                Step::new(Some(true), Duration::from_secs(6)),
+            ],
+            vec![Step::new(Some(true), Duration::from_secs(7))],
+            vec![Step::new(Some(true), Duration::from_secs(8))],
+            vec![],
+            vec![],
+        ]
+    }
+    fn exp_f6_s2_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+        vec![
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![Step::new(Some(-1.0), Duration::from_secs(0))],
+            vec![Step::new(Some(0.0), Duration::from_secs(1))],
+            vec![Step::new(Some(0.0), Duration::from_secs(2))],
+            vec![Step::new(Some(1.0), Duration::from_secs(3))],
+            vec![Step::new(Some(1.0), Duration::from_secs(4))],
+            vec![Step::new(Some(1.0), Duration::from_secs(5))],
+        ]
+    }
+    fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+        convert_f64_vec_to_bool_vec(exp_f6_s2_f64_strict(), Some(true))
+    }
 
-    #[rstest]
-    // --- Cases for Formula 1, Signal 1 ---
-    #[case::f1_s1_naive_f64_strict(
-        vec![formula_1()],
-        signal_1(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f1_s1_f64_strict()
-    )]
-    #[case::f1_s1_inc_f64_strict(
-        vec![formula_1()],
-        signal_1(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Strict,
-        exp_f1_s1_f64_strict()
-    )]
-    #[case::f1_s1_naive_bool_strict(
-        vec![formula_1()],
-        signal_1(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f1_s1_bool_strict()
-    )]
-    #[case::f1_s1_inc_bool_eager(
-        vec![formula_1()],
-        signal_1(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Eager,
-        exp_f1_s1_bool_eager()
-    )]
-    // --- Cases for Formula 2, Signal 2 ---
-    #[case::f2_s2_inc_bool_eager(
-        vec![formula_2()],
-        signal_2(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Eager,
-        exp_f2_s2_bool_eager()
-    )]
-    #[case::f2_s2_naive_bool_strict(
-        vec![formula_2()],
-        signal_2(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f2_s2_bool_strict()
-    )]
-    #[case::f2_s2_naive_f64_strict(
-        vec![formula_2()],
-        signal_2(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f2_s2_f64_strict()
-    )]
-    #[case::f2_s2_inc_f64_strict(
-        vec![formula_2()],
-        signal_2(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Strict,
-        exp_f2_s2_f64_strict()
-    )]
-    // --- Cases for Formula 3, Signal 3 ---
-    #[case::f3_s3_inc_bool_eager(
-        vec![formula_3()],
-        signal_3(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Eager,
-        exp_f3_s3_bool_eager()
-    )]
-    #[case::f3_s3_naive_bool_strict(
-        vec![formula_3()],
-        signal_3(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f3_s3_bool_strict()
-    )]
-    #[case::f3_s3_naive_f64_strict(
-        vec![formula_3()],
-        signal_3(),
-        MonitoringStrategy::Naive,
-        EvaluationMode::Strict,
-        exp_f3_s3_f64_strict()
-    )]
-    #[case::f3_s3_inc_f64_strict(
-        vec![formula_3()],
-        signal_3(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Strict,
-        exp_f3_s3_f64_strict()
-    )]
-    // --- Cases for Formula 4+5, Signal 3 (equivalence) ---
-    #[case::f4_s3_inc_bool_eager(
-        vec![formula_4(), formula_5()],
-        signal_3(),
-        MonitoringStrategy::Incremental,
-        EvaluationMode::Eager,
-        exp_f4_s3_bool_eager()
-    )]
-    // TODO: These currently fail due to issues with True handling in f64 monitors
-    // #[case::f4_s3_naive_bool_strict(
-    //     vec![formula_4(), formula_5()],
-    //     signal_3(),
-    //     MonitoringStrategy::Naive,
-    //     EvaluationMode::Strict,
-    //     exp_f4_s3_bool_strict()
-    // )]
-    // #[case::f4_s3_naive_f64_strict(
-    //     vec![formula_4(), formula_5()],
-    //     signal_3(),
-    //     MonitoringStrategy::Naive,
-    //     EvaluationMode::Strict,
-    //     exp_f4_s3_f64_strict()
-    // )]
-    // #[case::f4_s3_inc_f64_strict(
-    //     vec![formula_4(), formula_5()],
-    //     signal_3(),
-    //     MonitoringStrategy::Incremental,
-    //     EvaluationMode::Strict,
-    //     exp_f4_s3_f64_strict()
-    // )]
-    fn test_monitor_matrix<Y>(
-        #[case] formulas: Vec<FormulaDefinition>,
-        #[case] signal: Vec<Step<f64>>,
-        #[case] strategy: MonitoringStrategy,
-        #[case] evaluation_mode: EvaluationMode,
-        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+    fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+        vec![
+            vec![Step::new(Some(-5.0), Duration::from_secs(0))],
+            vec![Step::new(Some(1.0), Duration::from_secs(1))],
+            vec![Step::new(Some(-4.0), Duration::from_secs(2))],
+            vec![Step::new(Some(-5.0), Duration::from_secs(3))],
+            vec![Step::new(Some(3.0), Duration::from_secs(4))],
+            vec![Step::new(Some(-4.0), Duration::from_secs(5))],
+            vec![Step::new(Some(2.0), Duration::from_secs(6))],
+        ]
+    }
+
+    fn exp_f7_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+        convert_f64_vec_to_bool_vec(exp_f7_s3_f64_strict(), None)
+    }
+
+    fn exp_f7_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        exp_f7_s3_bool_strict()
+    }
+
+    /// This helper function contains the actual test logic.
+    /// It is called by the `rstest` runners below.
+    fn run_monitor_test<Y>(
+        formulas: Vec<FormulaDefinition>,
+        signal: Vec<Step<f64>>,
+        strategy: MonitoringStrategy,
+        evaluation_mode: EvaluationMode,
+        expected: Vec<Vec<Step<Option<Y>>>>,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
         for (i, formula) in formulas.into_iter().enumerate() {
             let mut monitor = StlMonitor::builder()
-                .formula(formula.clone()) // Use the formula from the vec
+                .formula(formula.clone())
                 .strategy(strategy)
                 .evaluation_mode(evaluation_mode)
                 .build()
                 .unwrap();
 
             let mut all_results = Vec::new();
-            // Use a fresh clone of the signal for each monitor
             for step in signal.clone() {
                 all_results.push(monitor.instantaneous_robustness(&step));
+                // println!(
+                //     "Step at {:?}, Monitor Output: {:?}",
+                //     step.timestamp,
+                //     all_results.last().unwrap()
+                // );
             }
 
-            // Add a detailed message on failure
             assert_eq!(
                 all_results,
                 expected,
@@ -474,41 +456,109 @@ mod tests {
         }
     }
 
+    #[rstest]
+    // --- f64 Strict Cases ---
+    // These run with EvaluationMode::Strict and are tested against
+    // both Naive and Incremental strategies.
+    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_f64_strict())]
+    #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_strict())]
+    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_f64_strict())]
+    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_f64_strict())]
+    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_f64_strict())]
+    #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_strict())]
+    fn test_f64_strict<Y>(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[case] signal: Vec<Step<f64>>,
+        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+    ) where
+        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+    {
+        run_monitor_test(
+            formulas,
+            signal,
+            strategy,
+            EvaluationMode::Strict,
+            expected,
+        );
+    }
+
+    #[rstest]
+    // --- bool Strict Cases ---
+    // These run with EvaluationMode::Strict and are tested against
+    // both Naive and Incremental strategies.
+    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_bool_strict())]
+    #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_strict())]
+    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_bool_strict())]
+    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_strict())]
+    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_strict())]
+    #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_strict())]
+    fn test_bool_strict<Y>(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[case] signal: Vec<Step<f64>>,
+        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+    ) where
+        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+    {
+        run_monitor_test(
+            formulas,
+            signal,
+            strategy,
+            EvaluationMode::Strict,
+            expected,
+        );
+    }
+
+    #[rstest]
+    // --- bool Eager Cases ---
+    // These run with EvaluationMode::Eager and are tested *only*
+    // against the Incremental strategy (Naive+Eager is invalid).
+    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_bool_eager())]
+    #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_eager())]
+    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_bool_eager())]
+    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_eager())]
+    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_eager())]
+    #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_eager())]
+    fn test_bool_eager<Y>(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[case] signal: Vec<Step<f64>>,
+        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[values(MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+    ) where
+        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+    {
+        run_monitor_test(formulas, signal, strategy, EvaluationMode::Eager, expected);
+    }
+
     // ---
     // Test Runner for Build Failures
     // ---
 
-    // #[rstest]
-    // #[case::inc_strict_bool(MonitoringStrategy::Incremental, EvaluationMode::Strict, TypeId::of::<bool>())]
-    // #[case::naive_eager_f64(MonitoringStrategy::Naive, EvaluationMode::Eager, TypeId::of::<f64>())]
-    // #[case::inc_eager_f64(MonitoringStrategy::Incremental, EvaluationMode::Eager, TypeId::of::<f64>())]
-    // fn test_monitor_build_fails(
-    //     #[case] strategy: MonitoringStrategy,
-    //     #[case] evaluation_mode: EvaluationMode,
-    //     #[case] type_id: std::any::TypeId,
-    // ) {
-    //     let formula = formula_1(); // Use any valid formula
+    #[rstest]
+    #[should_panic]
+    fn test_monitor_build_fails_f64_eager(
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+    ) {
+        // Eager mode + f64 robustness is an invalid combination
+        let _: StlMonitor<f64, f64> = StlMonitor::builder()
+            .formula(formula_1())
+            .strategy(strategy)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+    }
 
-    //     let result = if type_id == std::any::TypeId::of::<bool>() {
-    //         StlMonitor::<f64, bool>::builder()
-    //             .formula(formula)
-    //             .strategy(strategy)
-    //             .evaluation_mode(evaluation_mode)
-    //             .build()
-    //     } else {
-    //         // This branch is a bit of a hack to handle the generic,
-    //         // but it's necessary for testing.
-    //         StlMonitor::<f64, f64>::builder()
-    //             .formula(formula)
-    //             .strategy(strategy)
-    //             .evaluation_mode(evaluation_mode)
-    //             .build()
-    //             .map(|_| ()) // Discard the Ok value to match types
-    //             .map_err(|e| e)
-    //     };
-
-    //     assert!(result.is_err());
-    // }
-
-    // In tests/monitor_test.rs
+    #[rstest]
+    #[should_panic]
+    fn test_monitor_build_fails_bool_naive_eager(
+    ) {
+        // Eager mode + Naive strategy is an invalid combination
+        let _: StlMonitor<f64, bool> = StlMonitor::builder()
+            .formula(formula_1())
+            .strategy(MonitoringStrategy::Naive)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+    }
 }
