@@ -334,9 +334,16 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::Not(op) => {
                 Box::new(Not::new(self.build_incremental_operator(*op, mode)))
             }
-            FormulaDefinition::Implies(l, r) => Box::new(Implies::new(
-                self.build_incremental_operator(*l, mode),
-                self.build_incremental_operator(*r, mode),
+            // FormulaDefinition::Implies(l, r) => Box::new(Implies::new(
+            //     self.build_incremental_operator(*l, mode),
+            //     self.build_incremental_operator(*r, mode),
+            //     Some(RingBuffer::new()),
+            //     Some(RingBuffer::new()),
+            //     mode,
+            // )),
+            FormulaDefinition::Implies(l, r) => Box::new(Or::new(
+                Box::new(Not::new(self.build_incremental_operator(*l, mode))), // Not(A)
+                self.build_incremental_operator(*r, mode),                      // B
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
                 mode,
