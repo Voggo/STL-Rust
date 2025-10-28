@@ -60,12 +60,6 @@ where
         self.steps.push_back(step);
     }
 
-    pub fn pop_front(&mut self) -> Option<Step<T>> {
-        self.steps.pop_front()
-    }
-
-
-
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_,Step<T>> {
         self.steps.iter()
     }
@@ -83,7 +77,7 @@ where
         Self: 'a;
 
     fn new() -> Self {
-        RingBuffer::new()
+        Self::new()
     }
     fn is_empty(&self) -> bool {
         self.steps.is_empty()
