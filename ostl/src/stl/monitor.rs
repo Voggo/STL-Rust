@@ -138,168 +138,65 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     }
 
     // --- Factory Methods ---
-
+    /// Top-level factory for the Naive monitor.
+    /// It builds the formula enum tree and wraps it in the final StlFormula operator.
     fn build_naive_operator(
         &self,
         formula: FormulaDefinition,
-        mode: EvaluationMode,
+        mode: EvaluationMode, // Note: mode isn't used by naive, but we keep it for signature consistency
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        // Step 1: Call the new helper to build the *entire* recursive StlOperator enum
+        let formula_enum = self.build_naive_formula(formula, mode);
+
+        // Step 2: Wrap the *single* enum in the *single* StlFormula that holds the signal
+        Box::new(StlFormula::<T, RingBuffer<T>, Y> {
+            formula: formula_enum,
+            signal: RingBuffer::new(), // This is the only RingBuffer that gets created
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    /// Recursively builds the lightweight StlOperator enum from the FormulaDefinition.
+    fn build_naive_formula(&self, formula: FormulaDefinition, mode: EvaluationMode) -> StlOperator
+    where
+        T: Into<f64> + Copy + 'static,
+        Y: RobustnessSemantics + 'static,
+    {
         match formula {
-            FormulaDefinition::GreaterThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::GreaterThan(c),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::LessThan(c) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::LessThan(c),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::True => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::True,
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::False => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::False,
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::And(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::And(
-                    Box::new(
-                        self.build_naive_operator(*l, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                    Box::new(
-                        self.build_naive_operator(*r, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Or(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Or(
-                    Box::new(
-                        self.build_naive_operator(*l, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                    Box::new(
-                        self.build_naive_operator(*r, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Not(op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Not(Box::new(
-                    self.build_naive_operator(*op, mode)
-                        .as_any()
-                        .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                        .unwrap()
-                        .formula
-                        .clone(),
-                )),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Implies(l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Implies(
-                    Box::new(
-                        self.build_naive_operator(*l, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                    Box::new(
-                        self.build_naive_operator(*r, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Eventually(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Eventually(
-                    i,
-                    Box::new(
-                        self.build_naive_operator(*op, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Globally(i, op) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Globally(
-                    i,
-                    Box::new(
-                        self.build_naive_operator(*op, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
-            FormulaDefinition::Until(i, l, r) => Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-                formula: StlOperator::Until(
-                    i,
-                    Box::new(
-                        self.build_naive_operator(*l, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                    Box::new(
-                        self.build_naive_operator(*r, mode)
-                            .as_any()
-                            .downcast_ref::<StlFormula<T, RingBuffer<T>, Y>>()
-                            .unwrap()
-                            .formula
-                            .clone(),
-                    ),
-                ),
-                signal: RingBuffer::new(),
-                _phantom: std::marker::PhantomData,
-            }),
+            FormulaDefinition::GreaterThan(c) => StlOperator::GreaterThan(c),
+            FormulaDefinition::LessThan(c) => StlOperator::LessThan(c),
+            FormulaDefinition::True => StlOperator::True,
+            FormulaDefinition::False => StlOperator::False,
+            FormulaDefinition::And(l, r) => StlOperator::And(
+                Box::new(self.build_naive_formula(*l, mode)),
+                Box::new(self.build_naive_formula(*r, mode)),
+            ),
+            FormulaDefinition::Or(l, r) => StlOperator::Or(
+                Box::new(self.build_naive_formula(*l, mode)),
+                Box::new(self.build_naive_formula(*r, mode)),
+            ),
+            FormulaDefinition::Not(op) => {
+                StlOperator::Not(Box::new(self.build_naive_formula(*op, mode)))
+            }
+            FormulaDefinition::Implies(l, r) => StlOperator::Implies(
+                Box::new(self.build_naive_formula(*l, mode)),
+                Box::new(self.build_naive_formula(*r, mode)),
+            ),
+            FormulaDefinition::Eventually(i, op) => {
+                StlOperator::Eventually(i, Box::new(self.build_naive_formula(*op, mode)))
+            }
+            FormulaDefinition::Globally(i, op) => {
+                StlOperator::Globally(i, Box::new(self.build_naive_formula(*op, mode)))
+            }
+            FormulaDefinition::Until(i, l, r) => StlOperator::Until(
+                i,
+                Box::new(self.build_naive_formula(*l, mode)),
+                Box::new(self.build_naive_formula(*r, mode)),
+            ),
         }
     }
 
@@ -343,7 +240,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             // )),
             FormulaDefinition::Implies(l, r) => Box::new(Or::new(
                 Box::new(Not::new(self.build_incremental_operator(*l, mode))), // Not(A)
-                self.build_incremental_operator(*r, mode),                      // B
+                self.build_incremental_operator(*r, mode),                     // B
                 Some(RingBuffer::new()),
                 Some(RingBuffer::new()),
                 mode,
