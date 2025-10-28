@@ -1,7 +1,7 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
-use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval, SignalIdentifier};
 use crate::stl::monitor::EvaluationMode;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -243,6 +243,15 @@ where
     }
 }
 
+impl SignalIdentifier for And<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(self.left.get_signal_identifiers());
+        ids.extend(self.right.get_signal_identifiers());
+        ids
+    }
+}
+
 #[derive(Clone)]
 pub struct Or<T, C, Y> {
     pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
@@ -347,6 +356,15 @@ where
     }
 }
 
+impl SignalIdentifier for Or<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(self.left.get_signal_identifiers());
+        ids.extend(self.right.get_signal_identifiers());
+        ids
+    }
+}
+
 #[derive(Clone)]
 pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
@@ -388,6 +406,12 @@ where
             .collect();
 
         output_robustness
+    }
+}
+
+impl SignalIdentifier for Not<(), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        self.operand.get_signal_identifiers()
     }
 }
 
@@ -498,6 +522,15 @@ where
     }
 }
 
+impl SignalIdentifier for Implies<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(self.antecedent.get_signal_identifiers());
+        ids.extend(self.consequent.get_signal_identifiers());
+        ids
+    }
+}
+
 #[derive(Clone)]
 pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
@@ -602,6 +635,12 @@ where
     }
 }
 
+impl SignalIdentifier for Eventually<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        self.operand.get_signal_identifiers()
+    }
+}
+
 #[derive(Clone)]
 pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
@@ -703,6 +742,12 @@ where
         self.cache.prune(self.interval.end);
 
         output_robustness
+    }
+}
+
+impl SignalIdentifier for Globally<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        self.operand.get_signal_identifiers()
     }
 }
 
@@ -865,20 +910,29 @@ where
     }
 }
 
+impl SignalIdentifier for Until<(), (), ()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(self.left.get_signal_identifiers());
+        ids.extend(self.right.get_signal_identifiers());
+        ids
+    }
+}
+
 #[derive(Clone)]
 pub enum Atomic<Y> {
-    LessThan(f64, std::marker::PhantomData<Y>),
-    GreaterThan(f64, std::marker::PhantomData<Y>),
+    LessThan(&'static str, f64, std::marker::PhantomData<Y>),
+    GreaterThan(&'static str, f64, std::marker::PhantomData<Y>),
     True(std::marker::PhantomData<Y>),
     False(std::marker::PhantomData<Y>),
 }
 
 impl<Y> Atomic<Y> {
-    pub fn new_less_than(val: f64) -> Self {
-        Atomic::LessThan(val, std::marker::PhantomData)
+    pub fn new_less_than(signal_name: &'static str, val: f64) -> Self {
+        Atomic::LessThan(signal_name, val, std::marker::PhantomData)
     }
-    pub fn new_greater_than(val: f64) -> Self {
-        Atomic::GreaterThan(val, std::marker::PhantomData)
+    pub fn new_greater_than(signal_name: &'static str, val: f64) -> Self {
+        Atomic::GreaterThan(signal_name, val, std::marker::PhantomData)
     }
     pub fn new_true() -> Self {
         Atomic::True(std::marker::PhantomData)
@@ -899,11 +953,12 @@ where
         let result = match self {
             Atomic::True(_) => Y::atomic_true(),
             Atomic::False(_) => Y::atomic_false(),
-            Atomic::GreaterThan(c, _) => Y::atomic_greater_than(value, *c),
-            Atomic::LessThan(c, _) => Y::atomic_less_than(value, *c),
+            Atomic::GreaterThan(_signal_name, c, _) => Y::atomic_greater_than(value, *c),
+            Atomic::LessThan(_signal_name, c, _) => Y::atomic_less_than(value, *c),
         };
 
         vec![Step {
+            signal: "output",
             value: Some(result),
             timestamp: step.timestamp,
         }]
@@ -914,11 +969,28 @@ where
     }
 }
 
+impl SignalIdentifier for Atomic<()> {
+    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+        let mut ids = std::collections::HashSet::new();
+        match self {
+            Atomic::LessThan(signal_name, _, _) => {
+                ids.insert(signal_name);
+            }
+            Atomic::GreaterThan(signal_name, _, _) => {
+                ids.insert(signal_name);
+            }
+            Atomic::True(_) => {}
+            Atomic::False(_) => {}
+        }
+        ids
+    }
+}
+
 impl<Y> Display for Atomic<Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Atomic::LessThan(c, _) => write!(f, "x < {}", c),
-            Atomic::GreaterThan(c, _) => write!(f, "x > {}", c),
+            Atomic::LessThan(signal_name, c, _) => write!(f, "x < {}", c),
+            Atomic::GreaterThan(signal_name, c, _) => write!(f, "x > {}", c),
             Atomic::True(_) => write!(f, "True"),
             Atomic::False(_) => write!(f, "False"),
         }
@@ -1012,11 +1084,11 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_greater_than(10.0);
         let step1 = Step::new(15.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
-        assert_eq!(robustness, vec![Step::new(Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
 
         let step2 = Step::new(8.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
-        assert_eq!(robustness2, vec![Step::new(Some(-2.0), Duration::from_secs(6))]);
+        assert_eq!(robustness2, vec![Step::new(signal: "x", Some(-2.0), Duration::from_secs(6))]);
     }
 
     #[test]
@@ -1024,11 +1096,11 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_less_than(10.0);
         let step1 = Step::new(5.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
-        assert_eq!(robustness, vec![Step::new(Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
 
         let step2 = Step::new(12.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
-        assert_eq!(robustness2, vec![Step::new(Some(-2.0), Duration::from_secs(6))]);
+        assert_eq!(robustness2, vec![Step::new(signal: "x", Some(-2.0), Duration::from_secs(6))]);
     }
 
     #[test]
@@ -1036,7 +1108,7 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_true();
         let step = Step::new(0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(f64::INFINITY), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(f64::INFINITY), Duration::from_secs(5))]);
     }
 
     #[test]
@@ -1044,7 +1116,7 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_false();
         let step = Step::new(0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(f64::NEG_INFINITY), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(f64::NEG_INFINITY), Duration::from_secs(5))]);
     }
 
     // Logical operators
@@ -1054,7 +1126,7 @@ mod tests {
         let mut not = Not::new(Box::new(atomic));
         let step = Step::new(15.0, Duration::from_secs(5));
         let robustness = not.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(-5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(-5.0), Duration::from_secs(5))]);
     }
 
     #[test]
@@ -1071,7 +1143,7 @@ mod tests {
 
         let step = Step::new(15.0, Duration::from_secs(5));
         let robustness = and.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
     }
 
     #[test]
@@ -1088,7 +1160,7 @@ mod tests {
 
         let step = Step::new(15.0, Duration::from_secs(5));
         let robustness = or.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
     }
 
     #[test]
@@ -1105,7 +1177,7 @@ mod tests {
 
         let step = Step::new(15.0, Duration::from_secs(5));
         let robustness = implies.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
     }
 
     // Temporal operators
@@ -1138,9 +1210,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new(Some(5.0), Duration::from_secs(0)),
-            Step::new(Some(2.0), Duration::from_secs(2)),
-            Step::new(Some(2.0), Duration::from_secs(4)),
+            Step::new(signal: "x", Some(5.0), Duration::from_secs(0)),
+            Step::new(signal: "x", Some(2.0), Duration::from_secs(2)),
+            Step::new(signal: "x", Some(2.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
@@ -1184,9 +1256,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new(Some(-2.0), Duration::from_secs(0)),
-            Step::new(Some(-5.0), Duration::from_secs(2)),
-            Step::new(Some(-5.0), Duration::from_secs(4)),
+            Step::new(signal: "x", Some(-2.0), Duration::from_secs(0)),
+            Step::new(signal: "x", Some(-5.0), Duration::from_secs(2)),
+            Step::new(signal: "x", Some(-5.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
