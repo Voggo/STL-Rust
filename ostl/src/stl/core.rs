@@ -12,7 +12,7 @@ pub struct TimeInterval {
 }
 
 // stloperator trait
-// added DynClone for cloning trait objects
+// DynClone for cloning trait objects
 pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     type Output;
 
@@ -24,7 +24,21 @@ clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
 pub trait SignalIdentifier {
     fn get_signal_identifiers(&self) -> HashSet<&'static str>;
-} 
+}
+
+pub trait StlOperatorAndSignalIdentifier<T: Clone, Y>:
+    StlOperatorTrait<T, Output = Y> + SignalIdentifier
+{
+}
+
+impl<C, Y, U> StlOperatorAndSignalIdentifier<C, Y> for U
+where
+    C: Clone,
+    U: StlOperatorTrait<C, Output = Y> + SignalIdentifier,
+{
+}
+
+clone_trait_object!(<T: Clone, Y> StlOperatorAndSignalIdentifier<T, Y>);
 
 // should maybe just use refs for the operations
 pub trait RobustnessSemantics: Clone + PartialEq {

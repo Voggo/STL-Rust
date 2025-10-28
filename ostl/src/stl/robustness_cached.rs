@@ -1,5 +1,8 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
-use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval, SignalIdentifier};
+use crate::stl::core::{
+    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
+    TimeInterval,
+};
 use crate::stl::monitor::EvaluationMode;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
@@ -35,7 +38,7 @@ where
 
             let step = left_cache.pop_front().unwrap();
             right_cache.pop_front();
-            Step::new(combined_value, step.timestamp)
+            Step::new("output", combined_value, step.timestamp)
         } else {
             break;
         };
@@ -78,7 +81,7 @@ where
             // Update the last known value for the left side and pop the step.
             *left_last_known = left_step.clone();
             let step = left_cache.pop_front().unwrap();
-            Step::new(combined_value, step.timestamp)
+            Step::new("output", combined_value, step.timestamp)
         } else if right_step.timestamp < left_step.timestamp {
             // Right is earlier. Combine its value with the last known value from the left.
             let combined_value = right_step.value.as_ref().and_then(|r_val| {
@@ -90,7 +93,7 @@ where
             // Update the last known value for the right side and pop the step.
             *right_last_known = right_step.clone();
             let step = right_cache.pop_front().unwrap();
-            Step::new(combined_value, step.timestamp)
+            Step::new("output", combined_value, step.timestamp)
         } else {
             // Timestamps are equal. Combine their current values.
             let combined_value = left_step.value.as_ref().and_then(|l_val| {
@@ -104,7 +107,7 @@ where
             *right_last_known = right_step.clone();
             let step = left_cache.pop_front().unwrap();
             right_cache.pop_front();
-            Step::new(combined_value, step.timestamp)
+            Step::new("output", combined_value, step.timestamp)
         };
         output_robustness.push(new_step);
     }
@@ -117,7 +120,7 @@ where
         let left_value = left.value.to_owned().unwrap();
         if default_atomic == left_value && max_timestamp <= left.timestamp {
             let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step::new(Some(value), left.timestamp);
+            let new_step = Step::new("output", Some(value), left.timestamp);
             output_robustness.push(new_step.clone());
             left_cache.pop_front();
             *left_last_known = new_step.clone();
@@ -130,7 +133,7 @@ where
         let right_value = right.value.to_owned().unwrap();
         if default_atomic == right_value && max_timestamp <= right.timestamp {
             let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step::new(Some(value), right.timestamp);
+            let new_step = Step::new("output", Some(value), right.timestamp);
             output_robustness.push(new_step.clone());
             right_cache.pop_front();
             *right_last_known = new_step.clone();
@@ -145,8 +148,8 @@ where
 
 #[derive(Clone)]
 pub struct And<T, C, Y> {
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub left_cache: C,
     pub right_cache: C,
     last_eval_time: Option<Duration>,
@@ -157,8 +160,8 @@ pub struct And<T, C, Y> {
 
 impl<T, C, Y> And<T, C, Y> {
     pub fn new(
-        left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-        right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
         mode: EvaluationMode,
@@ -174,8 +177,8 @@ impl<T, C, Y> And<T, C, Y> {
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             last_eval_time: None,
-            left_last_known: Step::new(None, Duration::ZERO),
-            right_last_known: Step::new(None, Duration::ZERO),
+            left_last_known: Step::new("", None, Duration::ZERO),
+            right_last_known: Step::new("", None, Duration::ZERO),
             mode,
         }
     }
@@ -243,7 +246,7 @@ where
     }
 }
 
-impl SignalIdentifier for And<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for And<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         ids.extend(self.left.get_signal_identifiers());
@@ -254,8 +257,8 @@ impl SignalIdentifier for And<(), (), ()> {
 
 #[derive(Clone)]
 pub struct Or<T, C, Y> {
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub left_cache: C,
     pub right_cache: C,
     last_eval_time: Option<Duration>,
@@ -266,8 +269,8 @@ pub struct Or<T, C, Y> {
 
 impl<T, C, Y> Or<T, C, Y> {
     pub fn new(
-        left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-        right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
         mode: EvaluationMode,
@@ -284,10 +287,12 @@ impl<T, C, Y> Or<T, C, Y> {
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             last_eval_time: None,
             left_last_known: Step {
+                signal: "",
                 value: None,
                 timestamp: Duration::ZERO,
             },
             right_last_known: Step {
+                signal: "",
                 value: None,
                 timestamp: Duration::ZERO,
             },
@@ -356,7 +361,7 @@ where
     }
 }
 
-impl SignalIdentifier for Or<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for Or<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         ids.extend(self.left.get_signal_identifiers());
@@ -367,11 +372,11 @@ impl SignalIdentifier for Or<(), (), ()> {
 
 #[derive(Clone)]
 pub struct Not<T, Y> {
-    pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
 }
 
 impl<T, Y> Not<T, Y> {
-    pub fn new(operand: Box<dyn StlOperatorTrait<T, Output = Y>>) -> Self
+    pub fn new(operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>) -> Self
     where
         T: Clone + 'static,
         Y: RobustnessSemantics + 'static,
@@ -399,6 +404,7 @@ where
             .map(|step| {
                 let negated_value = step.value.map(Y::not);
                 Step {
+                    signal: "output",
                     value: negated_value,
                     timestamp: step.timestamp,
                 }
@@ -409,7 +415,7 @@ where
     }
 }
 
-impl SignalIdentifier for Not<(), ()> {
+impl<T, Y> SignalIdentifier for Not<T, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
@@ -417,8 +423,8 @@ impl SignalIdentifier for Not<(), ()> {
 
 #[derive(Clone)]
 pub struct Implies<T, C, Y> {
-    pub antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
-    pub consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    pub consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub left_cache: C,
     pub right_cache: C,
     last_eval_time: Option<Duration>,
@@ -429,8 +435,8 @@ pub struct Implies<T, C, Y> {
 
 impl<T, C, Y> Implies<T, C, Y> {
     pub fn new(
-        antecedent: Box<dyn StlOperatorTrait<T, Output = Y>>,
-        consequent: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
         mode: EvaluationMode,
@@ -447,10 +453,12 @@ impl<T, C, Y> Implies<T, C, Y> {
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             last_eval_time: None,
             left_last_known: Step {
+                signal: "",
                 value: None,
                 timestamp: Duration::ZERO,
             },
             right_last_known: Step {
+                signal: "",
                 value: None,
                 timestamp: Duration::ZERO,
             },
@@ -522,7 +530,7 @@ where
     }
 }
 
-impl SignalIdentifier for Implies<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for Implies<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         ids.extend(self.antecedent.get_signal_identifiers());
@@ -534,7 +542,7 @@ impl SignalIdentifier for Implies<(), (), ()> {
 #[derive(Clone)]
 pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub cache: C,
     pub eval_buffer: C,
     pub mode: EvaluationMode,
@@ -544,7 +552,7 @@ pub struct Eventually<T, C, Y> {
 impl<T, C, Y> Eventually<T, C, Y> {
     pub fn new(
         interval: TimeInterval,
-        operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
         eval_buffer: Option<C>,
         mode: EvaluationMode,
@@ -588,7 +596,7 @@ where
             // Add a task to the evaluation buffer for this new timestamp.
             // The `value` is None because it's just a placeholder for a pending task.
             self.eval_buffer
-                .add_step(Step::new(None, sub_step.timestamp));
+                .add_step(Step::new("", None, sub_step.timestamp));
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
@@ -608,14 +616,14 @@ where
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
             if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_true() {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step::new(Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step::new(Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
@@ -635,7 +643,7 @@ where
     }
 }
 
-impl SignalIdentifier for Eventually<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for Eventually<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
@@ -644,7 +652,7 @@ impl SignalIdentifier for Eventually<(), (), ()> {
 #[derive(Clone)]
 pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     pub cache: C,
     pub eval_buffer: C,
     pub mode: EvaluationMode,
@@ -654,7 +662,7 @@ pub struct Globally<T, Y, C> {
 impl<T, C, Y> Globally<T, Y, C> {
     pub fn new(
         interval: TimeInterval,
-        operand: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
         eval_buffer: Option<C>,
         mode: EvaluationMode,
@@ -698,7 +706,7 @@ where
             // Add a task to the evaluation buffer for this new timestamp.
             // The `value` is None because it's just a placeholder for a pending task.
             self.eval_buffer
-                .add_step(Step::new(None, sub_step.timestamp));
+                .add_step(Step::new("", None, sub_step.timestamp));
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
@@ -718,14 +726,14 @@ where
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
             if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
                 self.eval_buffer.pop_front();
-                output_robustness.push(Step::new(Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 self.eval_buffer.pop_front(); // Task is done
-                output_robustness.push(Step::new(Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
@@ -745,7 +753,7 @@ where
     }
 }
 
-impl SignalIdentifier for Globally<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for Globally<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
@@ -754,8 +762,8 @@ impl SignalIdentifier for Globally<(), (), ()> {
 #[derive(Clone)]
 pub struct Until<T, C, Y> {
     pub interval: TimeInterval,
-    pub left: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
-    pub right: Box<dyn StlOperatorTrait<T, Output = Y> + 'static>,
+    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     pub left_cache: C,
     pub right_cache: C,
     pub t_max: Duration,
@@ -768,8 +776,8 @@ pub struct Until<T, C, Y> {
 impl<T, C, Y> Until<T, C, Y> {
     pub fn new(
         interval: TimeInterval,
-        left: Box<dyn StlOperatorTrait<T, Output = Y>>,
-        right: Box<dyn StlOperatorTrait<T, Output = Y>>,
+        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
         mode: EvaluationMode,
@@ -864,7 +872,7 @@ where
             // Short-circuit: if left is false in the window, until is false regardless of right
             if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new(Some(Y::atomic_false()), t_eval));
+                output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
                 continue; // Move to the next task
             }
 
@@ -882,7 +890,7 @@ where
                 && self.t_max >= t_eval
             {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new(Some(Y::atomic_true()), t_eval));
+                output_robustness.push(Step::new("output", Some(Y::atomic_true()), t_eval));
                 continue; // Move to the next task
             }
 
@@ -890,7 +898,7 @@ where
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 let until_value = Y::or(max_in_window, right_in_window);
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new(Some(until_value), t_eval));
+                output_robustness.push(Step::new("output", Some(until_value), t_eval));
                 continue; // Move to the next task
             }
             // If no condition is met, we can't resolve this task yet.
@@ -910,7 +918,7 @@ where
     }
 }
 
-impl SignalIdentifier for Until<(), (), ()> {
+impl<T, C, Y> SignalIdentifier for Until<T, C, Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         ids.extend(self.left.get_signal_identifiers());
@@ -969,15 +977,15 @@ where
     }
 }
 
-impl SignalIdentifier for Atomic<()> {
+impl<Y> SignalIdentifier for Atomic<Y> {
     fn get_signal_identifiers(&self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         match self {
             Atomic::LessThan(signal_name, _, _) => {
-                ids.insert(signal_name);
+                ids.insert(*signal_name);
             }
             Atomic::GreaterThan(signal_name, _, _) => {
-                ids.insert(signal_name);
+                ids.insert(*signal_name);
             }
             Atomic::True(_) => {}
             Atomic::False(_) => {}
@@ -1081,58 +1089,79 @@ mod tests {
     // Atomic operators
     #[test]
     fn atomic_greater_than_robustness() {
-        let mut atomic = Atomic::<f64>::new_greater_than(10.0);
-        let step1 = Step::new(15.0, Duration::from_secs(5));
+        let mut atomic = Atomic::<f64>::new_greater_than("x", 10.0);
+        let step1 = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+        );
 
-        let step2 = Step::new(8.0, Duration::from_secs(6));
+        let step2 = Step::new("x", 8.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
-        assert_eq!(robustness2, vec![Step::new(signal: "x", Some(-2.0), Duration::from_secs(6))]);
+        assert_eq!(
+            robustness2,
+            vec![Step::new( "x", Some(-2.0), Duration::from_secs(6))]
+        );
     }
 
     #[test]
     fn atomic_less_than_robustness() {
-        let mut atomic = Atomic::<f64>::new_less_than(10.0);
-        let step1 = Step::new(5.0, Duration::from_secs(5));
+        let mut atomic = Atomic::<f64>::new_less_than("x", 10.0);
+        let step1 = Step::new("x", 5.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+        );
 
-        let step2 = Step::new(12.0, Duration::from_secs(6));
+        let step2 = Step::new("x", 12.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
-        assert_eq!(robustness2, vec![Step::new(signal: "x", Some(-2.0), Duration::from_secs(6))]);
+        assert_eq!(
+            robustness2,
+            vec![Step::new( "x", Some(-2.0), Duration::from_secs(6))]
+        );
     }
 
     #[test]
     fn atomic_true_robustness() {
         let mut atomic = Atomic::<f64>::new_true();
-        let step = Step::new(0.0, Duration::from_secs(5));
+        let step = Step::new("x",0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(f64::INFINITY), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(f64::INFINITY), Duration::from_secs(5))]
+        );
     }
 
     #[test]
     fn atomic_false_robustness() {
         let mut atomic = Atomic::<f64>::new_false();
-        let step = Step::new(0.0, Duration::from_secs(5));
+        let step = Step::new("x",0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(f64::NEG_INFINITY), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(f64::NEG_INFINITY), Duration::from_secs(5))]
+        );
     }
 
     // Logical operators
     #[test]
     fn not_operator_robustness() {
-        let atomic = Atomic::<f64>::new_greater_than(10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
         let mut not = Not::new(Box::new(atomic));
-        let step = Step::new(15.0, Duration::from_secs(5));
+        let step = Step::new("x",15.0, Duration::from_secs(5));
         let robustness = not.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(-5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(-5.0), Duration::from_secs(5))]
+        );
     }
 
     #[test]
     fn and_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than(10.0);
-        let atomic2 = Atomic::<f64>::new_less_than(20.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x",20.0);
         let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1141,15 +1170,18 @@ mod tests {
             EvaluationMode::Strict,
         );
 
-        let step = Step::new(15.0, Duration::from_secs(5));
+        let step = Step::new("x",15.0, Duration::from_secs(5));
         let robustness = and.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+        );
     }
 
     #[test]
     fn or_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than(10.0);
-        let atomic2 = Atomic::<f64>::new_less_than(5.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x",5.0);
         let mut or = Or::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1158,15 +1190,18 @@ mod tests {
             EvaluationMode::Strict,
         );
 
-        let step = Step::new(15.0, Duration::from_secs(5));
+        let step = Step::new("x",15.0, Duration::from_secs(5));
         let robustness = or.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+        );
     }
 
     #[test]
     fn implies_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than(10.0);
-        let atomic2 = Atomic::<f64>::new_less_than(20.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x",20.0);
         let mut implies = Implies::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1175,9 +1210,12 @@ mod tests {
             EvaluationMode::Strict,
         );
 
-        let step = Step::new(15.0, Duration::from_secs(5));
+        let step = Step::new("x",15.0, Duration::from_secs(5));
         let robustness = implies.robustness(&step);
-        assert_eq!(robustness, vec![Step::new(signal: "x", Some(5.0), Duration::from_secs(5))]);
+        assert_eq!(
+            robustness,
+            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+        );
     }
 
     // Temporal operators
@@ -1187,7 +1225,7 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let atomic = Atomic::<f64>::new_greater_than(10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
         let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64>::new(
             interval,
             Box::new(atomic),
@@ -1201,7 +1239,7 @@ mod tests {
         let signal: Vec<_> = signal_values
             .into_iter()
             .zip(signal_timestamps.into_iter())
-            .map(|(val, ts)| Step::new(val, Duration::from_secs(ts)))
+            .map(|(val, ts)| Step::new("x",val, Duration::from_secs(ts)))
             .collect();
 
         let mut all_outputs = Vec::new();
@@ -1210,9 +1248,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new(signal: "x", Some(5.0), Duration::from_secs(0)),
-            Step::new(signal: "x", Some(2.0), Duration::from_secs(2)),
-            Step::new(signal: "x", Some(2.0), Duration::from_secs(4)),
+            Step::new("x", Some(5.0), Duration::from_secs(0)),
+            Step::new("x", Some(2.0), Duration::from_secs(2)),
+            Step::new("x", Some(2.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
@@ -1233,7 +1271,7 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let atomic = Atomic::<f64>::new_greater_than(10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
         let mut globally = Globally::<f64, f64, RingBuffer<Option<f64>>>::new(
             interval,
             Box::new(atomic),
@@ -1247,7 +1285,7 @@ mod tests {
         let signal: Vec<_> = signal_values
             .into_iter()
             .zip(signal_timestamps.into_iter())
-            .map(|(val, ts)| Step::new(val, Duration::from_secs(ts)))
+            .map(|(val, ts)| Step::new("x",val, Duration::from_secs(ts)))
             .collect();
 
         let mut all_outputs = Vec::new();
@@ -1256,9 +1294,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new(signal: "x", Some(-2.0), Duration::from_secs(0)),
-            Step::new(signal: "x", Some(-5.0), Duration::from_secs(2)),
-            Step::new(signal: "x", Some(-5.0), Duration::from_secs(4)),
+            Step::new("x", Some(-2.0), Duration::from_secs(0)),
+            Step::new("x", Some(-5.0), Duration::from_secs(2)),
+            Step::new("x", Some(-5.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
