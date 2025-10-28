@@ -169,4 +169,87 @@ mod tests {
         assert_eq!(signal.get_front().unwrap().value, 2);
         assert_eq!(signal.get_back().unwrap().value, 3);
     }
+    #[test]
+    fn ring_get_back() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+        let back_step = signal.get_back().unwrap();
+        assert_eq!(back_step.value, 3);
+    }
+    #[test]
+    fn ring_get_front() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+        let front_step = signal.get_front().unwrap();
+        assert_eq!(front_step.value, 1);
+    }   
+    #[test]
+    fn ring_pop_front() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+        let popped_step = signal.pop_front().unwrap();
+        assert_eq!(popped_step.value, 1);
+        assert_eq!(signal.len(), 2);
+        assert_eq!(signal.get_front().unwrap().value, 2);
+        assert_eq!(signal.get_back().unwrap().value, 3);
+    }
+    #[test]
+    fn ring_iter() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+        signal.add_step(Step {
+            value: 3,
+            timestamp: Duration::from_secs(3),
+        });
+        let mut iter = signal.iter();
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert!(iter.next().is_none());
+    }
+    #[test]
+    fn ring_is_empty() {
+        let signal: RingBuffer<bool> = RingBuffer::new();
+        assert!(signal.is_empty());
+    }
 }
