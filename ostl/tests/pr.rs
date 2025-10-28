@@ -27,7 +27,10 @@ mod tests {
         T: Clone,
         Y: RobustnessSemantics + Copy + Debug + PartialEq,
     {
-        println!("Running multi-step robustness test with spec: {}", monitor_opt.specification_to_string());
+        println!(
+            "Running multi-step robustness test with spec: {}",
+            monitor_opt.specification_to_string()
+        );
         for step in steps.iter() {
             let _robustness_opt = monitor_opt.instantaneous_robustness(step);
         }

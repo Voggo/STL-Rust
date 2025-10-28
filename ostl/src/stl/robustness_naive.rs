@@ -83,26 +83,29 @@ where
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         self.signal.add_step(step.clone());
-        
+
         // The top-level monitor is responsible for calculating the evaluation time.
         let max_lookahead = self.formula.get_max_lookahead();
         if step.timestamp < max_lookahead {
             return vec![]; // Not enough data to evaluate
         }
-        
+
         // This is the correct, past timestamp we are evaluating for.
         let t_eval = step.timestamp.saturating_sub(max_lookahead);
 
         // Pass t_eval to the naive evaluator.
-        let robustness = self.formula.robustness_naive(&self.signal, t_eval); 
+        let robustness = self.formula.robustness_naive(&self.signal, t_eval);
 
         //if None, return empty vec; wrap inner Y into Option<Y> so types match Vec<Step<Option<Y>>>
         match robustness {
             Some(robustness_step) => {
                 // The step from robustness_naive should have the t_eval timestamp
                 debug_assert_eq!(robustness_step.timestamp, t_eval);
-                vec![Step::new(Some(robustness_step.value), robustness_step.timestamp)]
-            },
+                vec![Step::new(
+                    Some(robustness_step.value),
+                    robustness_step.timestamp,
+                )]
+            }
             None => vec![],
         }
     }
@@ -173,12 +176,10 @@ impl StlOperator {
         Y: RobustnessSemantics,
     {
         // Find the signal step at t_eval
-        signal.iter().find(|s| s.timestamp == t_eval).map(|step| {
-            Step::new(
-                Y::atomic_greater_than(step.value.clone().into(), c),
-                t_eval,
-            )
-        })
+        signal
+            .iter()
+            .find(|s| s.timestamp == t_eval)
+            .map(|step| Step::new(Y::atomic_greater_than(step.value.clone().into(), c), t_eval))
     }
 
     fn eval_less_than<T, S, Y>(&self, c: f64, signal: &S, t_eval: Duration) -> Option<Step<Y>>
@@ -188,20 +189,13 @@ impl StlOperator {
         Y: RobustnessSemantics,
     {
         // Find the signal step at t_eval
-        signal.iter().find(|s| s.timestamp == t_eval).map(|step| {
-            Step::new(
-                Y::atomic_less_than(step.value.clone().into(), c),
-                t_eval,
-            )
-        })
+        signal
+            .iter()
+            .find(|s| s.timestamp == t_eval)
+            .map(|step| Step::new(Y::atomic_less_than(step.value.clone().into(), c), t_eval))
     }
 
-    fn eval_not<T, S, Y>(
-        &self,
-        phi: &StlOperator,
-        signal: &S,
-        t_eval: Duration,
-    ) -> Option<Step<Y>>
+    fn eval_not<T, S, Y>(&self, phi: &StlOperator, signal: &S, t_eval: Duration) -> Option<Step<Y>>
     where
         S: RingBufferTrait<Value = T>,
         T: Clone + Copy + Into<f64>,
@@ -292,11 +286,11 @@ impl StlOperator {
 
         // Check if we have enough data in the signal
         if let Some(back_step) = signal.get_back() {
-             if back_step.timestamp < upper_bound_t_prime {
-                 return None; // Not enough data to evaluate yet
-             }
+            if back_step.timestamp < upper_bound_t_prime {
+                return None; // Not enough data to evaluate yet
+            }
         } else {
-             return None; // Signal is empty
+            return None; // Signal is empty
         }
 
         let result = signal
@@ -333,11 +327,11 @@ impl StlOperator {
         let upper_bound_t_prime = t_eval + interval.end;
 
         if let Some(back_step) = signal.get_back() {
-             if back_step.timestamp < upper_bound_t_prime {
-                 return None; // Not enough data to evaluate yet
-             }
+            if back_step.timestamp < upper_bound_t_prime {
+                return None; // Not enough data to evaluate yet
+            }
         } else {
-             return None; // Signal is empty
+            return None; // Signal is empty
         }
 
         let result = signal
@@ -352,7 +346,7 @@ impl StlOperator {
                 (None, Some(current_step)) => Some(current_step.value),
                 (None, None) => None,
             })?;
-            
+
         Some(Step::new(result, t_eval))
     }
 
@@ -373,11 +367,11 @@ impl StlOperator {
         let upper_bound_t_prime = t_eval + interval.end;
 
         if let Some(back_step) = signal.get_back() {
-             if back_step.timestamp < upper_bound_t_prime {
-                 return None; // Not enough data to evaluate yet
-             }
+            if back_step.timestamp < upper_bound_t_prime {
+                return None; // Not enough data to evaluate yet
+            }
         } else {
-             return None; // Signal is empty
+            return None; // Signal is empty
         }
 
         let result = signal
@@ -394,9 +388,9 @@ impl StlOperator {
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp < t_prime) // G is up to t_prime
                     .map(|s| phi.robustness_naive(signal, s.timestamp)) // This is Option<Step<Y>>
                     .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
-                        (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)), 
+                        (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
                         (Some(a), None) => Some(a),
-                        (None, Some(current_step)) => Some(current_step.value), 
+                        (None, Some(current_step)) => Some(current_step.value),
                         (None, None) => None,
                     });
 
@@ -408,13 +402,13 @@ impl StlOperator {
                     })
             })
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(robustness_value)) => Some(Y::or(a, robustness_value)), 
+                (Some(a), Some(robustness_value)) => Some(Y::or(a, robustness_value)),
                 (Some(a), None) => Some(a),
-                (None, Some(robustness_value)) => Some(robustness_value), 
+                (None, Some(robustness_value)) => Some(robustness_value),
                 (None, None) => None,
             })?;
 
-        Some(Step::new(result, t_eval)) 
+        Some(Step::new(result, t_eval))
     }
 
     // ... (to_tree_string and Display are unchanged) ...

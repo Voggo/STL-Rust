@@ -1,8 +1,8 @@
 // In benches/monitor_benchmark.rs
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use ostl::ring_buffer::Step;
-use ostl::stl::core::{TimeInterval};
-use ostl::stl::monitor::{FormulaDefinition, MonitoringStrategy, StlMonitor, EvaluationMode};
+use ostl::stl::core::TimeInterval;
+use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
 
 // ---
@@ -44,7 +44,6 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
         .collect()
 }
 
-
 // ---
 // The Benchmark Function
 // ---
@@ -52,7 +51,7 @@ fn benchmark_monitors(c: &mut Criterion) {
     let formula = formula_2();
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
-    
+
     // Create a benchmark group to compare implementations
     let mut group = c.benchmark_group("Formula 2 (f64, Strict) 1k steps");
     group.throughput(Throughput::Elements(signal_size as u64));
