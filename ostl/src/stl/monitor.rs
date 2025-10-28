@@ -156,6 +156,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         Box::new(StlFormula::<T, RingBuffer<T>, Y> {
             formula: formula_enum,
             signal: RingBuffer::new(), // This is the only RingBuffer that gets created
+            last_eval_time: None,
             _phantom: std::marker::PhantomData,
         })
     }

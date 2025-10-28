@@ -44,7 +44,7 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan(3.0)),
+            Box::new(FormulaDefinition::GreaterThan("x",3.0)),
         )
     }
 
@@ -62,21 +62,21 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
             )),
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(3.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",3.0)),
             )),
         )
     }
 
     #[fixture]
     #[once]
-    fn formula_3() -> FormulaDefinition {
+    fn formula_3() -> FormulaDefinition { 
         // F[0,2] (x > 5) && G[0, 2] (x > 0)
         FormulaDefinition::And(
             Box::new(FormulaDefinition::Eventually(
@@ -84,14 +84,14 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(5.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",5.0)),
             )),
             Box::new(FormulaDefinition::Globally(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
             )),
         )
     }
@@ -106,7 +106,7 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(5.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",5.0)),
             )),
             Box::new(FormulaDefinition::True),
         )
@@ -121,7 +121,7 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan(5.0)),
+            Box::new(FormulaDefinition::GreaterThan("x",5.0)),
         )
     }
 
@@ -135,14 +135,14 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(5),
                 },
-                Box::new(FormulaDefinition::GreaterThan(0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
             )),
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan(3.0)),
+                Box::new(FormulaDefinition::GreaterThan("x",3.0)),
             )),
         )
     }
@@ -153,7 +153,7 @@ mod tests {
         // !x<5 || F
         FormulaDefinition::Or(
             Box::new(FormulaDefinition::Not(Box::new(
-                FormulaDefinition::LessThan(5.0),
+                FormulaDefinition::LessThan("x",5.0),
             ))),
             Box::new(FormulaDefinition::False),
         )
