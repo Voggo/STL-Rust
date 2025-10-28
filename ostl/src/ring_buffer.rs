@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::Index, time::Duration};
+use std::{collections::VecDeque, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Step<T> {
