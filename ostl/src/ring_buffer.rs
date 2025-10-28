@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step<T> {
-    signal: &'static str,
+    pub signal: &'static str,
     pub value: T,
     pub timestamp: Duration,
 }
