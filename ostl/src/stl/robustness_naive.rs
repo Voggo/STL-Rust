@@ -73,10 +73,6 @@ where
 {
     type Output = Y;
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn get_max_lookahead(&self) -> Duration {
         self.formula.get_max_lookahead()
     }
