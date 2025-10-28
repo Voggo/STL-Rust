@@ -525,4 +525,388 @@ mod tests {
 
         run_robustness_test(monitor_naive, monitor_opt, &step, vec![Step::new(Some(true), step.timestamp)]);
     }
+
+// --------------------------------------------------- //
+// old tests from robustness_cached.rs below here. should be updated versions of the same
+//  in the monitor_test.rs file but for now kept here for reference
+    fn get_signal_1() -> Vec<Step<f64>> {
+        let inputs = vec![
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(0),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(1),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(2),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(3),
+            },
+            Step {
+                value: 8.0,
+                timestamp: Duration::from_secs(4),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(5),
+            },
+            Step {
+                value: 7.0,
+                timestamp: Duration::from_secs(6),
+            },
+        ];
+        inputs
+    }
+
+    fn get_signal_2() -> Vec<Step<f64>> {
+        let inputs = vec![
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(0),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(1),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(2),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(3),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(4),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(5),
+            },
+            Step {
+                value: 2.0,
+                timestamp: Duration::from_secs(6),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(7),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(8),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(9),
+            },
+            Step {
+                value: 6.0,
+                timestamp: Duration::from_secs(10),
+            },
+        ];
+        inputs
+    }
+    fn get_signal_3() -> Vec<Step<f64>> {
+        let inputs = vec![
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(0),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(1),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(2),
+            },
+            Step {
+                value: 2.0,
+                timestamp: Duration::from_secs(3),
+            },
+            Step {
+                value: 3.0,
+                timestamp: Duration::from_secs(4),
+            },
+            Step {
+                value: 4.0,
+                timestamp: Duration::from_secs(5),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(6),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(7),
+            },
+            Step {
+                value: 0.0,
+                timestamp: Duration::from_secs(8),
+            },
+            Step {
+                value: 1.0,
+                timestamp: Duration::from_secs(9),
+            },
+            Step {
+                value: 2.0,
+                timestamp: Duration::from_secs(10),
+            },
+        ];
+        inputs
+    }
+    #[test]
+    fn test_1() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let atomic = Atomic::<bool>::new_greater_than(5.0);
+
+        let mut op = And::new(
+            Box::new(Eventually::new(
+                interval.clone(),
+                Box::new(atomic.clone()),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+                EvaluationMode::Eager,
+            )),
+            Box::new(Atomic::<bool>::new_true()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_ev = Eventually::new(
+            interval.clone(),
+            Box::new(atomic.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_global = Globally::new(
+            interval.clone(),
+            Box::new(atomic.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_or = Or::new(
+            Box::new(Eventually::new(
+                interval.clone(),
+                Box::new(atomic.clone()),
+                Some(RingBuffer::new()),
+                Some(RingBuffer::new()),
+                EvaluationMode::Eager,
+            )),
+            Box::new(Atomic::<bool>::new_true()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        println!("STL formula: {}", op.to_string());
+        let inputs = get_signal_1();
+
+        for input in inputs.clone() {
+            let res_ev = op_ev.robustness(&input);
+            println!("Input: {:?}, Output EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+        for input in inputs.clone() {
+            let res = op.robustness(&input);
+            println!("Input: {:?}, Output AND: {:?}", input, res);
+        }
+        println!("\n");
+        for input in inputs.clone() {
+            let res_or = op_or.robustness(&input);
+            println!("Input: {:?}, Output OR: {:?}", input, res_or);
+        }
+        println!("\n");
+        for input in inputs {
+            let res_global = op_global.robustness(&input);
+            println!("Input: {:?}, Output GLOBALLY: {:?}", input, res_global);
+        }
+    }
+
+    #[test]
+    fn test_2() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
+        let atomic_g0 = Atomic::<bool>::new_greater_than(0.0);
+
+        let mut op_global = Globally::new(
+            interval.clone(),
+            Box::new(atomic_g0.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_ev = Eventually::new(
+            interval.clone(),
+            Box::new(atomic_g5.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_and = And::new(
+            Box::new(op_ev.clone()),
+            Box::new(op_global.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        println!("STL formula: {}", op_global.to_string());
+        let inputs = get_signal_1();
+
+        for input in inputs.clone() {
+            let res = op_global.robustness(&input);
+            println!("Input: {:?}, Output GLOBALLY: {:?}", input, res);
+        }
+        println!("\n");
+        for input in inputs.clone() {
+            let res_ev = op_ev.robustness(&input);
+            println!("Input: {:?}, Output EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+        for input in inputs {
+            let res_and = op_and.robustness(&input);
+            println!("Input: {:?}, Output AND: {:?}", input, res_and);
+        }
+    }
+
+    #[test]
+    fn test_3_until() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(3),
+        };
+        let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
+        let atomic_g0 = Atomic::<bool>::new_greater_than(0.0);
+
+        let mut op_until = Until::new(
+            interval.clone(),
+            Box::new(atomic_g0.clone()),
+            Box::new(atomic_g5.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        println!("STL formula: {}", op_until.to_string());
+        let inputs = get_signal_1();
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, Output UNTIL: {:?}", input, res_until);
+        }
+    }
+
+    #[test]
+    fn test_4_until() {
+        let interval_eventually = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_until = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        };
+
+        let mut eventually_g3 = Eventually::new(
+            interval_eventually.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let atomic_g5 = Atomic::<bool>::new_greater_than(5.0);
+
+        let mut op_until = Until::new(
+            interval_until.clone(),
+            Box::new(eventually_g3.clone()),
+            Box::new(atomic_g5),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let inputs = get_signal_2();
+
+        println!("\n");
+        println!("STL formula: {}", eventually_g3.to_string());
+        for input in inputs.clone() {
+            let res_ev = eventually_g3.robustness(&input);
+            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+
+        println!("STL formula: {}", op_until.to_string());
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+        }
+    }
+    #[test]
+    fn test_5_until() {
+        let interval_globally = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_eventually = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let interval_until = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        };
+        let mut globally_g0 = Globally::new(
+            interval_globally.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(0.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut eventually_g3 = Eventually::new(
+            interval_eventually.clone(),
+            Box::new(Atomic::<bool>::new_greater_than(3.0)),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let mut op_until = Until::new(
+            interval_until.clone(),
+            Box::new(globally_g0.clone()),
+            Box::new(eventually_g3.clone()),
+            Some(RingBuffer::new()),
+            Some(RingBuffer::new()),
+            EvaluationMode::Eager,
+        );
+        let inputs = get_signal_3();
+
+        println!("\n");
+        println!("STL formula: {}", globally_g0.to_string());
+        for input in inputs.clone() {
+            let res_global = globally_g0.robustness(&input);
+            println!("Input: {:?}, \nOutput GLOBALLY: {:?}", input, res_global);
+        }
+        println!("\n");
+        println!("STL formula: {}", eventually_g3.to_string());
+        for input in inputs.clone() {
+            let res_ev = eventually_g3.robustness(&input);
+            println!("Input: {:?}, \nOutput EV: {:?}", input, res_ev);
+        }
+        println!("\n");
+        println!("STL formula: {}", op_until.to_string());
+        for input in inputs {
+            let res_until = op_until.robustness(&input);
+            println!("Input: {:?}, \nOutput UNTIL: {:?}", input, res_until);
+        }
+    }
 }
+
