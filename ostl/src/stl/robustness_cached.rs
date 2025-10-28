@@ -54,7 +54,6 @@ fn process_binary_eager<C, Y, F>(
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
     default_atomic: Y,
-    mode: EvaluationMode,
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
@@ -113,35 +112,34 @@ where
     // 'short-circuit' logic:
     // for and: if either left or right is false, result is false
     // for or: if either left or right is true, result is true
-    if mode == EvaluationMode::Eager {
-        let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
-        while let Some(left) = left_cache.get_front() {
-            let left_value = left.value.to_owned().unwrap();
-            if default_atomic == left_value && max_timestamp <= left.timestamp {
-                let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-                let new_step = Step::new(Some(value), left.timestamp);
-                output_robustness.push(new_step.clone());
-                left_cache.pop_front();
-                *left_last_known = new_step.clone();
-                max_timestamp = max_timestamp.max(new_step.timestamp);
-            } else {
-                break;
-            }
-        }
-        while let Some(right) = right_cache.get_front() {
-            let right_value = right.value.to_owned().unwrap();
-            if default_atomic == right_value && max_timestamp <= right.timestamp {
-                let value = combine_op(right_value, default_atomic.clone());
-                let new_step = Step::new(Some(value), right.timestamp);
-                output_robustness.push(new_step.clone());
-                right_cache.pop_front();
-                *right_last_known = new_step.clone();
-                max_timestamp = max_timestamp.max(new_step.timestamp);
-            } else {
-                break;
-            }
+    let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
+    while let Some(left) = left_cache.get_front() {
+        let left_value = left.value.to_owned().unwrap();
+        if default_atomic == left_value && max_timestamp <= left.timestamp {
+            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
+            let new_step = Step::new(Some(value), left.timestamp);
+            output_robustness.push(new_step.clone());
+            left_cache.pop_front();
+            *left_last_known = new_step.clone();
+            max_timestamp = max_timestamp.max(new_step.timestamp);
+        } else {
+            break;
         }
     }
+    while let Some(right) = right_cache.get_front() {
+        let right_value = right.value.to_owned().unwrap();
+        if default_atomic == right_value && max_timestamp <= right.timestamp {
+            let value = combine_op(right_value, default_atomic.clone());
+            let new_step = Step::new(Some(value), right.timestamp);
+            output_robustness.push(new_step.clone());
+            right_cache.pop_front();
+            *right_last_known = new_step.clone();
+            max_timestamp = max_timestamp.max(new_step.timestamp);
+        } else {
+            break;
+        }
+    }
+
     output_robustness
 }
 
@@ -191,7 +189,6 @@ where
 {
     type Output = Y;
 
-
     fn get_max_lookahead(&self) -> Duration {
         let left_lookahead = self.left.get_max_lookahead();
         let right_lookahead = self.right.get_max_lookahead();
@@ -231,16 +228,9 @@ where
                 &mut self.right_last_known,
                 Y::and,            // The only difference!
                 Y::atomic_false(), // Default atomic value for 'and'
-                self.mode,
             ),
         };
 
-        // let max_timestamp = self
-        //     .right_last_known
-        //     .timestamp
-        //     .max(self.left_last_known.timestamp);
-        // self.left_cache.prune(max_timestamp);
-        // self.right_cache.prune(max_timestamp);
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
@@ -305,7 +295,6 @@ where
 {
     type Output = Y;
 
-
     fn get_max_lookahead(&self) -> Duration {
         let left_lookahead = self.left.get_max_lookahead();
         let right_lookahead = self.right.get_max_lookahead();
@@ -345,15 +334,9 @@ where
                 &mut self.right_last_known,
                 Y::or,
                 Y::atomic_true(),
-                self.mode,
             ),
         };
-        // let max_timestamp = self
-        //     .right_last_known
-        //     .timestamp
-        //     .max(self.left_last_known.timestamp);
-        // self.left_cache.prune(max_timestamp);
-        // self.right_cache.prune(max_timestamp);
+
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
@@ -385,7 +368,6 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-
 
     fn get_max_lookahead(&self) -> Duration {
         self.operand.get_max_lookahead()
@@ -462,7 +444,6 @@ where
 {
     type Output = Y;
 
-
     fn get_max_lookahead(&self) -> Duration {
         let left_lookahead = self.antecedent.get_max_lookahead();
         let right_lookahead = self.consequent.get_max_lookahead();
@@ -503,20 +484,12 @@ where
                 &mut self.right_last_known,
                 Y::implies,
                 Y::atomic_true(), // Default atomic value for 'implies'
-                self.mode,
             ),
         };
 
-        // let max_timestamp = self
-        //     .right_last_known
-        //     .timestamp
-        //     .max(self.left_last_known.timestamp);
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
-
-        // self.left_cache.prune(max_timestamp);
-        // self.right_cache.prune(max_timestamp);
 
         if let Some(last_step) = output.last() {
             self.last_eval_time = Some(last_step.timestamp);
@@ -567,7 +540,6 @@ where
     Y: RobustnessSemantics + 'static, // The crucial trait bound
 {
     type Output = Y;
-
 
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
