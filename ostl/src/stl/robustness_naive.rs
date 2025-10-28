@@ -37,6 +37,7 @@ where
 {
     pub formula: StlOperator,
     pub signal: C,
+    pub last_eval_time: Option<Duration>,
     pub _phantom: std::marker::PhantomData<Y>,
 }
 
@@ -50,6 +51,7 @@ where
         Self {
             formula,
             signal,
+            last_eval_time: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -80,27 +82,31 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         self.signal.add_step(step.clone());
 
-        // The top-level monitor is responsible for calculating the evaluation time.
         let max_lookahead = self.formula.get_max_lookahead();
         if step.timestamp < max_lookahead {
-            return vec![]; // Not enough data to evaluate
+            return vec![];
         }
 
-        // This is the correct, past timestamp we are evaluating for.
         let t_eval = step.timestamp.saturating_sub(max_lookahead);
 
-        // Pass t_eval to the naive evaluator.
-        let robustness = self
-            .formula
-            .robustness_naive(step.signal, &self.signal, t_eval);
+        if self.last_eval_time == Some(t_eval) {
+            return vec![]; // We already evaluated this t_eval, triggered by the previous step.
+        }
 
-        //if None, return empty vec; wrap inner Y into Option<Y> so types match Vec<Step<Option<Y>>>
+        // contains all the steps (x, y, etc.) with their names.
+        let robustness = self.formula.robustness_naive(&self.signal, t_eval); // step.signal removed
+
+        if robustness.is_some() {
+            self.last_eval_time = Some(t_eval);
+        }
+
+        self.signal.prune(max_lookahead);
+
         match robustness {
             Some(robustness_step) => {
-                // The step from robustness_naive should have the t_eval timestamp
                 debug_assert_eq!(robustness_step.timestamp, t_eval);
                 vec![Step::new(
-                    robustness_step.signal,
+                    robustness_step.signal, // Should be "output"
                     Some(robustness_step.value),
                     robustness_step.timestamp,
                 )]
@@ -115,7 +121,7 @@ impl StlOperator {
     /// This function assumes all necessary signal data (up to `t_eval + max_lookahead`) is present.
     pub fn robustness_naive<T, C, Y>(
         &self,
-        signal_name: &str,
+        // FIX: Remove signal_name
         signal: &C,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -128,37 +134,29 @@ impl StlOperator {
             StlOperator::True => self.eval_true(t_eval),
             StlOperator::False => self.eval_false(t_eval),
             StlOperator::GreaterThan(name, c) => {
-                if *name == signal_name {
-                    self.eval_greater_than(*c, signal, t_eval)
-                } else {
-                    None
-                }
+                // FIX: Pass the name "name" to the eval function
+                self.eval_greater_than(*c, *name, signal, t_eval)
             }
             StlOperator::LessThan(name, c) => {
-                if *name == signal_name {
-                    self.eval_less_than(*c, signal, t_eval)
-                } else {
-                    None
-                }
+                // FIX: Pass the name "name" to the eval function
+                self.eval_less_than(*c, *name, signal, t_eval)
             }
-            StlOperator::Not(phi) => self.eval_not(phi, signal_name, signal, t_eval),
-            StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal_name, signal, t_eval),
-            StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal_name, signal, t_eval),
-            StlOperator::Implies(phi, psi) => {
-                self.eval_implies(phi, psi, signal_name, signal, t_eval)
-            }
+            // FIX: Remove signal_name from all recursive calls
+            StlOperator::Not(phi) => self.eval_not(phi, signal, t_eval),
+            StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal, t_eval),
+            StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal, t_eval),
+            StlOperator::Implies(phi, psi) => self.eval_implies(phi, psi, signal, t_eval),
             StlOperator::Eventually(interval, phi) => {
-                self.eval_eventually(interval, phi, signal_name, signal, t_eval)
+                self.eval_eventually(interval, phi, signal, t_eval)
             }
             StlOperator::Globally(interval, phi) => {
-                self.eval_globally(interval, phi, signal_name, signal, t_eval)
+                self.eval_globally(interval, phi, signal, t_eval)
             }
             StlOperator::Until(interval, phi, psi) => {
-                self.eval_until(interval, phi, psi, signal_name, signal, t_eval)
+                self.eval_until(interval, phi, psi, signal, t_eval)
             }
         }
     }
-
     /// Recursively computes the maximum lookahead time required for the formula.
     pub fn get_max_lookahead(&self) -> Duration {
         match self {
@@ -187,44 +185,10 @@ impl StlOperator {
         Some(Step::new("output", Y::atomic_false(), t_eval))
     }
 
-    fn eval_greater_than<T, S, Y>(&self, c: f64, signal: &S, t_eval: Duration) -> Option<Step<Y>>
-    where
-        S: RingBufferTrait<Value = T>,
-        T: Clone + Copy + Into<f64>,
-        Y: RobustnessSemantics,
-    {
-        // Find the signal step at t_eval
-
-        // only consider if signal name matches
-        signal.iter().find(|s| s.timestamp == t_eval).map(|step| {
-            Step::new(
-                "output",
-                Y::atomic_greater_than(step.value.clone().into(), c),
-                t_eval,
-            )
-        })
-    }
-
-    fn eval_less_than<T, S, Y>(&self, c: f64, signal: &S, t_eval: Duration) -> Option<Step<Y>>
-    where
-        S: RingBufferTrait<Value = T>,
-        T: Clone + Copy + Into<f64>,
-        Y: RobustnessSemantics,
-    {
-        // Find the signal step at t_eval
-        signal.iter().find(|s| s.timestamp == t_eval).map(|step| {
-            Step::new(
-                "output",
-                Y::atomic_less_than(step.value.clone().into(), c),
-                t_eval,
-            )
-        })
-    }
-
-    fn eval_not<T, S, Y>(
+    fn eval_greater_than<T, S, Y>(
         &self,
-        phi: &StlOperator,
-        signal_name: &str,
+        c: f64,
+        name: &'static str, // FIX: Added name
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -233,8 +197,52 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
+        // FIX: Find the step at t_eval AND with the correct signal name
+        signal
+            .iter()
+            .find(|s| s.timestamp == t_eval && s.signal == name) // Added s.signal == name
+            .map(|step| {
+                Step::new(
+                    "output",
+                    Y::atomic_greater_than(step.value.clone().into(), c),
+                    t_eval,
+                )
+            })
+    }
+
+    fn eval_less_than<T, S, Y>(
+        &self,
+        c: f64,
+        name: &'static str, // FIX: Added name
+        signal: &S,
+        t_eval: Duration,
+    ) -> Option<Step<Y>>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
+    {
+        // FIX: Find the step at t_eval AND with the correct signal name
+        signal
+            .iter()
+            .find(|s| s.timestamp == t_eval && s.signal == name) // Added s.signal == name
+            .map(|step| {
+                Step::new(
+                    "output",
+                    Y::atomic_less_than(step.value.clone().into(), c),
+                    t_eval,
+                )
+            })
+    }
+
+    fn eval_not<T, S, Y>(&self, phi: &StlOperator, signal: &S, t_eval: Duration) -> Option<Step<Y>>
+    where
+        S: RingBufferTrait<Value = T>,
+        T: Clone + Copy + Into<f64>,
+        Y: RobustnessSemantics,
+    {
         // Recursively call for the *same* t_eval
-        phi.robustness_naive(signal_name, signal, t_eval)
+        phi.robustness_naive(signal, t_eval)
             .map(|step| Step::new("output", Y::not(step.value), step.timestamp))
     }
 
@@ -242,7 +250,6 @@ impl StlOperator {
         &self,
         phi: &StlOperator,
         psi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -252,8 +259,8 @@ impl StlOperator {
         Y: RobustnessSemantics,
     {
         // Recursively call both children for the *same* t_eval
-        phi.robustness_naive(signal_name, signal, t_eval)
-            .zip(psi.robustness_naive(signal_name, signal, t_eval))
+        phi.robustness_naive(signal, t_eval)
+            .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
                 // Timestamps are guaranteed to be equal (both are t_eval)
                 debug_assert_eq!(step1.timestamp, step2.timestamp);
@@ -265,7 +272,6 @@ impl StlOperator {
         &self,
         phi: &StlOperator,
         psi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -274,8 +280,8 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        phi.robustness_naive(signal_name, signal, t_eval)
-            .zip(psi.robustness_naive(signal_name, signal, t_eval))
+        phi.robustness_naive(signal, t_eval)
+            .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
                 debug_assert_eq!(step1.timestamp, step2.timestamp);
                 Step::new("output", Y::or(step1.value, step2.value), step1.timestamp)
@@ -286,7 +292,6 @@ impl StlOperator {
         &self,
         phi: &StlOperator,
         psi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -295,8 +300,8 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        phi.robustness_naive(signal_name, signal, t_eval)
-            .zip(psi.robustness_naive(signal_name, signal, t_eval))
+        phi.robustness_naive(signal, t_eval)
+            .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
                 debug_assert_eq!(step1.timestamp, step2.timestamp);
                 Step::new(
@@ -311,7 +316,6 @@ impl StlOperator {
         &self,
         interval: &TimeInterval,
         phi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -339,7 +343,7 @@ impl StlOperator {
                 step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
             })
             // Recursively call for *each step's timestamp* in the window
-            .map(|step| phi.robustness_naive(signal_name, signal, step.timestamp))
+            .map(|step| phi.robustness_naive(signal, step.timestamp))
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(current_step)) => Some(Y::or(a, current_step.value)),
                 (Some(a), None) => Some(a), // Or should this be None? If one fails, all fail?
@@ -355,7 +359,6 @@ impl StlOperator {
         &self,
         interval: &TimeInterval,
         phi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -380,7 +383,7 @@ impl StlOperator {
             .filter(|step| {
                 step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
             })
-            .map(|step| phi.robustness_naive(signal_name, signal, step.timestamp))
+            .map(|step| phi.robustness_naive(signal, step.timestamp))
             .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
                 (Some(a), None) => Some(a),
@@ -396,7 +399,6 @@ impl StlOperator {
         interval: &TimeInterval,
         phi: &StlOperator,
         psi: &StlOperator,
-        signal_name: &str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -423,12 +425,12 @@ impl StlOperator {
             })
             .map(|step_t_prime| {
                 let t_prime = step_t_prime.timestamp;
-                let robustness_psi = psi.robustness_naive(signal_name, signal, t_prime);
+                let robustness_psi = psi.robustness_naive(signal, t_prime);
 
                 let robustness_phi_g = signal
                     .iter()
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp < t_prime) // G is up to t_prime
-                    .map(|s| phi.robustness_naive(signal_name, signal, s.timestamp)) // This is Option<Step<Y>>
+                    .map(|s| phi.robustness_naive(signal, s.timestamp)) // This is Option<Step<Y>>
                     .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
                         (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
                         (Some(a), None) => Some(a),
@@ -564,16 +566,14 @@ mod tests {
     fn atomic_greater_than_robustness() {
         let formula = StlOperator::GreaterThan("x", 10.0);
         let signal = create_signal(vec![15.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", 5.0, Duration::from_secs(5)))
         );
 
         let signal2 = create_signal(vec![8.0], vec![5]);
-        let robustness2 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal2, Duration::from_secs(5));
+        let robustness2 = formula.robustness_naive::<f64, _, f64>(&signal2, Duration::from_secs(5));
         assert_eq!(
             robustness2,
             Some(Step::new("output", -2.0, Duration::from_secs(5)))
@@ -584,16 +584,14 @@ mod tests {
     fn atomic_less_than_robustness() {
         let formula = StlOperator::LessThan("x", 10.0);
         let signal = create_signal(vec![5.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", 5.0, Duration::from_secs(5)))
         );
 
         let signal2 = create_signal(vec![12.0], vec![5]);
-        let robustness2 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal2, Duration::from_secs(5));
+        let robustness2 = formula.robustness_naive::<f64, _, f64>(&signal2, Duration::from_secs(5));
         assert_eq!(
             robustness2,
             Some(Step::new("output", -2.0, Duration::from_secs(5)))
@@ -604,8 +602,7 @@ mod tests {
     fn atomic_true_robustness() {
         let formula = StlOperator::True;
         let signal = create_signal(vec![0.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", f64::INFINITY, Duration::from_secs(5)))
@@ -616,8 +613,7 @@ mod tests {
     fn atomic_false_robustness() {
         let formula = StlOperator::False;
         let signal = create_signal(vec![0.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new(
@@ -632,8 +628,7 @@ mod tests {
     fn not_operator_robustness() {
         let formula = StlOperator::Not(Box::new(StlOperator::GreaterThan("x", 10.0)));
         let signal = create_signal(vec![15.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", -5.0, Duration::from_secs(5)))
@@ -647,8 +642,7 @@ mod tests {
             Box::new(StlOperator::LessThan("x", 20.0)),
         );
         let signal = create_signal(vec![15.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", 5.0, Duration::from_secs(5)))
@@ -662,8 +656,7 @@ mod tests {
             Box::new(StlOperator::LessThan("x", 5.0)),
         );
         let signal = create_signal(vec![15.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", 5.0, Duration::from_secs(5)))
@@ -677,8 +670,7 @@ mod tests {
             Box::new(StlOperator::LessThan("x", 20.0)),
         );
         let signal = create_signal(vec![15.0], vec![5]);
-        let robustness =
-            formula.robustness_naive::<f64, _, f64>("x", &signal, Duration::from_secs(5));
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
             robustness,
             Some(Step::new("output", 5.0, Duration::from_secs(5)))
@@ -697,14 +689,12 @@ mod tests {
 
         // Case 1: Not enough data
         let signal1 = create_signal(vec![15.0, 12.0], vec![0, 2]); // Max timestamp is 2, need up to 4
-        let robustness1 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal1, Duration::from_secs(0));
+        let robustness1 = formula.robustness_naive::<f64, _, f64>(&signal1, Duration::from_secs(0));
         assert_eq!(robustness1, None);
         // Case 2: Just enough data for t_eval=0
         let signal2 = create_signal(vec![15.0, 12.0, 8.0], vec![0, 2, 4]); // Max timestamp 4
         // eval at t=0, window [0,4], values are 15, 12, 8. Robustness values: 5, 2, -2. Max is 5.
-        let robustness2 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal2, Duration::from_secs(0));
+        let robustness2 = formula.robustness_naive::<f64, _, f64>(&signal2, Duration::from_secs(0));
         assert_eq!(
             robustness2,
             Some(Step::new("output", 5.0, Duration::from_secs(0)))
@@ -713,8 +703,7 @@ mod tests {
         // Case 3: More data, eval at t=2
         let signal3 = create_signal(vec![15.0, 12.0, 8.0, 5.0], vec![0, 2, 4, 6]); // Max timestamp 6
         // eval at t=2, window [2,6], values are 12, 8, 5. Robustness values: 2, -2, -5. Max is 2.
-        let robustness3 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal3, Duration::from_secs(2));
+        let robustness3 = formula.robustness_naive::<f64, _, f64>(&signal3, Duration::from_secs(2));
         assert_eq!(
             robustness3,
             Some(Step::new("output", 2.0, Duration::from_secs(2)))
@@ -723,8 +712,7 @@ mod tests {
         // Case 4: Full signal, eval at t=4
         let signal4 = create_signal(vec![15.0, 12.0, 8.0, 5.0, 12.0], vec![0, 2, 4, 6, 8]); // Max timestamp 8
         // eval at t=4, window [4,8], values are 8, 5, 12. Robustness values: -2, -5, 2. Max is 2.
-        let robustness4 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal4, Duration::from_secs(4));
+        let robustness4 = formula.robustness_naive::<f64, _, f64>(&signal4, Duration::from_secs(4));
         assert_eq!(
             robustness4,
             Some(Step::new("output", 2.0, Duration::from_secs(4)))
@@ -743,15 +731,13 @@ mod tests {
 
         // Case 1: Not enough data
         let signal1 = create_signal(vec![15.0, 12.0], vec![0, 2]); // Max timestamp is 2, need up to 4
-        let robustness1 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal1, Duration::from_secs(0));
+        let robustness1 = formula.robustness_naive::<f64, _, f64>(&signal1, Duration::from_secs(0));
         assert_eq!(robustness1, None);
 
         // Case 2: Just enough data for t_eval=0
         let signal2 = create_signal(vec![15.0, 12.0, 8.0], vec![0, 2, 4]); // Max timestamp 4
         // eval at t=0, window [0,4], values are 15, 12, 8. Robustness values: 5, 2, -2. Min is -2.
-        let robustness2 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal2, Duration::from_secs(0));
+        let robustness2 = formula.robustness_naive::<f64, _, f64>(&signal2, Duration::from_secs(0));
         assert_eq!(
             robustness2,
             Some(Step::new("output", -2.0, Duration::from_secs(0)))
@@ -760,8 +746,7 @@ mod tests {
         // Case 3: More data, eval at t=2
         let signal3 = create_signal(vec![15.0, 12.0, 8.0, 5.0], vec![0, 2, 4, 6]); // Max timestamp 6
         // eval at t=2, window [2,6], values are 12, 8, 5. Robustness values: 2, -2, -5. Min is -5.
-        let robustness3 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal3, Duration::from_secs(2));
+        let robustness3 = formula.robustness_naive::<f64, _, f64>(&signal3, Duration::from_secs(2));
         assert_eq!(
             robustness3,
             Some(Step::new("output", -5.0, Duration::from_secs(2)))
@@ -770,8 +755,7 @@ mod tests {
         // Case 4: Full signal, eval at t=4
         let signal4 = create_signal(vec![15.0, 12.0, 8.0, 5.0, 12.0], vec![0, 2, 4, 6, 8]); // Max timestamp 8
         // eval at t=4, window [4,8], values are 8, 5, 12. Robustness values: -2, -5, 2. Min is -5.
-        let robustness4 =
-            formula.robustness_naive::<f64, _, f64>("x", &signal4, Duration::from_secs(4));
+        let robustness4 = formula.robustness_naive::<f64, _, f64>(&signal4, Duration::from_secs(4));
         assert_eq!(
             robustness4,
             Some(Step::new("output", -5.0, Duration::from_secs(4)))
@@ -780,31 +764,101 @@ mod tests {
 
     #[test]
     fn multi_signal_input() {
+        // This test requires the architectural fixes described above to pass.
+
+        // Helper to create a vector of steps (easier for interleaving)
+        fn create_steps(
+            name: &'static str,
+            values: Vec<f64>,
+            timestamps: Vec<u64>,
+        ) -> Vec<Step<f64>> {
+            values
+                .into_iter()
+                .zip(timestamps.into_iter())
+                .map(|(val, ts)| Step::new(name, val, Duration::from_secs(ts)))
+                .collect()
+        }
+
         let formula = StlOperator::And(
             Box::new(StlOperator::Globally(
-                TimeInterval { start: Duration::from_secs(0), end: Duration::from_secs(2) },
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
                 Box::new(StlOperator::GreaterThan("x", 0.0)),
             )),
             Box::new(StlOperator::LessThan("y", 5.0)),
         );
 
-        let mut f = StlFormula::new(
-            formula.clone(),
-            RingBuffer::new(), // Placeholder, not used in naive evaluation
+        // The monitor holds ONE buffer for ALL signals
+        let mut f: StlFormula<f64, RingBuffer<f64>, f64> =
+            StlFormula::new(formula.clone(), RingBuffer::new());
+
+        // Create the individual step vectors
+        let x_steps = create_steps(
+            "x",
+            vec![0.0, 6.0, 1.0, 3.0, 8.0, 1.0, 7.0],
+            vec![0, 1, 2, 3, 4, 5, 6],
+        );
+        let y_steps = create_steps(
+            "y",
+            vec![4.0, 3.0, 6.0, 7.0, 2.0, 1.0, 0.0],
+            vec![0, 1, 2, 3, 4, 5, 6],
         );
 
-        let signal_x = create_signal(vec![0.0, 6.0, 1.0, 3.0, 8.0, 1.0, 7.0], vec![0, 1, 2, 3, 4, 5, 6]);
-        let signal_y = create_signal(vec![4.0, 3.0, 6.0, 7.0, 2.0, 1.0, 0.0], vec![0, 1, 2, 3, 4, 5, 6]);
-        let expected_f64 = vec![
-            vec![],
-            vec![],
-            vec![Step::new("output", 0.0, Duration::from_secs(0))],
-            vec![Step::new("output", 2.0, Duration::from_secs(1))],
-            vec![Step::new("output", -1.0, Duration::from_secs(2))],
-            vec![Step::new("output", -2.0, Duration::from_secs(3))],
-            vec![Step::new("output", 1.0, Duration::from_secs(4))],
-        ];
-        let mut results: Vec<Vec<Step<f64>>> = vec![];
+        // Interleave all steps into a single stream, sorted by time
+        let mut all_steps = [x_steps, y_steps].concat();
+        all_steps.sort_by_key(|s| s.timestamp);
 
+        // Feed the combined stream into the monitor
+        let mut results: Vec<Vec<Step<Option<f64>>>> = vec![];
+        for step in all_steps {
+            // f.robustness adds the step to its internal buffer and evaluates
+            // if it has enough lookahead.
+            results.push(f.robustness(&step));
+        }
+
+        // --- Define Expected Output ---
+        // max_lookahead is 2s. Output starts at t_step = 2 (evaluating t_eval = 0).
+        // The `results` vector will have 14 entries (2 steps per timestamp).
+        // Only the *second* step at each timestamp from 2s onwards will trigger an output.
+        let expected: Vec<Vec<Step<Option<f64>>>> = vec![
+            vec![], // x@t=0
+            vec![], // y@t=0
+            vec![], // x@t=1
+            vec![], // y@t=1
+            // y@t=2 (t=2 >= 2), t_eval = 0.
+            // G[0,2](x>0) @ t=0: min(rob("x",0), rob("x",1), rob("x",2)) = min(0, 6, 1) = 0
+            // (y<5) @ t=0: rob("y",0) = 5-4 = 1
+            // AND: min(0, 1) = 0
+            vec![Step::new("output", Some(0.0), Duration::from_secs(0))],
+            vec![], // x@t=3
+            // y@t=3 (t=3 >= 2), t_eval = 1
+            // G[0,2](x>0) @ t=1: min(rob("x",1), rob("x",2), rob("x",3)) = min(6, 1, 3) = 1
+            // (y<5) @ t=1: rob("y",1) = 5-3 = 2
+            // AND: min(1, 2) = 1
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
+            vec![], // x@t=4
+            // y@t=4 (t=4 >= 2), t_eval = 2
+            // G[0,2](x>0) @ t=2: min(rob("x",2), rob("x",3), rob("x",4)) = min(1, 3, 8) = 1
+            // (y<5) @ t=2: rob("y",2) = 5-6 = -1
+            // AND: min(1, -1) = -1
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))],
+            vec![], // x@t=5
+            // y@t=5 (t=5 >= 2), t_eval = 3
+            // G[0,2](x>0) @ t=3: min(rob("x",3), rob("x",4), rob("x",5)) = min(3, 8, 1) = 1
+            // (y<5) @ t=3: rob("y",3) = 5-7 = -2
+            // AND: min(1, -2) = -2
+            vec![Step::new("output", Some(-2.0), Duration::from_secs(3))],
+            vec![], // x@t=6
+            // y@t=6 (t=6 >= 2), t_eval = 4
+            // G[0,2](x>0) @ t=4: min(rob("x",4), rob("x",5), rob("x",6)) = min(8, 1, 7) = 1
+            // (y<5) @ t=4: rob("y",4) = 5-2 = 3
+            // AND: min(1, 3) = 1
+            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
+            vec![], // y@t=4
+        ];
+
+        assert_eq!(results, expected);
     }
 }
