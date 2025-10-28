@@ -22,7 +22,9 @@ mod tests {
                 inner_vec
                     .into_iter()
                     .map(|step| {
-                        let bool_value = step.value.map(|v| v > 0.0 || (zero_is_true.unwrap_or(false) && v == 0.0));
+                        let bool_value = step
+                            .value
+                            .map(|v| v > 0.0 || (zero_is_true.unwrap_or(false) && v == 0.0));
                         Step::new(bool_value, step.timestamp)
                     })
                     .collect()
@@ -150,7 +152,9 @@ mod tests {
     fn formula_7() -> FormulaDefinition {
         // !x<5 || F
         FormulaDefinition::Or(
-            Box::new(FormulaDefinition::Not(Box::new(FormulaDefinition::LessThan(5.0)))),
+            Box::new(FormulaDefinition::Not(Box::new(
+                FormulaDefinition::LessThan(5.0),
+            ))),
             Box::new(FormulaDefinition::False),
         )
     }
@@ -470,17 +474,12 @@ mod tests {
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] expected: Vec<Vec<Step<Option<Y>>>>,
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
+        strategy: MonitoringStrategy,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        run_monitor_test(
-            formulas,
-            signal,
-            strategy,
-            EvaluationMode::Strict,
-            expected,
-        );
+        run_monitor_test(formulas, signal, strategy, EvaluationMode::Strict, expected);
     }
 
     #[rstest]
@@ -497,17 +496,12 @@ mod tests {
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] expected: Vec<Vec<Step<Option<Y>>>>,
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
+        strategy: MonitoringStrategy,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        run_monitor_test(
-            formulas,
-            signal,
-            strategy,
-            EvaluationMode::Strict,
-            expected,
-        );
+        run_monitor_test(formulas, signal, strategy, EvaluationMode::Strict, expected);
     }
 
     #[rstest]
@@ -538,7 +532,8 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn test_monitor_build_fails_f64_eager(
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
+        strategy: MonitoringStrategy,
     ) {
         // Eager mode + f64 robustness is an invalid combination
         let _: StlMonitor<f64, f64> = StlMonitor::builder()
@@ -551,8 +546,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn test_monitor_build_fails_bool_naive_eager(
-    ) {
+    fn test_monitor_build_fails_bool_naive_eager() {
         // Eager mode + Naive strategy is an invalid combination
         let _: StlMonitor<f64, bool> = StlMonitor::builder()
             .formula(formula_1())

@@ -60,7 +60,7 @@ where
         self.steps.push_back(step);
     }
 
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_,Step<T>> {
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }
 }
@@ -204,7 +204,7 @@ mod tests {
         });
         let front_step = signal.get_front().unwrap();
         assert_eq!(front_step.value, 1);
-    }   
+    }
     #[test]
     fn ring_pop_front() {
         let mut signal = RingBuffer::new();
