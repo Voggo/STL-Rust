@@ -25,7 +25,7 @@ mod tests {
                         let bool_value = step
                             .value
                             .map(|v| v > 0.0 || (zero_is_true.unwrap_or(false) && v == 0.0));
-                        Step::new(bool_value, step.timestamp)
+                        Step::new("output", bool_value, step.timestamp)
                     })
                     .collect()
             })
@@ -167,11 +167,11 @@ mod tests {
     #[once]
     fn signal_1() -> Vec<Step<f64>> {
         vec![
-            Step::new(5.0, Duration::from_secs(0)),
-            Step::new(4.0, Duration::from_secs(1)),
-            Step::new(6.0, Duration::from_secs(2)),
-            Step::new(2.0, Duration::from_secs(3)),
-            Step::new(5.0, Duration::from_secs(4)),
+            Step::new("x", 5.0, Duration::from_secs(0)),
+            Step::new("x", 4.0, Duration::from_secs(1)),
+            Step::new("x", 6.0, Duration::from_secs(2)),
+            Step::new("x", 2.0, Duration::from_secs(3)),
+            Step::new("x", 5.0, Duration::from_secs(4)),
         ]
     }
 
@@ -179,17 +179,17 @@ mod tests {
     #[once]
     fn signal_2() -> Vec<Step<f64>> {
         vec![
-            Step::new(1.0, Duration::from_secs(0)),
-            Step::new(1.0, Duration::from_secs(1)),
-            Step::new(1.0, Duration::from_secs(2)),
-            Step::new(2.0, Duration::from_secs(3)),
-            Step::new(3.0, Duration::from_secs(4)),
-            Step::new(4.0, Duration::from_secs(5)),
-            Step::new(0.0, Duration::from_secs(6)),
-            Step::new(0.0, Duration::from_secs(7)),
-            Step::new(0.0, Duration::from_secs(8)),
-            Step::new(1.0, Duration::from_secs(9)),
-            Step::new(2.0, Duration::from_secs(10)),
+            Step::new("x", 1.0, Duration::from_secs(0)),
+            Step::new("x", 1.0, Duration::from_secs(1)),
+            Step::new("x", 1.0, Duration::from_secs(2)),
+            Step::new("x", 2.0, Duration::from_secs(3)),
+            Step::new("x", 3.0, Duration::from_secs(4)),
+            Step::new("x", 4.0, Duration::from_secs(5)),
+            Step::new("x", 0.0, Duration::from_secs(6)),
+            Step::new("x", 0.0, Duration::from_secs(7)),
+            Step::new("x", 0.0, Duration::from_secs(8)),
+            Step::new("x", 1.0, Duration::from_secs(9)),
+            Step::new("x", 2.0, Duration::from_secs(10)),
         ]
     }
 
@@ -197,13 +197,13 @@ mod tests {
     #[once]
     fn signal_3() -> Vec<Step<f64>> {
         vec![
-            Step::new(0.0, Duration::from_secs(0)),
-            Step::new(6.0, Duration::from_secs(1)),
-            Step::new(1.0, Duration::from_secs(2)),
-            Step::new(0.0, Duration::from_secs(3)),
-            Step::new(8.0, Duration::from_secs(4)),
-            Step::new(1.0, Duration::from_secs(5)),
-            Step::new(7.0, Duration::from_secs(6)),
+            Step::new("x", 0.0, Duration::from_secs(0)),
+            Step::new("x", 6.0, Duration::from_secs(1)),
+            Step::new("x", 1.0, Duration::from_secs(2)),
+            Step::new("x", 0.0, Duration::from_secs(3)),
+            Step::new("x", 8.0, Duration::from_secs(4)),
+            Step::new("x", 1.0, Duration::from_secs(5)),
+            Step::new("x", 7.0, Duration::from_secs(6)),
         ]
     }
 
@@ -215,9 +215,9 @@ mod tests {
         vec![
             vec![],
             vec![],
-            vec![Step::new(Some(1.0), Duration::from_secs(0))],
-            vec![Step::new(Some(-1.0), Duration::from_secs(1))],
-            vec![Step::new(Some(-1.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))],
         ]
     }
 
@@ -229,11 +229,11 @@ mod tests {
         vec![
             vec![],
             vec![],
-            vec![Step::new(Some(true), Duration::from_secs(0))],
+            vec![Step::new("output", Some(true), Duration::from_secs(0))],
             vec![
-                Step::new(Some(false), Duration::from_secs(1)),
-                Step::new(Some(false), Duration::from_secs(2)),
-                Step::new(Some(false), Duration::from_secs(3)),
+                Step::new("output", Some(false), Duration::from_secs(1)),
+                Step::new("output", Some(false), Duration::from_secs(2)),
+                Step::new("output", Some(false), Duration::from_secs(3)),
             ],
             vec![],
         ]
@@ -249,9 +249,9 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            vec![Step::new(Some(1.0), Duration::from_secs(0))],
-            vec![Step::new(Some(1.0), Duration::from_secs(1))],
-            vec![Step::new(Some(1.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(2))],
         ]
     }
 
@@ -267,18 +267,18 @@ mod tests {
             vec![],
             vec![],
             vec![
-                Step::new(Some(true), Duration::from_secs(0)),
-                Step::new(Some(true), Duration::from_secs(1)),
-                Step::new(Some(true), Duration::from_secs(2)),
-                Step::new(Some(true), Duration::from_secs(3)),
+                Step::new("output", Some(true), Duration::from_secs(0)),
+                Step::new("output", Some(true), Duration::from_secs(1)),
+                Step::new("output", Some(true), Duration::from_secs(2)),
+                Step::new("output", Some(true), Duration::from_secs(3)),
             ],
             vec![
-                Step::new(Some(false), Duration::from_secs(4)),
-                Step::new(Some(false), Duration::from_secs(5)),
-                Step::new(Some(false), Duration::from_secs(6)),
+                Step::new("output", Some(false), Duration::from_secs(4)),
+                Step::new("output", Some(false), Duration::from_secs(5)),
+                Step::new("output", Some(false), Duration::from_secs(6)),
             ],
-            vec![Step::new(Some(false), Duration::from_secs(7))],
-            vec![Step::new(Some(false), Duration::from_secs(8))],
+            vec![Step::new("output", Some(false), Duration::from_secs(7))],
+            vec![Step::new("output", Some(false), Duration::from_secs(8))],
             vec![],
             vec![],
         ]
@@ -288,11 +288,11 @@ mod tests {
         vec![
             vec![],
             vec![],
-            vec![Step::new(Some(0.0), Duration::from_secs(0))],
-            vec![Step::new(Some(0.0), Duration::from_secs(1))],
-            vec![Step::new(Some(0.0), Duration::from_secs(2))],
-            vec![Step::new(Some(0.0), Duration::from_secs(3))],
-            vec![Step::new(Some(1.0), Duration::from_secs(4))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(3))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
         ]
     }
 
@@ -302,17 +302,17 @@ mod tests {
 
     fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
         vec![
-            vec![Step::new(Some(false), Duration::from_secs(0))],
+            vec![Step::new("output", Some(false), Duration::from_secs(0))],
             vec![],
             vec![],
             vec![
-                Step::new(Some(false), Duration::from_secs(1)),
-                Step::new(Some(false), Duration::from_secs(2)),
-                Step::new(Some(false), Duration::from_secs(3)),
+                Step::new("output", Some(false), Duration::from_secs(1)),
+                Step::new("output", Some(false), Duration::from_secs(2)),
+                Step::new("output", Some(false), Duration::from_secs(3)),
             ],
             vec![],
             vec![],
-            vec![Step::new(Some(true), Duration::from_secs(4))],
+            vec![Step::new("output", Some(true), Duration::from_secs(4))],
         ]
     }
 
@@ -320,11 +320,11 @@ mod tests {
         vec![
             vec![],
             vec![],
-            vec![Step::new(Some(1.0), Duration::from_secs(0))],
-            vec![Step::new(Some(1.0), Duration::from_secs(1))],
-            vec![Step::new(Some(3.0), Duration::from_secs(2))],
-            vec![Step::new(Some(3.0), Duration::from_secs(3))],
-            vec![Step::new(Some(3.0), Duration::from_secs(4))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(3.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(3.0), Duration::from_secs(3))],
+            vec![Step::new("output", Some(3.0), Duration::from_secs(4))],
         ]
     }
 
@@ -336,20 +336,20 @@ mod tests {
         vec![
             vec![],
             vec![
-                Step::new(Some(true), Duration::from_secs(0)),
-                Step::new(Some(true), Duration::from_secs(1)),
+                Step::new("output", Some(true), Duration::from_secs(0)),
+                Step::new("output", Some(true), Duration::from_secs(1)),
             ],
             vec![],
             vec![],
             vec![
-                Step::new(Some(true), Duration::from_secs(2)),
-                Step::new(Some(true), Duration::from_secs(3)),
-                Step::new(Some(true), Duration::from_secs(4)),
+                Step::new("output", Some(true), Duration::from_secs(2)),
+                Step::new("output", Some(true), Duration::from_secs(3)),
+                Step::new("output", Some(true), Duration::from_secs(4)),
             ],
             vec![],
             vec![
-                Step::new(Some(true), Duration::from_secs(5)),
-                Step::new(Some(true), Duration::from_secs(6)),
+                Step::new("output", Some(true), Duration::from_secs(5)),
+                Step::new("output", Some(true), Duration::from_secs(6)),
             ],
         ]
     }
@@ -363,19 +363,19 @@ mod tests {
             vec![],
             vec![
                 // step t=5s
-                Step::new(Some(false), Duration::from_secs(0)),
+                Step::new("output", Some(false), Duration::from_secs(0)),
             ],
             vec![
                 // step t=6s, x=0.0, G[0,5](x>0) is false => short-circuit to true
-                Step::new(Some(true), Duration::from_secs(1)),
-                Step::new(Some(true), Duration::from_secs(2)),
-                Step::new(Some(true), Duration::from_secs(3)),
-                Step::new(Some(true), Duration::from_secs(4)),
-                Step::new(Some(true), Duration::from_secs(5)),
-                Step::new(Some(true), Duration::from_secs(6)),
+                Step::new("output", Some(true), Duration::from_secs(1)),
+                Step::new("output", Some(true), Duration::from_secs(2)),
+                Step::new("output", Some(true), Duration::from_secs(3)),
+                Step::new("output", Some(true), Duration::from_secs(4)),
+                Step::new("output", Some(true), Duration::from_secs(5)),
+                Step::new("output", Some(true), Duration::from_secs(6)),
             ],
-            vec![Step::new(Some(true), Duration::from_secs(7))],
-            vec![Step::new(Some(true), Duration::from_secs(8))],
+            vec![Step::new("output", Some(true), Duration::from_secs(7))],
+            vec![Step::new("output", Some(true), Duration::from_secs(8))],
             vec![],
             vec![],
         ]
@@ -387,12 +387,12 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            vec![Step::new(Some(-1.0), Duration::from_secs(0))],
-            vec![Step::new(Some(0.0), Duration::from_secs(1))],
-            vec![Step::new(Some(0.0), Duration::from_secs(2))],
-            vec![Step::new(Some(1.0), Duration::from_secs(3))],
-            vec![Step::new(Some(1.0), Duration::from_secs(4))],
-            vec![Step::new(Some(1.0), Duration::from_secs(5))],
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(0.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(3))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(5))],
         ]
     }
     fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
@@ -401,13 +401,13 @@ mod tests {
 
     fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
         vec![
-            vec![Step::new(Some(-5.0), Duration::from_secs(0))],
-            vec![Step::new(Some(1.0), Duration::from_secs(1))],
-            vec![Step::new(Some(-4.0), Duration::from_secs(2))],
-            vec![Step::new(Some(-5.0), Duration::from_secs(3))],
-            vec![Step::new(Some(3.0), Duration::from_secs(4))],
-            vec![Step::new(Some(-4.0), Duration::from_secs(5))],
-            vec![Step::new(Some(2.0), Duration::from_secs(6))],
+            vec![Step::new("output", Some(-5.0), Duration::from_secs(0))],
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(-4.0), Duration::from_secs(2))],
+            vec![Step::new("output", Some(-5.0), Duration::from_secs(3))],
+            vec![Step::new("output", Some(3.0), Duration::from_secs(4))],
+            vec![Step::new("output", Some(-4.0), Duration::from_secs(5))],
+            vec![Step::new("output", Some(2.0), Duration::from_secs(6))],
         ]
     }
 
