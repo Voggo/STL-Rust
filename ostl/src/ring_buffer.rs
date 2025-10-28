@@ -124,16 +124,6 @@ where
     }
 }
 
-impl<T> Index<usize> for RingBuffer<T>
-where
-    T: Copy,
-{
-    type Output = Step<T>;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.steps[index]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
