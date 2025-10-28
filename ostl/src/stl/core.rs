@@ -32,7 +32,6 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn implies(antecedent: Self, consequent: Self) -> Self;
     fn eventually_identity() -> Self;
     fn globally_identity() -> Self;
-    fn until_identity() -> Self;
     fn atomic_true() -> Self;
     fn atomic_false() -> Self;
     fn atomic_greater_than(value: f64, c: f64) -> Self;
@@ -60,9 +59,6 @@ impl RobustnessSemantics for f64 {
     }
     fn globally_identity() -> Self {
         f64::INFINITY
-    }
-    fn until_identity() -> Self {
-        f64::NEG_INFINITY
     }
     fn atomic_true() -> Self {
         f64::INFINITY
@@ -99,9 +95,6 @@ impl RobustnessSemantics for bool {
     }
     fn globally_identity() -> Self {
         true
-    }
-    fn until_identity() -> Self {
-        false
     }
     fn atomic_true() -> Self {
         true
