@@ -32,6 +32,21 @@ mod tests {
             .collect()
     }
 
+    // Helper to create a vector of steps (easier for interleaving)
+    fn create_steps(name: &'static str, values: Vec<f64>, timestamps: Vec<u64>) -> Vec<Step<f64>> {
+        values
+            .into_iter()
+            .zip(timestamps.into_iter())
+            .map(|(val, ts)| Step::new(name, val, Duration::from_secs(ts)))
+            .collect()
+    }
+
+    fn combine_and_sort_steps(step_vectors: Vec<Vec<Step<f64>>>) -> Vec<Step<f64>> {
+        let mut combined_steps = step_vectors.into_iter().flatten().collect::<Vec<_>>();
+        combined_steps.sort_by_key(|step| step.timestamp);
+        combined_steps
+    }
+
     // ---
     // Formula Fixtures
     // ---
@@ -44,7 +59,7 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan("x",3.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
         )
     }
 
@@ -62,21 +77,21 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
             )),
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",3.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
             )),
         )
     }
 
     #[fixture]
     #[once]
-    fn formula_3() -> FormulaDefinition { 
+    fn formula_3() -> FormulaDefinition {
         // F[0,2] (x > 5) && G[0, 2] (x > 0)
         FormulaDefinition::And(
             Box::new(FormulaDefinition::Eventually(
@@ -84,14 +99,14 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",5.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
             )),
             Box::new(FormulaDefinition::Globally(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
             )),
         )
     }
@@ -106,7 +121,7 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",5.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
             )),
             Box::new(FormulaDefinition::True),
         )
@@ -121,7 +136,7 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan("x",5.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
         )
     }
 
@@ -135,14 +150,14 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(5),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",0.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
             )),
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(2),
                 },
-                Box::new(FormulaDefinition::GreaterThan("x",3.0)),
+                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
             )),
         )
     }
@@ -153,9 +168,25 @@ mod tests {
         // !x<5 || F
         FormulaDefinition::Or(
             Box::new(FormulaDefinition::Not(Box::new(
-                FormulaDefinition::LessThan("x",5.0),
+                FormulaDefinition::LessThan("x", 5.0),
             ))),
             Box::new(FormulaDefinition::False),
+        )
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_8() -> FormulaDefinition {
+        // G[0,2](x>0) && y<5
+        FormulaDefinition::And(
+            Box::new(FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
+            )),
+            Box::new(FormulaDefinition::LessThan("y", 5.0)),
         )
     }
 
@@ -166,45 +197,45 @@ mod tests {
     #[fixture]
     #[once]
     fn signal_1() -> Vec<Step<f64>> {
-        vec![
-            Step::new("x", 5.0, Duration::from_secs(0)),
-            Step::new("x", 4.0, Duration::from_secs(1)),
-            Step::new("x", 6.0, Duration::from_secs(2)),
-            Step::new("x", 2.0, Duration::from_secs(3)),
-            Step::new("x", 5.0, Duration::from_secs(4)),
-        ]
+        create_steps("x", vec![5.0, 4.0, 6.0, 2.0, 5.0], vec![0, 1, 2, 3, 4])
     }
 
     #[fixture]
     #[once]
     fn signal_2() -> Vec<Step<f64>> {
-        vec![
-            Step::new("x", 1.0, Duration::from_secs(0)),
-            Step::new("x", 1.0, Duration::from_secs(1)),
-            Step::new("x", 1.0, Duration::from_secs(2)),
-            Step::new("x", 2.0, Duration::from_secs(3)),
-            Step::new("x", 3.0, Duration::from_secs(4)),
-            Step::new("x", 4.0, Duration::from_secs(5)),
-            Step::new("x", 0.0, Duration::from_secs(6)),
-            Step::new("x", 0.0, Duration::from_secs(7)),
-            Step::new("x", 0.0, Duration::from_secs(8)),
-            Step::new("x", 1.0, Duration::from_secs(9)),
-            Step::new("x", 2.0, Duration::from_secs(10)),
-        ]
+        create_steps(
+            "x",
+            vec![1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0, 2.0],
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        )
     }
 
     #[fixture]
     #[once]
     fn signal_3() -> Vec<Step<f64>> {
-        vec![
-            Step::new("x", 0.0, Duration::from_secs(0)),
-            Step::new("x", 6.0, Duration::from_secs(1)),
-            Step::new("x", 1.0, Duration::from_secs(2)),
-            Step::new("x", 0.0, Duration::from_secs(3)),
-            Step::new("x", 8.0, Duration::from_secs(4)),
-            Step::new("x", 1.0, Duration::from_secs(5)),
-            Step::new("x", 7.0, Duration::from_secs(6)),
-        ]
+        create_steps(
+            "x",
+            vec![0.0, 6.0, 1.0, 0.0, 8.0, 1.0, 7.0],
+            vec![0, 1, 2, 3, 4, 5, 6],
+        )
+    }
+
+    #[fixture]
+    #[once]
+    fn signal_4() -> Vec<Step<f64>> {
+        let x_steps = create_steps(
+            "x",
+            vec![0.0, 6.0, 1.0, 3.0, 8.0, 1.0, 7.0],
+            vec![0, 1, 2, 3, 4, 5, 6],
+        );
+        let y_steps = create_steps(
+            "y",
+            vec![4.0, 3.0, 6.0, 7.0, 2.0, 1.0, 0.0],
+            vec![0, 1, 2, 3, 4, 5, 6],
+        );
+
+        // Combine and sort the steps chronologically
+        combine_and_sort_steps(vec![x_steps, y_steps])
     }
 
     // ---
@@ -419,6 +450,29 @@ mod tests {
         exp_f7_s3_bool_strict()
     }
 
+    fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+        vec![
+            vec![], // x@t=0
+            vec![], // y@t=0
+            vec![], // x@t=1
+            vec![], // y@t=1
+            vec![Step::new("output", Some(0.0), Duration::from_secs(0))], // x@t=2
+            vec![], // x@t=3
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))], // y@t=2
+            vec![], // x@t=4
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))], // y@t=3
+            vec![], // x@t=5
+            vec![Step::new("output", Some(-2.0), Duration::from_secs(3))], // y@t=4
+            vec![], // x@t=6
+            vec![Step::new("output", Some(1.0), Duration::from_secs(4))], // y@t=5
+            vec![], // y@t=4
+        ]
+    }
+
+    fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+        convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict(), None)
+    }
+
     /// This helper function contains the actual test logic.
     /// It is called by the `rstest` runners below.
     fn run_monitor_test<Y>(
@@ -470,6 +524,7 @@ mod tests {
     #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_f64_strict())]
     #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_f64_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_strict())]
+    #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_f64_strict())]
     fn test_f64_strict<Y>(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
@@ -492,6 +547,7 @@ mod tests {
     #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_strict())]
     #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_strict())]
+    #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_strict())]
     fn test_bool_strict<Y>(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
@@ -514,6 +570,7 @@ mod tests {
     #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_eager())]
     #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_eager())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_eager())]
+    // #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())] # TODO: Add eager expected for f8_s4
     fn test_bool_eager<Y>(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
