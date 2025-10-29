@@ -1094,14 +1094,14 @@ mod tests {
         let robustness = atomic.robustness(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 8.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new( "x", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new( "output", Some(-2.0), Duration::from_secs(6))]
         );
     }
 
@@ -1112,14 +1112,14 @@ mod tests {
         let robustness = atomic.robustness(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 12.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new( "x", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new( "output", Some(-2.0), Duration::from_secs(6))]
         );
     }
 
@@ -1130,7 +1130,7 @@ mod tests {
         let robustness = atomic.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(f64::INFINITY), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(f64::INFINITY), Duration::from_secs(5))]
         );
     }
 
@@ -1141,7 +1141,7 @@ mod tests {
         let robustness = atomic.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(f64::NEG_INFINITY), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(f64::NEG_INFINITY), Duration::from_secs(5))]
         );
     }
 
@@ -1154,7 +1154,7 @@ mod tests {
         let robustness = not.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(-5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(-5.0), Duration::from_secs(5))]
         );
     }
 
@@ -1174,7 +1174,7 @@ mod tests {
         let robustness = and.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
@@ -1194,7 +1194,7 @@ mod tests {
         let robustness = or.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
@@ -1214,7 +1214,7 @@ mod tests {
         let robustness = implies.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "x", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
@@ -1248,9 +1248,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new("x", Some(5.0), Duration::from_secs(0)),
-            Step::new("x", Some(2.0), Duration::from_secs(2)),
-            Step::new("x", Some(2.0), Duration::from_secs(4)),
+            Step::new("output", Some(5.0), Duration::from_secs(0)),
+            Step::new("output", Some(2.0), Duration::from_secs(2)),
+            Step::new("output", Some(2.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
@@ -1294,9 +1294,9 @@ mod tests {
         }
 
         let expected_outputs = vec![
-            Step::new("x", Some(-2.0), Duration::from_secs(0)),
-            Step::new("x", Some(-5.0), Duration::from_secs(2)),
-            Step::new("x", Some(-5.0), Duration::from_secs(4)),
+            Step::new("output", Some(-2.0), Duration::from_secs(0)),
+            Step::new("output", Some(-5.0), Duration::from_secs(2)),
+            Step::new("output", Some(-5.0), Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
