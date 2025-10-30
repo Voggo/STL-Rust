@@ -23,7 +23,7 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
 pub trait SignalIdentifier {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str>;
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str>;
 }
 
 pub trait StlOperatorAndSignalIdentifier<T: Clone, Y>:

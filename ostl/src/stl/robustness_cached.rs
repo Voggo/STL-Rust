@@ -155,6 +155,8 @@ pub struct And<T, C, Y> {
     last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
+    left_signals_set: HashSet<&'static str>,
+    right_signals_set: HashSet<&'static str>,
     mode: EvaluationMode,
 }
 
@@ -179,6 +181,8 @@ impl<T, C, Y> And<T, C, Y> {
             last_eval_time: None,
             left_last_known: Step::new("", None, Duration::ZERO),
             right_last_known: Step::new("", None, Duration::ZERO),
+            left_signals_set: HashSet::new(),
+            right_signals_set: HashSet::new(),
             mode,
         }
     }
@@ -199,25 +203,28 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let left_updates = self.left.robustness(step);
-        for update in left_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.left_signals_set.contains(&step.signal) {
+            let left_updates = self.left.robustness(step);
+            for update in left_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.left_cache.add_step(update);
+                    }
+                } else {
                     self.left_cache.add_step(update);
                 }
-            } else {
-                self.left_cache.add_step(update);
             }
         }
-
-        let right_updates = self.right.robustness(step);
-        for update in right_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.right_signals_set.contains(&step.signal) {
+            let right_updates = self.right.robustness(step);
+            for update in right_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.right_cache.add_step(update);
+                    }
+                } else {
                     self.right_cache.add_step(update);
                 }
-            } else {
-                self.right_cache.add_step(update);
             }
         }
         let output = match self.mode {
@@ -247,10 +254,14 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for And<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
-        ids.extend(self.left.get_signal_identifiers());
-        ids.extend(self.right.get_signal_identifiers());
+        self.left_signals_set
+            .extend(self.left.get_signal_identifiers());
+        self.right_signals_set
+            .extend(self.right.get_signal_identifiers());
+        ids.extend(self.left_signals_set.iter().cloned());
+        ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
 }
@@ -264,6 +275,8 @@ pub struct Or<T, C, Y> {
     last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
+    left_signals_set: HashSet<&'static str>,
+    right_signals_set: HashSet<&'static str>,
     mode: EvaluationMode,
 }
 
@@ -296,6 +309,8 @@ impl<T, C, Y> Or<T, C, Y> {
                 value: None,
                 timestamp: Duration::ZERO,
             },
+            left_signals_set: HashSet::new(),
+            right_signals_set: HashSet::new(),
             mode,
         }
     }
@@ -316,25 +331,28 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let left_updates = self.left.robustness(step);
-        for update in left_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.left_signals_set.contains(&step.signal) {
+            let left_updates = self.left.robustness(step);
+            for update in left_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.left_cache.add_step(update);
+                    }
+                } else {
                     self.left_cache.add_step(update);
                 }
-            } else {
-                self.left_cache.add_step(update);
             }
         }
-
-        let right_updates = self.right.robustness(step);
-        for update in right_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.right_signals_set.contains(&step.signal) {
+            let right_updates = self.right.robustness(step);
+            for update in right_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.right_cache.add_step(update);
+                    }
+                } else {
                     self.right_cache.add_step(update);
                 }
-            } else {
-                self.right_cache.add_step(update);
             }
         }
         let output = match self.mode {
@@ -362,10 +380,14 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for Or<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
-        ids.extend(self.left.get_signal_identifiers());
-        ids.extend(self.right.get_signal_identifiers());
+        self.left_signals_set
+            .extend(self.left.get_signal_identifiers());
+        self.right_signals_set
+            .extend(self.right.get_signal_identifiers());
+        ids.extend(self.left_signals_set.iter().cloned());
+        ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
 }
@@ -416,7 +438,7 @@ where
 }
 
 impl<T, Y> SignalIdentifier for Not<T, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
@@ -430,6 +452,8 @@ pub struct Implies<T, C, Y> {
     last_eval_time: Option<Duration>,
     pub left_last_known: Step<Option<Y>>,
     pub right_last_known: Step<Option<Y>>,
+    left_signals_set: HashSet<&'static str>,
+    right_signals_set: HashSet<&'static str>,
     mode: EvaluationMode,
 }
 
@@ -462,6 +486,8 @@ impl<T, C, Y> Implies<T, C, Y> {
                 value: None,
                 timestamp: Duration::ZERO,
             },
+            left_signals_set: HashSet::new(),
+            right_signals_set: HashSet::new(),
             mode,
         }
     }
@@ -483,28 +509,30 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let left_updates = self.antecedent.robustness(step);
-        for update in left_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.left_signals_set.contains(&step.signal) {
+            let left_updates = self.antecedent.robustness(step);
+            for update in left_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.left_cache.add_step(update);
+                    }
+                } else {
                     self.left_cache.add_step(update);
                 }
-            } else {
-                self.left_cache.add_step(update);
             }
         }
-
-        let right_updates = self.consequent.robustness(step);
-        for update in right_updates {
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.right_signals_set.contains(&step.signal) {
+            let right_updates = self.consequent.robustness(step);
+            for update in right_updates {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.right_cache.add_step(update);
+                    }
+                } else {
                     self.right_cache.add_step(update);
                 }
-            } else {
-                self.right_cache.add_step(update);
             }
         }
-
         let output = match self.mode {
             EvaluationMode::Strict => {
                 process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
@@ -531,10 +559,14 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for Implies<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
-        ids.extend(self.antecedent.get_signal_identifiers());
-        ids.extend(self.consequent.get_signal_identifiers());
+        self.left_signals_set
+            .extend(self.antecedent.get_signal_identifiers());
+        self.right_signals_set
+            .extend(self.consequent.get_signal_identifiers());
+        ids.extend(self.left_signals_set.iter().cloned());
+        ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
 }
@@ -644,7 +676,7 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for Eventually<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
@@ -754,7 +786,7 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for Globally<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
@@ -769,6 +801,8 @@ pub struct Until<T, C, Y> {
     pub t_max: Duration,
     pub last_eval_time: Option<Duration>,
     pub eval_buffer: BTreeSet<Duration>,
+    pub left_signals_set: HashSet<&'static str>,
+    pub right_signals_set: HashSet<&'static str>,
     pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
@@ -797,6 +831,8 @@ impl<T, C, Y> Until<T, C, Y> {
             t_max: Duration::ZERO,
             last_eval_time: None,
             eval_buffer: BTreeSet::new(),
+            left_signals_set: HashSet::new(),
+            right_signals_set: HashSet::new(),
             mode,
             max_lookahead,
         }
@@ -816,30 +852,34 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let left_updates = self.left.robustness(step);
-        let right_updates = self.right.robustness(step);
         let mut output_robustness = Vec::new();
 
-        // Add new sub-formula results to the cache and queue up new evaluation tasks.
-        for update in left_updates {
-            self.left_cache.add_step(update.clone());
+        if self.left_signals_set.contains(&step.signal) {
+            let left_updates = self.left.robustness(step);
+            // Add new sub-formula results to the cache and queue up new evaluation tasks.
+            for update in left_updates {
+                self.left_cache.add_step(update.clone());
 
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.eval_buffer.insert(update.timestamp);
+                    }
+                } else {
                     self.eval_buffer.insert(update.timestamp);
                 }
-            } else {
-                self.eval_buffer.insert(update.timestamp);
             }
         }
-        for update in right_updates {
-            self.right_cache.add_step(update.clone());
-            if let Some(last_time) = self.last_eval_time {
-                if update.timestamp > last_time {
+        if self.right_signals_set.contains(&step.signal) {
+            let right_updates = self.right.robustness(step);
+            for update in right_updates {
+                self.right_cache.add_step(update.clone());
+                if let Some(last_time) = self.last_eval_time {
+                    if update.timestamp > last_time {
+                        self.eval_buffer.insert(update.timestamp);
+                    }
+                } else {
                     self.eval_buffer.insert(update.timestamp);
                 }
-            } else {
-                self.eval_buffer.insert(update.timestamp);
             }
         }
 
@@ -919,10 +959,14 @@ where
 }
 
 impl<T, C, Y> SignalIdentifier for Until<T, C, Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
-        ids.extend(self.left.get_signal_identifiers());
-        ids.extend(self.right.get_signal_identifiers());
+        self.left_signals_set
+            .extend(self.left.get_signal_identifiers());
+        self.right_signals_set
+            .extend(self.right.get_signal_identifiers());
+        ids.extend(self.left_signals_set.iter().cloned());
+        ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
 }
@@ -978,7 +1022,7 @@ where
 }
 
 impl<Y> SignalIdentifier for Atomic<Y> {
-    fn get_signal_identifiers(&self) -> HashSet<&'static str> {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         match self {
             Atomic::LessThan(signal_name, _, _) => {
@@ -997,8 +1041,8 @@ impl<Y> SignalIdentifier for Atomic<Y> {
 impl<Y> Display for Atomic<Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Atomic::LessThan(signal_name, c, _) => write!(f, "x < {}", c),
-            Atomic::GreaterThan(signal_name, c, _) => write!(f, "x > {}", c),
+            Atomic::LessThan(signal_name, c, _) => write!(f, "{} < {}", signal_name, c),
+            Atomic::GreaterThan(signal_name, c, _) => write!(f, "{} > {}", signal_name, c),
             Atomic::True(_) => write!(f, "True"),
             Atomic::False(_) => write!(f, "False"),
         }
@@ -1090,78 +1134,91 @@ mod tests {
     #[test]
     fn atomic_greater_than_robustness() {
         let mut atomic = Atomic::<f64>::new_greater_than("x", 10.0);
+        atomic.get_signal_identifiers();
         let step1 = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 8.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new( "output", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
         );
     }
 
     #[test]
     fn atomic_less_than_robustness() {
         let mut atomic = Atomic::<f64>::new_less_than("x", 10.0);
+        atomic.get_signal_identifiers();
         let step1 = Step::new("x", 5.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 12.0, Duration::from_secs(6));
         let robustness2 = atomic.robustness(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new( "output", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
         );
     }
 
     #[test]
     fn atomic_true_robustness() {
         let mut atomic = Atomic::<f64>::new_true();
-        let step = Step::new("x",0.0, Duration::from_secs(5));
+        atomic.get_signal_identifiers();
+        let step = Step::new("x", 0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(f64::INFINITY), Duration::from_secs(5))]
+            vec![Step::new(
+                "output",
+                Some(f64::INFINITY),
+                Duration::from_secs(5)
+            )]
         );
     }
 
     #[test]
     fn atomic_false_robustness() {
         let mut atomic = Atomic::<f64>::new_false();
-        let step = Step::new("x",0.0, Duration::from_secs(5));
+        atomic.get_signal_identifiers();
+        let step = Step::new("x", 0.0, Duration::from_secs(5));
         let robustness = atomic.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(f64::NEG_INFINITY), Duration::from_secs(5))]
+            vec![Step::new(
+                "output",
+                Some(f64::NEG_INFINITY),
+                Duration::from_secs(5)
+            )]
         );
     }
 
     // Logical operators
     #[test]
     fn not_operator_robustness() {
-        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
         let mut not = Not::new(Box::new(atomic));
-        let step = Step::new("x",15.0, Duration::from_secs(5));
+        not.get_signal_identifiers();
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = not.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(-5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(-5.0), Duration::from_secs(5))]
         );
     }
 
     #[test]
     fn and_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x",20.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
         let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1169,19 +1226,20 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
+        and.get_signal_identifiers();
 
-        let step = Step::new("x",15.0, Duration::from_secs(5));
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = and.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
     #[test]
     fn or_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x",5.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x", 5.0);
         let mut or = Or::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1189,19 +1247,20 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
+        or.get_signal_identifiers();
 
-        let step = Step::new("x",15.0, Duration::from_secs(5));
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = or.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
     #[test]
     fn implies_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x",10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x",20.0);
+        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
         let mut implies = Implies::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(atomic1),
             Box::new(atomic2),
@@ -1209,12 +1268,13 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
+        implies.get_signal_identifiers();
 
-        let step = Step::new("x",15.0, Duration::from_secs(5));
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = implies.robustness(&step);
         assert_eq!(
             robustness,
-            vec![Step::new( "output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
     }
 
@@ -1225,7 +1285,7 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
         let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64>::new(
             interval,
             Box::new(atomic),
@@ -1233,13 +1293,14 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
+        eventually.get_signal_identifiers();
 
         let signal_values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let signal_timestamps = vec![0, 2, 4, 6, 8];
         let signal: Vec<_> = signal_values
             .into_iter()
             .zip(signal_timestamps.into_iter())
-            .map(|(val, ts)| Step::new("x",val, Duration::from_secs(ts)))
+            .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
         let mut all_outputs = Vec::new();
@@ -1271,7 +1332,7 @@ mod tests {
             start: Duration::from_secs(0),
             end: Duration::from_secs(4),
         };
-        let atomic = Atomic::<f64>::new_greater_than("x",10.0);
+        let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
         let mut globally = Globally::<f64, f64, RingBuffer<Option<f64>>>::new(
             interval,
             Box::new(atomic),
@@ -1279,13 +1340,14 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
+        globally.get_signal_identifiers();
 
         let signal_values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
         let signal_timestamps = vec![0, 2, 4, 6, 8];
         let signal: Vec<_> = signal_values
             .into_iter()
             .zip(signal_timestamps.into_iter())
-            .map(|(val, ts)| Step::new("x",val, Duration::from_secs(ts)))
+            .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
         let mut all_outputs = Vec::new();

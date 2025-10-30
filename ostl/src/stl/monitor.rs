@@ -121,7 +121,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 return Err("Eager evaluation mode is not supported for f64 output type");
             }
             (MonitoringStrategy::Incremental, _, _) => {
-                self.build_incremental_operator(formula_def, self.evaluation_mode)
+                let mut root_operator = self.build_incremental_operator(formula_def, self.evaluation_mode);
+                root_operator.get_signal_identifiers();
+                root_operator
             }
             (MonitoringStrategy::Naive, EvaluationMode::Strict, _) => {
                 self.build_naive_operator(formula_def, self.evaluation_mode)
