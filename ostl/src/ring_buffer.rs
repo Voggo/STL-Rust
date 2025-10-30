@@ -1,14 +1,15 @@
 use std::{collections::VecDeque, time::Duration};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Step<T> {
+    pub signal: &'static str,
     pub value: T,
     pub timestamp: Duration,
 }
-
+    
 impl<T> Step<T> {
-    pub fn new(value: T, timestamp: Duration) -> Self {
-        Step { value, timestamp }
+    pub fn new(signal : &'static str, value: T, timestamp: Duration) -> Self {
+        Step { signal, value, timestamp }
     }
 }
 
@@ -126,14 +127,17 @@ mod tests {
     fn ring_creation() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::new(0, 0),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::new(0, 0),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::new(0, 0),
         });
@@ -149,14 +153,17 @@ mod tests {
     fn ring_prune() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::from_secs(1),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::from_secs(2),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::from_secs(3),
         });
@@ -173,14 +180,17 @@ mod tests {
     fn ring_get_back() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::from_secs(1),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::from_secs(2),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::from_secs(3),
         });
@@ -191,14 +201,17 @@ mod tests {
     fn ring_get_front() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::from_secs(1),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::from_secs(2),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::from_secs(3),
         });
@@ -209,14 +222,17 @@ mod tests {
     fn ring_pop_front() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::from_secs(1),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::from_secs(2),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::from_secs(3),
         });
@@ -230,14 +246,17 @@ mod tests {
     fn ring_iter() {
         let mut signal = RingBuffer::new();
         signal.add_step(Step {
+            signal: "x",
             value: 1,
             timestamp: Duration::from_secs(1),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 2,
             timestamp: Duration::from_secs(2),
         });
         signal.add_step(Step {
+            signal: "x",
             value: 3,
             timestamp: Duration::from_secs(3),
         });

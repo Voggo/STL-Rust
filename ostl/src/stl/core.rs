@@ -1,5 +1,6 @@
 use crate::ring_buffer::Step;
 use dyn_clone::{DynClone, clone_trait_object};
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ pub struct TimeInterval {
 }
 
 // stloperator trait
-// added DynClone for cloning trait objects
+// DynClone for cloning trait objects
 pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     type Output;
 
@@ -20,6 +21,24 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
+
+pub trait SignalIdentifier {
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str>;
+}
+
+pub trait StlOperatorAndSignalIdentifier<T: Clone, Y>:
+    StlOperatorTrait<T, Output = Y> + SignalIdentifier
+{
+}
+
+impl<C, Y, U> StlOperatorAndSignalIdentifier<C, Y> for U
+where
+    C: Clone,
+    U: StlOperatorTrait<C, Output = Y> + SignalIdentifier,
+{
+}
+
+clone_trait_object!(<T: Clone, Y> StlOperatorAndSignalIdentifier<T, Y>);
 
 // should maybe just use refs for the operations
 pub trait RobustnessSemantics: Clone + PartialEq {

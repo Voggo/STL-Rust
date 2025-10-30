@@ -1,5 +1,5 @@
 use crate::ring_buffer::{RingBuffer, Step};
-use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait, TimeInterval};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
@@ -9,8 +9,8 @@ use std::any::TypeId;
 // This mirrors the structure of the NaiveOperator enum for formula definition.
 #[derive(Clone, Debug)]
 pub enum FormulaDefinition {
-    GreaterThan(f64),
-    LessThan(f64),
+    GreaterThan(&'static str, f64), // signal name, constant
+    LessThan(&'static str, f64),
     True,
     False,
     And(Box<FormulaDefinition>, Box<FormulaDefinition>),
@@ -121,7 +121,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 return Err("Eager evaluation mode is not supported for f64 output type");
             }
             (MonitoringStrategy::Incremental, _, _) => {
-                self.build_incremental_operator(formula_def, self.evaluation_mode)
+                let mut root_operator = self.build_incremental_operator(formula_def, self.evaluation_mode);
+                root_operator.get_signal_identifiers();
+                root_operator
             }
             (MonitoringStrategy::Naive, EvaluationMode::Strict, _) => {
                 self.build_naive_operator(formula_def, self.evaluation_mode)
@@ -156,6 +158,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         Box::new(StlFormula::<T, RingBuffer<T>, Y> {
             formula: formula_enum,
             signal: RingBuffer::new(), // This is the only RingBuffer that gets created
+            last_eval_time: None,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -167,8 +170,8 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         Y: RobustnessSemantics + 'static,
     {
         match formula {
-            FormulaDefinition::GreaterThan(c) => StlOperator::GreaterThan(c),
-            FormulaDefinition::LessThan(c) => StlOperator::LessThan(c),
+            FormulaDefinition::GreaterThan(s, c) => StlOperator::GreaterThan(s, c),
+            FormulaDefinition::LessThan(s, c) => StlOperator::LessThan(s, c),
             FormulaDefinition::True => StlOperator::True,
             FormulaDefinition::False => StlOperator::False,
             FormulaDefinition::And(l, r) => StlOperator::And(
@@ -204,14 +207,14 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         &self,
         formula: FormulaDefinition,
         mode: EvaluationMode,
-    ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
+    ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>>
     where
         T: Into<f64> + Copy + 'static,
         Y: RobustnessSemantics + Copy + 'static,
     {
         match formula {
-            FormulaDefinition::GreaterThan(c) => Box::new(Atomic::new_greater_than(c)),
-            FormulaDefinition::LessThan(c) => Box::new(Atomic::new_less_than(c)),
+            FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
+            FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
             FormulaDefinition::True => Box::new(Atomic::new_true()),
             FormulaDefinition::False => Box::new(Atomic::new_false()),
             FormulaDefinition::And(l, r) => Box::new(And::new(
@@ -279,13 +282,13 @@ mod tests {
     #[test]
     fn test_build_1() {
         let formula = FormulaDefinition::And(
-            Box::new(FormulaDefinition::GreaterThan(5.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(10),
                 },
-                Box::new(FormulaDefinition::LessThan(10.0)),
+                Box::new(FormulaDefinition::LessThan("x", 10.0)),
             )),
         );
 
@@ -322,8 +325,8 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(5),
             },
-            Box::new(FormulaDefinition::GreaterThan(3.0)),
-            Box::new(FormulaDefinition::LessThan(7.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
+            Box::new(FormulaDefinition::LessThan("x", 7.0)),
         );
 
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
@@ -366,8 +369,8 @@ mod tests {
                     end: Duration::from_secs(15),
                 },
                 Box::new(FormulaDefinition::And(
-                    Box::new(FormulaDefinition::GreaterThan(2.0)),
-                    Box::new(FormulaDefinition::LessThan(8.0)),
+                    Box::new(FormulaDefinition::GreaterThan("x", 2.0)),
+                    Box::new(FormulaDefinition::LessThan("x", 8.0)),
                 )),
             )),
         );
