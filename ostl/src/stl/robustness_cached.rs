@@ -203,7 +203,7 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) {
+        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.robustness(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -215,7 +215,7 @@ where
                 }
             }
         }
-        if self.right_signals_set.contains(&step.signal) {
+        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.robustness(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -331,7 +331,7 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) {
+        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.robustness(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -343,7 +343,7 @@ where
                 }
             }
         }
-        if self.right_signals_set.contains(&step.signal) {
+        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.robustness(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -509,7 +509,7 @@ where
     }
 
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) {
+        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.antecedent.robustness(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -521,7 +521,7 @@ where
                 }
             }
         }
-        if self.right_signals_set.contains(&step.signal) {
+        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.consequent.robustness(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
@@ -854,7 +854,7 @@ where
     fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let mut output_robustness = Vec::new();
 
-        if self.left_signals_set.contains(&step.signal) {
+        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.robustness(step);
             // Add new sub-formula results to the cache and queue up new evaluation tasks.
             for update in left_updates {
@@ -869,7 +869,7 @@ where
                 }
             }
         }
-        if self.right_signals_set.contains(&step.signal) {
+        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.robustness(step);
             for update in right_updates {
                 self.right_cache.add_step(update.clone());
