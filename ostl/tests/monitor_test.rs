@@ -452,25 +452,47 @@ mod tests {
 
     fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
         vec![
-            vec![], // x@t=0
-            vec![], // y@t=0
-            vec![], // x@t=1
-            vec![], // y@t=1
-            vec![Step::new("output", Some(0.0), Duration::from_secs(0))], // x@t=2
-            vec![], // x@t=3
-            vec![Step::new("output", Some(1.0), Duration::from_secs(1))], // y@t=2
-            vec![], // x@t=4
-            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))], // y@t=3
-            vec![], // x@t=5
-            vec![Step::new("output", Some(-2.0), Duration::from_secs(3))], // y@t=4
-            vec![], // x@t=6
-            vec![Step::new("output", Some(1.0), Duration::from_secs(4))], // y@t=5
-            vec![], // y@t=4
+            vec![],                                                        // x@t=0
+            vec![],                                                        // y@t=0
+            vec![],                                                        // x@t=1
+            vec![],                                                        // y@t=1
+            vec![Step::new("output", Some(0.0), Duration::from_secs(0))],  // x@t=2
+            vec![],                                                        // y@t=2
+            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],  // x@t=3
+            vec![],                                                        // y@t=3
+            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))], // x@t=4
+            vec![],                                                        // y@t=5
+            vec![Step::new("output", Some(-2.0), Duration::from_secs(3))], // x@t=5
+            vec![],                                                        // y@t=4
+            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],  // x@t=6
+            vec![],                                                        // y@t=6
         ]
     }
 
     fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
         convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict(), None)
+    }
+
+    fn exp_f8_s4_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        vec![
+            vec![Step::new("output", Some(false), Duration::from_secs(0))], // x@t=0
+            vec![],                                                         // y@t=0
+            vec![],                                                         // x@t=1
+            vec![],                                                         // y@t=1
+            vec![],                                                         // x@t=2
+            vec![],                                                         // y@t=2
+            vec![
+                Step::new("output", Some(true), Duration::from_secs(1)), // x@t=3
+                Step::new("output", Some(false), Duration::from_secs(2)),
+            ],
+            vec![Step::new("output", Some(false), Duration::from_secs(3))], // y@t=3
+            vec![],                                                         // x@t=4
+            vec![],                                                         // y@t=4
+            vec![],                                                         // x@t=5
+            vec![],                                                         // y@t=5
+            vec![Step::new("output", Some(true), Duration::from_secs(4))],  // x@t=6
+            vec![],                                                         // y@t=6
+        ]
     }
 
     /// This helper function contains the actual test logic.
@@ -495,11 +517,11 @@ mod tests {
             let mut all_results = Vec::new();
             for step in signal.clone() {
                 all_results.push(monitor.instantaneous_robustness(&step));
-                // println!(
-                //     "Step at {:?}, Monitor Output: {:?}",
-                //     step.timestamp,
-                //     all_results.last().unwrap()
-                // );
+                println!(
+                    "Step at {:?}, Monitor Output: {:?}",
+                    step.timestamp,
+                    all_results.last().unwrap()
+                );
             }
 
             assert_eq!(
@@ -570,7 +592,7 @@ mod tests {
     #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_eager())]
     #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_eager())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_eager())]
-    // #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())] # TODO: Add eager expected for f8_s4
+    #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())] // TODO: Add eager expected for f8_s4
     fn test_bool_eager<Y>(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
