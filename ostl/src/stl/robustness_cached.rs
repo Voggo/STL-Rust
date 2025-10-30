@@ -1201,6 +1201,95 @@ mod tests {
         );
     }
 
+    #[test]
+    fn get_signal_identifiers_atomic_and_composites() {
+        // Atomic greater/less
+        let mut a_gt = Atomic::<f64>::new_greater_than("x", 10.0);
+        let mut a_lt = Atomic::<f64>::new_less_than("y", 5.0);
+        let mut a_true = Atomic::<f64>::new_true();
+        let mut a_false = Atomic::<f64>::new_false();
+
+        let ids_gt = a_gt.get_signal_identifiers();
+        let ids_lt = a_lt.get_signal_identifiers();
+        let ids_true = a_true.get_signal_identifiers();
+        let ids_false = a_false.get_signal_identifiers();
+
+        let mut expected_gt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        expected_gt.insert("x");
+        let mut expected_lt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        expected_lt.insert("y");
+        let expected_empty: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+
+        assert_eq!(ids_gt, expected_gt);
+        assert_eq!(ids_lt, expected_lt);
+        assert_eq!(ids_true, expected_empty);
+        assert_eq!(ids_false, expected_empty);
+
+        // Composite: And(x>10, y<5)
+        let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+            Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
+            Box::new(Atomic::<f64>::new_less_than("y", 5.0)),
+            None,
+            None,
+            EvaluationMode::Strict,
+        );
+        let ids_and = and.get_signal_identifiers();
+        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        expected_and.insert("x");
+        expected_and.insert("y");
+        assert_eq!(ids_and, expected_and);
+
+        // Composite with constant: And(True, x>10) -> should report only 'x'
+        let mut and2 = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+            Box::new(Atomic::<f64>::new_true()),
+            Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
+            None,
+            None,
+            EvaluationMode::Strict,
+        );
+        let ids_and2 = and2.get_signal_identifiers();
+        let mut expected_and2: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        expected_and2.insert("x");
+        assert_eq!(ids_and2, expected_and2);
+    }
+
+    #[test]
+    fn get_signal_identifiers_nested() {
+        // And(x>10, U(y>5, z<0))
+        let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+            Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
+            Box::new(
+                Until::<f64, RingBuffer<Option<f64>>, f64>::new(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5),
+                },
+                Box::new(Atomic::<f64>::new_greater_than("y", 5.0)),
+                Box::new(Atomic::<f64>::new_less_than("z", 0.0)),
+                None,
+                None,
+                EvaluationMode::Strict,
+            )),
+            None,
+            None,
+            EvaluationMode::Strict,
+        );
+        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and_left: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and_right: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        expected_and.insert("x");
+        expected_and.insert("y");
+        expected_and.insert("z");
+        expected_and_left.insert("x");
+        expected_and_right.insert("y");
+        expected_and_right.insert("z");
+
+        let ids_and = and.get_signal_identifiers();
+        assert_eq!(ids_and, expected_and);
+        assert_eq!(and.left_signals_set, expected_and_left);
+        assert_eq!(and.right_signals_set, expected_and_right);
+    }
+
     // Logical operators
     #[test]
     fn not_operator_robustness() {
