@@ -21,14 +21,14 @@ fn formula_2() -> FormulaDefinition {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan(0.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )),
         Box::new(FormulaDefinition::Eventually(
             TimeInterval {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan(3.0)),
+            Box::new(FormulaDefinition::GreaterThan("x",3.0)),
         )),
     )
 }
@@ -39,7 +39,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
         .map(|i| {
             let t = Duration::from_secs(i as u64);
             let val = (i % 10) as f64; // Simple predictable signal
-            Step::new(val, t)
+            Step::new("x",val, t)
         })
         .collect()
 }
