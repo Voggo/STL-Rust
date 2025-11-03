@@ -4,6 +4,7 @@ use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, 
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
 use std::any::TypeId;
+use std::collections::BTreeSet;
 
 // The input definition of the STL formula, independent of implementation.
 // This mirrors the structure of the NaiveOperator enum for formula definition.
@@ -252,14 +253,14 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 i,
                 self.build_incremental_operator(*op, mode),
                 Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
+                Some(BTreeSet::new()),
                 mode,
             )),
             FormulaDefinition::Globally(i, op) => Box::new(Globally::new(
                 i,
                 self.build_incremental_operator(*op, mode),
-                Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
+                Some(RingBuffer::new()), // cache
+                Some(BTreeSet::new()),   // eval_buffer
                 mode,
             )),
             FormulaDefinition::Until(i, l, r) => Box::new(Until::new(

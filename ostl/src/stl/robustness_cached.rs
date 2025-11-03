@@ -576,7 +576,7 @@ pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub cache: C,
-    pub eval_buffer: C,
+    pub eval_buffer: BTreeSet<Duration>,
     pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
@@ -586,7 +586,7 @@ impl<T, C, Y> Eventually<T, C, Y> {
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
-        eval_buffer: Option<C>,
+        eval_buffer: Option<BTreeSet<Duration>>,
         mode: EvaluationMode,
     ) -> Self
     where
@@ -599,7 +599,7 @@ impl<T, C, Y> Eventually<T, C, Y> {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
             mode,
             max_lookahead,
         }
@@ -626,14 +626,14 @@ where
         for sub_step in sub_robustness_vec {
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
-            // The `value` is None because it's just a placeholder for a pending task.
+            // Keep track of timestamps we need to evaluate.
             self.eval_buffer
-                .add_step(Step::new("", None, sub_step.timestamp));
+                .insert(sub_step.timestamp);
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(eval_task) = self.eval_buffer.get_front() {
-            let t_eval = eval_task.timestamp;
+        while let Some(&t_eval) = self.eval_buffer.first() {
+
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
@@ -647,14 +647,14 @@ where
 
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
             if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_true() {
-                self.eval_buffer.pop_front(); // Task is done
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (window_end) {
-                self.eval_buffer.pop_front(); // Task is done
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
@@ -686,7 +686,7 @@ pub struct Globally<T, Y, C> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     pub cache: C,
-    pub eval_buffer: C,
+    pub eval_buffer: BTreeSet<Duration>,
     pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
@@ -696,7 +696,7 @@ impl<T, C, Y> Globally<T, Y, C> {
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
-        eval_buffer: Option<C>,
+        eval_buffer: Option<BTreeSet<Duration>>,
         mode: EvaluationMode,
     ) -> Self
     where
@@ -709,7 +709,7 @@ impl<T, C, Y> Globally<T, Y, C> {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(|| C::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
             mode,
             max_lookahead,
         }
@@ -736,14 +736,12 @@ where
         for sub_step in sub_robustness_vec {
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
-            // The `value` is None because it's just a placeholder for a pending task.
             self.eval_buffer
-                .add_step(Step::new("", None, sub_step.timestamp));
+                .insert(sub_step.timestamp);
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(eval_task) = self.eval_buffer.get_front() {
-            let t_eval = eval_task.timestamp;
+        while let Some(&t_eval) = self.eval_buffer.first() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
@@ -757,14 +755,14 @@ where
 
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
             if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
-                self.eval_buffer.pop_front();
+                self.eval_buffer.pop_first();
                 output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
-                self.eval_buffer.pop_front(); // Task is done
+                self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
                 continue; // Move to the next task
             }
