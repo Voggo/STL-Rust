@@ -14,7 +14,6 @@ mod tests {
 
     fn convert_f64_vec_to_bool_vec(
         input: Vec<Vec<Step<Option<f64>>>>,
-        zero_is_true: Option<bool>,
     ) -> Vec<Vec<Step<Option<bool>>>> {
         input
             .into_iter()
@@ -24,7 +23,7 @@ mod tests {
                     .map(|step| {
                         let bool_value = step
                             .value
-                            .map(|v| v > 0.0 || (zero_is_true.unwrap_or(false) && v == 0.0));
+                            .map(|v| v > 0.0 || (v == 0.0 && v.is_sign_negative()));
                         Step::new("output", bool_value, step.timestamp)
                     })
                     .collect()
@@ -253,7 +252,7 @@ mod tests {
     }
 
     fn exp_f1_s1_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict())
     }
 
     fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -287,7 +286,7 @@ mod tests {
     }
 
     fn exp_f2_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict())
     }
 
     fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -328,7 +327,7 @@ mod tests {
     }
 
     fn exp_f3_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict())
     }
 
     fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -360,7 +359,7 @@ mod tests {
     }
 
     fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict())
     }
 
     fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -419,7 +418,7 @@ mod tests {
             vec![],
             vec![],
             vec![Step::new("output", Some(-1.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(1))],
+            vec![Step::new("output", Some(-0.0), Duration::from_secs(1))],
             vec![Step::new("output", Some(0.0), Duration::from_secs(2))],
             vec![Step::new("output", Some(1.0), Duration::from_secs(3))],
             vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
@@ -427,7 +426,20 @@ mod tests {
         ]
     }
     fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f6_s2_f64_strict(), Some(true))
+        // convert_f64_vec_to_bool_vec(exp_f6_s2_f64_strict())
+        vec![
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![Step::new("output", Some(false), Duration::from_secs(0))],
+            vec![Step::new("output", Some(true), Duration::from_secs(1))],
+            vec![Step::new("output", Some(true), Duration::from_secs(2))],
+            vec![Step::new("output", Some(true), Duration::from_secs(3))],
+            vec![Step::new("output", Some(true), Duration::from_secs(4))],
+            vec![Step::new("output", Some(true), Duration::from_secs(5))],
+        ]
     }
 
     fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
@@ -443,7 +455,7 @@ mod tests {
     }
 
     fn exp_f7_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f7_s3_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f7_s3_f64_strict())
     }
 
     fn exp_f7_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
@@ -470,7 +482,7 @@ mod tests {
     }
 
     fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict(), None)
+        convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict())
     }
 
     fn exp_f8_s4_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
