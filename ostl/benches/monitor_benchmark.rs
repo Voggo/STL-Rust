@@ -1,9 +1,13 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use dhat;
 use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
+
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 // ---
 // Copy-paste your formula/signal fixtures here
@@ -28,7 +32,7 @@ fn formula_2() -> FormulaDefinition {
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(2),
             },
-            Box::new(FormulaDefinition::GreaterThan("x",3.0)),
+            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
         )),
     )
 }
@@ -39,7 +43,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
         .map(|i| {
             let t = Duration::from_secs(i as u64);
             let val = (i % 10) as f64; // Simple predictable signal
-            Step::new("x",val, t)
+            Step::new("x", val, t)
         })
         .collect()
 }
@@ -52,6 +56,12 @@ fn benchmark_monitors(c: &mut Criterion) {
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
+    run_memory_profiling(&formula, &signal);
+
+    run_performance_benchmark(c, formula, signal_size, signal);
+}
+
+fn run_performance_benchmark(c: &mut Criterion, formula: FormulaDefinition, signal_size: usize, signal: Vec<Step<f64>>) {
     // Create a benchmark group to compare implementations
     let mut group = c.benchmark_group("Formula 2 (f64, Strict) 1k steps");
     group.throughput(Throughput::Elements(signal_size as u64));
@@ -127,8 +137,78 @@ fn benchmark_monitors(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-
     group.finish();
+}
+
+fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
+    // Start memory profiling
+    let _profiler = dhat::Profiler::builder().testing().build();
+    // SETUP: Build the monitor for naive and strict evaluation
+    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+        .formula(formula.clone())
+        .strategy(MonitoringStrategy::Naive)
+        .evaluation_mode(EvaluationMode::Strict)
+        .build()
+        .unwrap();
+    for step in signal {
+        monitor.update(step);
+    }
+    print_heap_stats("Naive Strict f64");
+    drop(_profiler); // Stop profiling
+    let _profiler = dhat::Profiler::builder().testing().build();
+
+    // SETUP: Build the monitor for incremental and strict evaluation
+    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+        .formula(formula.clone())
+        .strategy(MonitoringStrategy::Incremental)
+        .evaluation_mode(EvaluationMode::Strict)
+        .build()
+        .unwrap();
+    for step in signal {
+        monitor.update(step);
+    }
+    print_heap_stats("Incremental Strict f64");
+    drop(_profiler); // Stop profiling
+    let _profiler = dhat::Profiler::builder().testing().build();
+    // SETUP: Build the monitor for incremental and eager evaluation for bool
+    let mut monitor:StlMonitor<f64, bool> = StlMonitor::builder()
+        .formula(formula.clone())
+        .strategy(MonitoringStrategy::Incremental)
+        .evaluation_mode(EvaluationMode::Eager)
+        .build()
+        .unwrap();
+    for step in signal {
+        monitor.update(step);
+    }
+    print_heap_stats("Incremental Eager bool");
+}
+
+fn print_heap_stats(test_name: &'static str) {
+    // use serde_json to write dhat profile to file
+    let heap_stats = dhat::HeapStats::get();
+    let measures = serde_json::json!({
+        "Final Blocks": {
+            "value": heap_stats.curr_blocks,
+        },
+        "Final Bytes": {
+            "value": heap_stats.curr_bytes,
+        },
+        "Max Blocks": {
+            "value": heap_stats.max_blocks,
+        },
+        "Max Bytes": {
+            "value": heap_stats.max_bytes,
+        },
+        "Total Blocks": {
+            "value": heap_stats.total_blocks,
+        },
+        "Total Bytes": {
+            "value": heap_stats.total_bytes,
+        },
+    });
+    let pretty_measures =
+        serde_json::to_string_pretty(&measures).expect("serialize heap statistics");
+    println!("Dhat heap profile for {}:\n{}", test_name, pretty_measures);
 }
 
 criterion_group!(benches, benchmark_monitors);
