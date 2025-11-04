@@ -16,7 +16,7 @@ pub struct TimeInterval {
 pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
     type Output;
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>;
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>>;
     fn get_max_lookahead(&self) -> Duration;
 }
 

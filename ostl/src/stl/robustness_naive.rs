@@ -79,7 +79,7 @@ where
         self.formula.get_max_lookahead()
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         self.signal.add_step(step.clone());
 
         let max_lookahead = self.formula.get_max_lookahead();

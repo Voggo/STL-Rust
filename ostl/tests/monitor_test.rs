@@ -528,7 +528,7 @@ mod tests {
 
             let mut all_results = Vec::new();
             for step in signal.clone() {
-                all_results.push(monitor.instantaneous_robustness(&step));
+                all_results.push(monitor.update(&step));
                 println!(
                     "Step at {:?}, Monitor Output: {:?}",
                     step.timestamp,
