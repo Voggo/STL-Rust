@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use ostl::ring_buffer::Step;
-    use ostl::stl::core::{RobustnessSemantics, TimeInterval};
+    use ostl::stl::core::{RobustnessSemantics, TimeInterval, RobustnessInterval};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
@@ -614,6 +614,48 @@ mod tests {
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
         run_monitor_test(formulas, signal, strategy, EvaluationMode::Eager, expected);
+    }
+
+    #[test]
+    fn test_f64_interval_robustness() {
+        // Test that StlMonitor can be built with f64 interval robustness
+        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+            // .formula(formula_1())
+            // formula is x>5 && F[0,2](x>0)
+            .formula(FormulaDefinition::Or(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::Eventually(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(2),
+                    },
+                    Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
+                )),
+            ))
+            // F[0,2](x<0)
+            // .formula(FormulaDefinition::Eventually(
+            //     TimeInterval {
+            //         start: Duration::from_secs(0),
+            //         end: Duration::from_secs(2),
+            //     },
+            //     Box::new(FormulaDefinition::LessThan("x", 0.0)),
+            // ))
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+
+        // pass step to monitor to ensure it works
+        let step = vec![Step::new("x",  5.0, Duration::from_secs(0)),
+                         Step::new("x", 4.0, Duration::from_secs(1)),
+                         Step::new("x", 6.0, Duration::from_secs(2))];
+        
+        for s in step {
+            let output = monitor.update(&s);
+            println!("Monitor output: {:?}", output);
+        }
+
+        // println!("Monitor output: {:?}", output);
     }
 
     // ---

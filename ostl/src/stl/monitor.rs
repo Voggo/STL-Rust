@@ -1,5 +1,5 @@
 use crate::ring_buffer::{RingBuffer, Step};
-use crate::stl::core::{RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait, TimeInterval, RobustnessInterval};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
@@ -103,11 +103,16 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     {
         let is_bool = TypeId::of::<Y>() == TypeId::of::<bool>();
         let is_f64 = TypeId::of::<Y>() == TypeId::of::<f64>();
+        let is_robustness_interval = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
         let identifier = if is_bool {
             "bool"
         } else if is_f64 {
             "f64"
-        } else {
+        } 
+        else if is_robustness_interval {
+            "RobustnessInterval"
+        }
+        else {
             return Err("Unsupported output type for robustness semantics");
         };
 

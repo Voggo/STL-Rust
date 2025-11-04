@@ -1,9 +1,10 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{
-    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
-    TimeInterval,
+    RobustnessInterval, RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
+    StlOperatorTrait, TimeInterval,
 };
 use crate::stl::monitor::EvaluationMode;
+use std::any::TypeId;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
@@ -61,7 +62,7 @@ fn process_binary_eager<C, Y, F>(
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics,
+    Y: RobustnessSemantics + 'static,
     F: Fn(Y, Y) -> Y,
 {
     let mut output_robustness = Vec::new();
@@ -81,7 +82,12 @@ where
             });
             // Update the last known value for the left side and pop the step.
             *left_last_known = left_step.clone();
-            let step = left_cache.pop_front().unwrap();
+            
+            let step = if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                left_cache.pop_front().unwrap()
+            } else {
+                left_cache.get_front().unwrap().clone()
+            };
             Step::new("output", combined_value, step.timestamp)
         } else if right_step.timestamp < left_step.timestamp {
             // Right is earlier. Combine its value with the last known value from the left.
@@ -93,7 +99,11 @@ where
             });
             // Update the last known value for the right side and pop the step.
             *right_last_known = right_step.clone();
-            let step = right_cache.pop_front().unwrap();
+            let step = if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                right_cache.pop_front().unwrap()
+            } else {
+                right_cache.get_front().unwrap().clone()
+            };
             Step::new("output", combined_value, step.timestamp)
         } else {
             // Timestamps are equal. Combine their current values.
@@ -106,9 +116,14 @@ where
             // Update last known values for both and pop from both caches.
             *left_last_known = left_step.clone();
             *right_last_known = right_step.clone();
-            let step = left_cache.pop_front().unwrap();
-            right_cache.pop_front();
-            Step::new("output", combined_value, step.timestamp)
+
+            let step_t = left_cache.get_front().unwrap().timestamp;
+
+            if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                left_cache.pop_front();
+                right_cache.pop_front();
+            }
+            Step::new("output", combined_value, step_t)
         };
         output_robustness.push(new_step);
     }
@@ -126,6 +141,10 @@ where
             left_cache.pop_front();
             *left_last_known = new_step.clone();
             max_timestamp = max_timestamp.max(new_step.timestamp);
+        } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
+            let new_step = Step::new("output", Some(value), left.timestamp);
+            output_robustness.push(new_step.clone());
         } else {
             break;
         }
@@ -139,6 +158,10 @@ where
             right_cache.pop_front();
             *right_last_known = new_step.clone();
             max_timestamp = max_timestamp.max(new_step.timestamp);
+        } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+            let value = combine_op(right_value, default_atomic.clone());
+            let new_step = Step::new("output", Some(value), right.timestamp);
+            output_robustness.push(new_step.clone());
         } else {
             break;
         }
@@ -627,13 +650,12 @@ where
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
             // Keep track of timestamps we need to evaluate.
-            self.eval_buffer
-                .insert(sub_step.timestamp);
+            self.eval_buffer.insert(sub_step.timestamp);
         }
 
+        let mut tasks_to_remove = Vec::new();
         // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
-
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
@@ -646,22 +668,25 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
-                self.eval_buffer.pop_first(); // Task is done
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if windowed_max_value == Y::atomic_true() {
+                    // self.eval_buffer.pop_first(); // Task is done
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
+                }
+                continue;
+            } else if step.timestamp >= (window_end) {
+                // self.eval_buffer.pop_first(); // Task is done
+                tasks_to_remove.push(t_eval);
                 output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 continue; // Move to the next task
+            } else {
+                // C. If neither condition is met, we can't resolve this task yet.
+                // Since the buffer is time-ordered, we stop for this cycle.
+                break;
             }
-
-            // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= (window_end) {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                continue; // Move to the next task
-            }
-
-            // C. If neither condition is met, we can't resolve this task yet.
-            // Since the buffer is time-ordered, we stop for this cycle.
-            break;
         }
 
         // 3. Prune the cache to remove old values that are no longer needed.
@@ -670,6 +695,9 @@ where
         // back to `step.timestamp + interval.start - interval.end`.
         // A simpler, safe bound is to just keep `interval.end` duration of history.
         self.cache.prune(self.interval.end);
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         output_robustness
     }
@@ -736,8 +764,7 @@ where
         for sub_step in sub_robustness_vec {
             self.cache.add_step(sub_step.clone());
             // Add a task to the evaluation buffer for this new timestamp.
-            self.eval_buffer
-                .insert(sub_step.timestamp);
+            self.eval_buffer.insert(sub_step.timestamp);
         }
 
         // 2. Process the evaluation buffer for tasks that can now be completed.
@@ -1213,11 +1240,14 @@ mod tests {
         let ids_true = a_true.get_signal_identifiers();
         let ids_false = a_false.get_signal_identifiers();
 
-        let mut expected_gt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_gt: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_gt.insert("x");
-        let mut expected_lt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_lt: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_lt.insert("y");
-        let expected_empty: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let expected_empty: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
 
         assert_eq!(ids_gt, expected_gt);
         assert_eq!(ids_lt, expected_lt);
@@ -1233,7 +1263,8 @@ mod tests {
             EvaluationMode::Strict,
         );
         let ids_and = and.get_signal_identifiers();
-        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and.insert("x");
         expected_and.insert("y");
         assert_eq!(ids_and, expected_and);
@@ -1247,7 +1278,8 @@ mod tests {
             EvaluationMode::Strict,
         );
         let ids_and2 = and2.get_signal_identifiers();
-        let mut expected_and2: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and2: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and2.insert("x");
         assert_eq!(ids_and2, expected_and2);
     }
@@ -1257,8 +1289,7 @@ mod tests {
         // And(x>10, U(y>5, z<0))
         let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
-            Box::new(
-                Until::<f64, RingBuffer<Option<f64>>, f64>::new(
+            Box::new(Until::<f64, RingBuffer<Option<f64>>, f64>::new(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(5),
@@ -1273,9 +1304,12 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
-        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-        let mut expected_and_left: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-        let mut expected_and_right: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
+        let mut expected_and_left: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
+        let mut expected_and_right: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and.insert("x");
         expected_and.insert("y");
         expected_and.insert("z");
