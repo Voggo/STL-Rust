@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
 
-// This is the new function for Strict mode
+/// Processes binary operators in Strict evaluation mode.
 fn process_binary_strict<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
@@ -50,6 +50,7 @@ where
     output_robustness
 }
 
+/// Processes binary operators in Eager evaluation mode.
 fn process_binary_eager<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
@@ -236,8 +237,8 @@ where
                 &mut self.right_cache,
                 &mut self.left_last_known,
                 &mut self.right_last_known,
-                Y::and,            // The only difference!
-                Y::atomic_false(), // Default atomic value for 'and'
+                Y::and,
+                Y::atomic_false(),
             ),
         };
 
@@ -493,7 +494,6 @@ impl<T, C, Y> Implies<T, C, Y> {
     }
 }
 
-// We need to look at this there might be problems with short-circuiting here.
 impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
 where
     T: Clone + 'static,
@@ -638,7 +638,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let max_in_window = self
+            let windowed_max_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -646,16 +646,16 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_true() {
+            if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 continue; // Move to the next task
             }
 
@@ -746,7 +746,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let max_in_window = self
+            let windowed_min_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -754,16 +754,16 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
                 self.eval_buffer.pop_first();
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
                 continue; // Move to the next task
             }
 
@@ -881,7 +881,8 @@ where
             }
         }
 
-        // t_max is the latest time we can evaluate up to, based on available data.
+        // t_max is the max time we can evaluate up to, based on available data.
+        // it is the minimum of the latest timestamps in both caches.
         self.t_max = self
             .left_cache
             .iter()
@@ -900,7 +901,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find out if the robustness values in the window allow us to conclude the until value.
-            let max_in_window = self
+            let left_min_value = self
                 .left_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -908,14 +909,14 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && left_min_value == Y::atomic_false() {
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
                 continue; // Move to the next task
             }
 
             // Check if right is true at some point in the window
-            let right_in_window = self
+            let right_max_value = self
                 .right_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -924,7 +925,7 @@ where
 
             // Short-circuit: if right is true in the window, until is true
             if self.mode == EvaluationMode::Eager
-                && right_in_window == Y::atomic_true()
+                && right_max_value == Y::atomic_true()
                 && self.t_max >= t_eval
             {
                 self.eval_buffer.pop_first(); // Task is done
@@ -934,7 +935,7 @@ where
 
             // Normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
-                let until_value = Y::or(max_in_window, right_in_window);
+                let until_value = Y::or(left_min_value, right_max_value);
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(until_value), t_eval));
                 continue; // Move to the next task
