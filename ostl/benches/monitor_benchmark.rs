@@ -77,7 +77,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             |(mut monitor, signal)| {
                 // ROUTINE: This is the part being timed
                 for step in signal {
-                    monitor.instantaneous_robustness(&step);
+                    monitor.update(&step);
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -99,7 +99,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             },
             |(mut monitor, signal)| {
                 for step in signal {
-                    monitor.instantaneous_robustness(&step);
+                    monitor.update(&step);
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -121,7 +121,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             },
             |(mut monitor, signal)| {
                 for step in signal {
-                    monitor.instantaneous_robustness(&step);
+                    monitor.update(&step);
                 }
             },
             criterion::BatchSize::SmallInput,

@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
 
-// This is the new function for Strict mode
+/// Processes binary operators in Strict evaluation mode.
 fn process_binary_strict<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
@@ -50,6 +50,7 @@ where
     output_robustness
 }
 
+/// Processes binary operators in Eager evaluation mode.
 fn process_binary_eager<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
@@ -202,9 +203,9 @@ where
         left_lookahead.max(right_lookahead)
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.robustness(step);
+            let left_updates = self.left.update(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -216,7 +217,7 @@ where
             }
         }
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.robustness(step);
+            let right_updates = self.right.update(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -236,8 +237,8 @@ where
                 &mut self.right_cache,
                 &mut self.left_last_known,
                 &mut self.right_last_known,
-                Y::and,            // The only difference!
-                Y::atomic_false(), // Default atomic value for 'and'
+                Y::and,
+                Y::atomic_false(),
             ),
         };
 
@@ -330,9 +331,9 @@ where
         left_lookahead.max(right_lookahead)
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.robustness(step);
+            let left_updates = self.left.update(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -344,7 +345,7 @@ where
             }
         }
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.robustness(step);
+            let right_updates = self.right.update(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -418,8 +419,8 @@ where
         self.operand.get_max_lookahead()
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let operand_updates = self.operand.robustness(step);
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let operand_updates = self.operand.update(step);
 
         let output_robustness: Vec<Step<Option<Y>>> = operand_updates
             .into_iter()
@@ -493,7 +494,6 @@ impl<T, C, Y> Implies<T, C, Y> {
     }
 }
 
-// We need to look at this there might be problems with short-circuiting here.
 impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
 where
     T: Clone + 'static,
@@ -508,9 +508,9 @@ where
         left_lookahead.max(right_lookahead)
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.antecedent.robustness(step);
+            let left_updates = self.antecedent.update(step);
             for update in left_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -522,7 +522,7 @@ where
             }
         }
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.consequent.robustness(step);
+            let right_updates = self.consequent.update(step);
             for update in right_updates {
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
@@ -618,8 +618,8 @@ where
         self.max_lookahead
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let sub_robustness_vec = self.operand.robustness(step);
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
         // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
@@ -638,7 +638,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let max_in_window = self
+            let windowed_max_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -646,16 +646,16 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_true() {
+            if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (window_end) {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 continue; // Move to the next task
             }
 
@@ -728,8 +728,8 @@ where
         self.max_lookahead
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        let sub_robustness_vec = self.operand.robustness(step);
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
         // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
@@ -746,7 +746,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let max_in_window = self
+            let windowed_min_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -754,16 +754,16 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
                 self.eval_buffer.pop_first();
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
                 continue; // Move to the next task
             }
 
             // B. Check for normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(max_in_window), t_eval));
+                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
                 continue; // Move to the next task
             }
 
@@ -849,11 +849,11 @@ where
         self.max_lookahead
     }
 
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let mut output_robustness = Vec::new();
 
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.robustness(step);
+            let left_updates = self.left.update(step);
             // Add new sub-formula results to the cache and queue up new evaluation tasks.
             for update in left_updates {
                 self.left_cache.add_step(update.clone());
@@ -868,7 +868,7 @@ where
             }
         }
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.robustness(step);
+            let right_updates = self.right.update(step);
             for update in right_updates {
                 self.right_cache.add_step(update.clone());
                 if let Some(last_time) = self.last_eval_time {
@@ -881,7 +881,8 @@ where
             }
         }
 
-        // t_max is the latest time we can evaluate up to, based on available data.
+        // t_max is the max time we can evaluate up to, based on available data.
+        // it is the minimum of the latest timestamps in both caches.
         self.t_max = self
             .left_cache
             .iter()
@@ -900,7 +901,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find out if the robustness values in the window allow us to conclude the until value.
-            let max_in_window = self
+            let left_min_value = self
                 .left_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -908,14 +909,14 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && max_in_window == Y::atomic_false() {
+            if self.mode == EvaluationMode::Eager && left_min_value == Y::atomic_false() {
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
                 continue; // Move to the next task
             }
 
             // Check if right is true at some point in the window
-            let right_in_window = self
+            let right_max_value = self
                 .right_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -924,7 +925,7 @@ where
 
             // Short-circuit: if right is true in the window, until is true
             if self.mode == EvaluationMode::Eager
-                && right_in_window == Y::atomic_true()
+                && right_max_value == Y::atomic_true()
                 && self.t_max >= t_eval
             {
                 self.eval_buffer.pop_first(); // Task is done
@@ -934,7 +935,7 @@ where
 
             // Normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
-                let until_value = Y::or(max_in_window, right_in_window);
+                let until_value = Y::or(left_min_value, right_max_value);
                 self.eval_buffer.pop_first(); // Task is done
                 output_robustness.push(Step::new("output", Some(until_value), t_eval));
                 continue; // Move to the next task
@@ -998,7 +999,7 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-    fn robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let value = step.value.clone().into();
         let result = match self {
             Atomic::True(_) => Y::atomic_true(),
@@ -1134,14 +1135,14 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_greater_than("x", 10.0);
         atomic.get_signal_identifiers();
         let step1 = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = atomic.robustness(&step1);
+        let robustness = atomic.update(&step1);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 8.0, Duration::from_secs(6));
-        let robustness2 = atomic.robustness(&step2);
+        let robustness2 = atomic.update(&step2);
         assert_eq!(
             robustness2,
             vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
@@ -1153,14 +1154,14 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_less_than("x", 10.0);
         atomic.get_signal_identifiers();
         let step1 = Step::new("x", 5.0, Duration::from_secs(5));
-        let robustness = atomic.robustness(&step1);
+        let robustness = atomic.update(&step1);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 12.0, Duration::from_secs(6));
-        let robustness2 = atomic.robustness(&step2);
+        let robustness2 = atomic.update(&step2);
         assert_eq!(
             robustness2,
             vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
@@ -1172,7 +1173,7 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_true();
         atomic.get_signal_identifiers();
         let step = Step::new("x", 0.0, Duration::from_secs(5));
-        let robustness = atomic.robustness(&step);
+        let robustness = atomic.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new(
@@ -1188,7 +1189,7 @@ mod tests {
         let mut atomic = Atomic::<f64>::new_false();
         atomic.get_signal_identifiers();
         let step = Step::new("x", 0.0, Duration::from_secs(5));
-        let robustness = atomic.robustness(&step);
+        let robustness = atomic.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new(
@@ -1295,7 +1296,7 @@ mod tests {
         let mut not = Not::new(Box::new(atomic));
         not.get_signal_identifiers();
         let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = not.robustness(&step);
+        let robustness = not.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(-5.0), Duration::from_secs(5))]
@@ -1316,7 +1317,7 @@ mod tests {
         and.get_signal_identifiers();
 
         let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = and.robustness(&step);
+        let robustness = and.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
@@ -1337,7 +1338,7 @@ mod tests {
         or.get_signal_identifiers();
 
         let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = or.robustness(&step);
+        let robustness = or.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
@@ -1358,7 +1359,7 @@ mod tests {
         implies.get_signal_identifiers();
 
         let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = implies.robustness(&step);
+        let robustness = implies.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
@@ -1392,7 +1393,7 @@ mod tests {
 
         let mut all_outputs = Vec::new();
         for s in &signal {
-            all_outputs.extend(eventually.robustness(s));
+            all_outputs.extend(eventually.update(s));
         }
 
         let expected_outputs = vec![
@@ -1439,7 +1440,7 @@ mod tests {
 
         let mut all_outputs = Vec::new();
         for s in &signal {
-            all_outputs.extend(globally.robustness(s));
+            all_outputs.extend(globally.update(s));
         }
 
         let expected_outputs = vec![

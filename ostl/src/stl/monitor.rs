@@ -50,8 +50,8 @@ impl<T: Clone, Y> StlMonitor<T, Y> {
     }
 
     /// Computes the instantaneous robustness for the current step.
-    pub fn instantaneous_robustness(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> {
-        self.root_operator.robustness(step)
+    pub fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> {
+        self.root_operator.update(step)
     }
 
     /// Returns the string representation of the monitor's formula.
