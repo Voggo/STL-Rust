@@ -1,9 +1,10 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{
-    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
-    TimeInterval,
+    RobustnessInterval, RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
+    StlOperatorTrait, TimeInterval,
 };
 use crate::stl::monitor::EvaluationMode;
+use std::any::TypeId;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
@@ -51,97 +52,125 @@ where
 }
 
 /// Processes binary operators in Eager evaluation mode.
+/// Processes binary operators in Eager evaluation mode (piecewise-constant interpolation).
 fn process_binary_eager<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
     left_last_known: &mut Step<Option<Y>>,
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
-    default_atomic: Y,
+    _default_atomic: Y, // This is not used for correct interval semantics
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics,
+    Y: RobustnessSemantics + 'static,
     F: Fn(Y, Y) -> Y,
 {
     let mut output_robustness = Vec::new();
 
-    // Only process while both caches have data. This prevents using a stale "last_known"
-    // value when one sub-formula has not yet produced a result for a given time.
-    while let (Some(left_step), Some(right_step)) =
+    // Loop 1: Process while both caches have data, using piecewise-constant logic
+    while let (Some(left_front), Some(right_front)) =
         (left_cache.get_front(), right_cache.get_front())
     {
-        let new_step = if left_step.timestamp < right_step.timestamp {
-            // Left is earlier. Combine its value with the last known value from the right.
-            let combined_value = left_step.value.as_ref().and_then(|l_val| {
-                right_last_known
-                    .value
-                    .as_ref()
-                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update the last known value for the left side and pop the step.
-            *left_last_known = left_step.clone();
-            let step = left_cache.pop_front().unwrap();
-            Step::new("output", combined_value, step.timestamp)
-        } else if right_step.timestamp < left_step.timestamp {
-            // Right is earlier. Combine its value with the last known value from the left.
-            let combined_value = right_step.value.as_ref().and_then(|r_val| {
-                left_last_known
-                    .value
-                    .as_ref()
-                    .map(|l_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update the last known value for the right side and pop the step.
-            *right_last_known = right_step.clone();
-            let step = right_cache.pop_front().unwrap();
-            Step::new("output", combined_value, step.timestamp)
+        let (t_out, l_val, r_val) = if left_front.timestamp < right_front.timestamp {
+            // Left is earlier. Combine with last known right.
+            let t = left_front.timestamp;
+            let l = left_front.value.clone();
+            let r = right_last_known.value.clone();
+            *left_last_known = left_cache.pop_front().unwrap(); // consume left
+            (t, l, r)
+        } else if right_front.timestamp < left_front.timestamp {
+            // Right is earlier. Combine with last known left.
+            let t = right_front.timestamp;
+            let l = left_last_known.value.clone();
+            let r = right_front.value.clone();
+            *right_last_known = right_cache.pop_front().unwrap(); // consume right
+            (t, l, r)
         } else {
-            // Timestamps are equal. Combine their current values.
-            let combined_value = left_step.value.as_ref().and_then(|l_val| {
-                right_step
-                    .value
-                    .as_ref()
-                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update last known values for both and pop from both caches.
-            *left_last_known = left_step.clone();
-            *right_last_known = right_step.clone();
-            let step = left_cache.pop_front().unwrap();
-            right_cache.pop_front();
-            Step::new("output", combined_value, step.timestamp)
+            // Timestamps align. Combine and consume both.
+            let t = left_front.timestamp;
+            let l = left_front.value.clone();
+            let r = right_front.value.clone();
+            *left_last_known = left_cache.pop_front().unwrap();
+            *right_last_known = right_cache.pop_front().unwrap();
+            (t, l, r)
         };
-        output_robustness.push(new_step);
+
+        let combined_value = l_val.as_ref().and_then(|l_val| {
+            r_val
+                .as_ref()
+                .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+        });
+
+        output_robustness.push(Step::new("output", combined_value, t_out));
     }
 
-    // 'short-circuit' logic:
-    // for and: if either left or right is false, result is false
-    // for or: if either left or right is true, result is true
     let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
-    while let Some(left) = left_cache.get_front() {
-        let left_value = left.value.to_owned().unwrap();
-        if default_atomic == left_value && max_timestamp <= left.timestamp {
-            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step::new("output", Some(value), left.timestamp);
-            output_robustness.push(new_step.clone());
-            left_cache.pop_front();
-            *left_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else {
-            break;
+
+    // Process left cache: iterate so we advance even when we don't pop (interval semantics).
+    let mut left_iter2 = left_cache.iter();
+    let mut left_deferred_pops: usize = 0;
+    loop {
+        match left_iter2.next() {
+            Some(left) => {
+                let left_value = left.value.to_owned().unwrap();
+                if _default_atomic == left_value && max_timestamp <= left.timestamp {
+                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), left.timestamp);
+                    output_robustness.push(new_step.clone());
+                    // For non-interval semantics we need to remove the entry; defer pop until
+                    // after we drop the iterator to avoid borrow conflicts.
+                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                        left_deferred_pops += 1;
+                    }
+                    *left_last_known = new_step.clone();
+                    max_timestamp = max_timestamp.max(new_step.timestamp);
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), left.timestamp);
+                    output_robustness.push(new_step.clone());
+                } else {
+                    break;
+                }
+            }
+            None => break,
         }
     }
-    while let Some(right) = right_cache.get_front() {
-        let right_value = right.value.to_owned().unwrap();
-        if default_atomic == right_value && max_timestamp <= right.timestamp {
-            let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step::new("output", Some(value), right.timestamp);
-            output_robustness.push(new_step.clone());
-            right_cache.pop_front();
-            *right_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else {
-            break;
+    drop(left_iter2);
+    for _ in 0..left_deferred_pops {
+        left_cache.pop_front();
+    }
+
+    // Process right cache similarly.
+    let mut right_iter2 = right_cache.iter();
+    let mut right_deferred_pops: usize = 0;
+    loop {
+        match right_iter2.next() {
+            Some(right) => {
+                let right_value = right.value.to_owned().unwrap();
+                if _default_atomic == right_value && max_timestamp <= right.timestamp {
+                    let value = combine_op(right_value, _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), right.timestamp);
+                    output_robustness.push(new_step.clone());
+                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                        right_deferred_pops += 1;
+                    }
+                    *right_last_known = new_step.clone();
+                    max_timestamp = max_timestamp.max(new_step.timestamp);
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    let value = combine_op(right_value, _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), right.timestamp);
+                    output_robustness.push(new_step.clone());
+                } else {
+                    break;
+                }
+            }
+            None => break,
         }
+    }
+    drop(right_iter2);
+    for _ in 0..right_deferred_pops {
+        right_cache.pop_front();
     }
 
     output_robustness
@@ -622,54 +651,70 @@ where
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
-        // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
+        // 1. Add new sub-formula results to the cache
+        //    By using `into_iter`, we consume the vector and move the steps,
+        //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
-            self.cache.add_step(sub_step.clone());
-            // Add a task to the evaluation buffer for this new timestamp.
-            // Keep track of timestamps we need to evaluate.
-            self.eval_buffer
-                .insert(sub_step.timestamp);
+            self.eval_buffer.insert(sub_step.timestamp);
+            self.cache.add_step(sub_step); // sub_step is moved
         }
 
-        // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
+        let mut tasks_to_remove = Vec::new();
+        let current_time = step.timestamp;
 
+        // 2. Process the evaluation buffer
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Find the maximum robustness within the part of the window we have seen so far.
+            // Use `skip_while` and `take_while` to iterate only over
+            // the relevant part of the cache, not the whole thing.
             let windowed_max_value = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
                 .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or);
+                .fold(Y::eventually_identity(), Y::or); // Use the identity from your code
 
-            // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                continue; // Move to the next task
+            let final_value: Option<Y>;
+            let mut remove_task = false;
+
+            // state-based logic
+            if current_time >= window_end {
+                // Case 1: Full window has passed. This is a final, "closed" value.
+                final_value = Some(windowed_max_value);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
+                // Case 2: Eager short-circuit. Found "true" before window closed.
+                final_value = Some(windowed_max_value);
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open.
+                // We must 'or' with the unknown future.
+                let intermediate_value = Y::or(windowed_max_value, Y::unknown()); // Use unknown() from your code
+                final_value = Some(intermediate_value);
+                // DO NOT remove task, it's not finished
+            } else {
+                // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
+                break;
             }
 
-            // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= (window_end) {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                continue; // Move to the next task
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
             }
 
-            // C. If neither condition is met, we can't resolve this task yet.
-            // Since the buffer is time-ordered, we stop for this cycle.
-            break;
+            if remove_task {
+                tasks_to_remove.push(t_eval);
+            }
         }
 
-        // 3. Prune the cache to remove old values that are no longer needed.
-        // A value at time `t` is only needed as long as it can be in some future window.
-        // The latest possible window starts at `step.timestamp`, so we need to keep values
-        // back to `step.timestamp + interval.start - interval.end`.
-        // A simpler, safe bound is to just keep `interval.end` duration of history.
+        // 3. Prune the cache and buffer
         self.cache.prune(self.interval.end);
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         output_robustness
     }
@@ -732,52 +777,70 @@ where
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
-        // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
+        // 1. Add new sub-formula results to the cache
+        //    By using `into_iter`, we consume the vector and move the steps,
+        //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
-            self.cache.add_step(sub_step.clone());
-            // Add a task to the evaluation buffer for this new timestamp.
-            self.eval_buffer
-                .insert(sub_step.timestamp);
+            self.eval_buffer.insert(sub_step.timestamp);
+            self.cache.add_step(sub_step); // sub_step is moved
         }
 
-        // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
+        let mut tasks_to_remove = Vec::new();
+        let current_time = step.timestamp;
+
+        // 2. Process the evaluation buffer
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Find the maximum robustness within the part of the window we have seen so far.
+            // Use `skip_while` and `take_while` to iterate only over
+            // the relevant part of the cache, not the whole thing.
             let windowed_min_value = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
                 .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and);
+                .fold(Y::globally_identity(), Y::and); // Use the identity from your code
 
-            // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
-                self.eval_buffer.pop_first();
-                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                continue; // Move to the next task
+            let final_value: Option<Y>;
+            let mut remove_task = false;
+
+            // state-based logic
+            if current_time >= window_end {
+                // Case 1: Full window has passed. This is a final, "closed" value.
+                final_value = Some(windowed_min_value);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
+                // Case 2: Eager short-circuit. Found "false" before window closed.
+                final_value = Some(windowed_min_value);
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open.
+                // We must 'and' with the unknown future.
+                let intermediate_value = Y::and(windowed_min_value, Y::unknown()); // Use unknown() from your code
+                final_value = Some(intermediate_value);
+                // DO NOT remove task, it's not finished
+            } else {
+                // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
+                break;
             }
 
-            // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= (t_eval + self.max_lookahead) {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                continue; // Move to the next task
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
             }
 
-            // C. If neither condition is met, we can't resolve this task yet.
-            // Since the buffer is time-ordered, we stop for this cycle.
-            break;
+            if remove_task {
+                tasks_to_remove.push(t_eval);
+            }
         }
 
-        // 3. Prune the cache to remove old values that are no longer needed.
-        // A value at time `t` is only needed as long as it can be in some future window.
-        // The latest possible window starts at `step.timestamp`, so we need to keep values
-        // back to `step.timestamp + interval.start - interval.end`.
-        // A simpler, safe bound is to just keep `interval.end` duration of history.
+        // 3. Prune the cache and buffer
         self.cache.prune(self.interval.end);
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         output_robustness
     }
@@ -895,13 +958,14 @@ where
                     .map_or(self.t_max, |s| s.timestamp),
             );
 
+        let mut tasks_to_remove = Vec::new();
         // Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
             // Find out if the robustness values in the window allow us to conclude the until value.
-            let left_min_value = self
+            let mut left_min_value = self
                 .left_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -909,14 +973,20 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && left_min_value == Y::atomic_false() {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
-                continue; // Move to the next task
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if left_min_value == Y::atomic_false() {
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
+                    continue; // Move to the next task
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    left_min_value = Y::and(left_min_value, Y::unknown());
+                    output_robustness.push(Step::new("output", Some(left_min_value), t_eval));
+                    continue; // Move to the next task
+                }
             }
 
             // Check if right is true at some point in the window
-            let right_max_value = self
+            let mut right_max_value = self
                 .right_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -924,19 +994,23 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // Short-circuit: if right is true in the window, until is true
-            if self.mode == EvaluationMode::Eager
-                && right_max_value == Y::atomic_true()
-                && self.t_max >= t_eval
-            {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(Y::atomic_true()), t_eval));
-                continue; // Move to the next task
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if right_max_value == Y::atomic_true() && self.t_max >= t_eval {
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
+                    continue; // Move to the next task
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    right_max_value = Y::or(right_max_value, Y::unknown());
+                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
+                    continue;
+                }
             }
 
             // Normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 let until_value = Y::or(left_min_value, right_max_value);
-                self.eval_buffer.pop_first(); // Task is done
+                // self.eval_buffer.pop_first(); // Task is done
+                tasks_to_remove.push(t_eval);
                 output_robustness.push(Step::new("output", Some(until_value), t_eval));
                 continue; // Move to the next task
             }
@@ -947,6 +1021,10 @@ where
         // Prune the caches.
         self.left_cache.prune(self.interval.end);
         self.right_cache.prune(self.interval.end);
+
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         // update last eval time to max in output_robustness
         if let Some(last_step) = output_robustness.last() {
@@ -1213,11 +1291,14 @@ mod tests {
         let ids_true = a_true.get_signal_identifiers();
         let ids_false = a_false.get_signal_identifiers();
 
-        let mut expected_gt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_gt: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_gt.insert("x");
-        let mut expected_lt: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_lt: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_lt.insert("y");
-        let expected_empty: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let expected_empty: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
 
         assert_eq!(ids_gt, expected_gt);
         assert_eq!(ids_lt, expected_lt);
@@ -1233,7 +1314,8 @@ mod tests {
             EvaluationMode::Strict,
         );
         let ids_and = and.get_signal_identifiers();
-        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and.insert("x");
         expected_and.insert("y");
         assert_eq!(ids_and, expected_and);
@@ -1247,7 +1329,8 @@ mod tests {
             EvaluationMode::Strict,
         );
         let ids_and2 = and2.get_signal_identifiers();
-        let mut expected_and2: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and2: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and2.insert("x");
         assert_eq!(ids_and2, expected_and2);
     }
@@ -1257,8 +1340,7 @@ mod tests {
         // And(x>10, U(y>5, z<0))
         let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
             Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
-            Box::new(
-                Until::<f64, RingBuffer<Option<f64>>, f64>::new(
+            Box::new(Until::<f64, RingBuffer<Option<f64>>, f64>::new(
                 TimeInterval {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(5),
@@ -1273,9 +1355,12 @@ mod tests {
             None,
             EvaluationMode::Strict,
         );
-        let mut expected_and: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-        let mut expected_and_left: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-        let mut expected_and_right: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        let mut expected_and: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
+        let mut expected_and_left: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
+        let mut expected_and_right: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
         expected_and.insert("x");
         expected_and.insert("y");
         expected_and.insert("z");

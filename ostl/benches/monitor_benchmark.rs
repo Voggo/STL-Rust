@@ -15,27 +15,32 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // ---
 fn formula_2() -> FormulaDefinition {
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-    FormulaDefinition::Until(
-        TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(6),
-        },
+    FormulaDefinition::And(
         Box::new(FormulaDefinition::Globally(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
+                end: Duration::from_secs(20),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )),
         Box::new(FormulaDefinition::Eventually(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
+                end: Duration::from_secs(25),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
         )),
     )
 }
+
+fn formula_3() -> FormulaDefinition {
+    // (x > 5) /\ (x < 10)
+    FormulaDefinition::And(
+        Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+        Box::new(FormulaDefinition::LessThan("x", 10.0)),
+    )
+}
+
 
 // IMPORTANT: Create a *long* signal for meaningful benchmarks
 fn get_long_signal(size: usize) -> Vec<Step<f64>> {
