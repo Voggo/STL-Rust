@@ -1,10 +1,11 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use dhat;
 use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
+#[cfg(feature = "dhat-heap")]
+use dhat;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
