@@ -16,11 +16,11 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
 fn formula_1() -> FormulaDefinition {
-    // G[300, 2500]((x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 150]G[0, 20](x<0.5 && x>-0.5))
+    // G[30, 100]((x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
     FormulaDefinition::Globally(
         TimeInterval {
-            start: Duration::from_secs(300),
-            end: Duration::from_secs(2500),
+            start: Duration::from_secs(30),
+            end: Duration::from_secs(100),
         },
         Box::new(FormulaDefinition::Implies(
             Box::new(FormulaDefinition::And(
@@ -36,7 +36,7 @@ fn formula_1() -> FormulaDefinition {
             Box::new(FormulaDefinition::Eventually(
                 TimeInterval {
                     start: Duration::from_secs(0),
-                    end: Duration::from_secs(150),
+                    end: Duration::from_secs(50),
                 },
                 Box::new(FormulaDefinition::Globally(
                     TimeInterval {
@@ -55,18 +55,22 @@ fn formula_1() -> FormulaDefinition {
 
 fn formula_2() -> FormulaDefinition {
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-    FormulaDefinition::And(
+    FormulaDefinition::Until(
+        TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        },
         Box::new(FormulaDefinition::Globally(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(20),
+                end: Duration::from_secs(2),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )),
         Box::new(FormulaDefinition::Eventually(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(25),
+                end: Duration::from_secs(2),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
         )),
@@ -97,7 +101,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
     let formula = formula_1();
-    let signal_size = 10000; // 1,000 steps
+    let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
     #[cfg(feature = "dhat-heap")]
@@ -113,36 +117,36 @@ fn run_performance_benchmark(
     signal: Vec<Step<f64>>,
 ) {
     // Create a benchmark group to compare implementations
-    let mut group = c.benchmark_group("Formula 2 (f64, Strict) 1k steps");
+    let mut group = c.benchmark_group("STL Monitor Performance");
     group.throughput(Throughput::Elements(signal_size as u64));
 
     // --- Benchmark Naive (f64, Strict) ---
-    // group.bench_function("Naive_f64_Strict", |b| {
-    //     // `iter_batched` is essential for stateful objects.
-    //     // `setup` creates a fresh monitor for *each* iteration.
-    //     // `routine` runs the code to be measured.
-    //     b.iter_batched(
-    //         || {
-    //             // SETUP: Clone the inputs
-    //             let (f_clone, s_clone) = (formula.clone(), signal.clone());
-    //             // SETUP: Build the monitor
-    //             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-    //                 .formula(f_clone)
-    //                 .strategy(MonitoringStrategy::Naive)
-    //                 .evaluation_mode(EvaluationMode::Strict)
-    //                 .build()
-    //                 .unwrap();
-    //             (monitor, s_clone)
-    //         },
-    //         |(mut monitor, signal)| {
-    //             // ROUTINE: This is the part being timed
-    //             for step in signal {
-    //                 monitor.update(&step);
-    //             }
-    //         },
-    //         criterion::BatchSize::SmallInput,
-    //     );
-    // });
+    group.bench_function("Naive_f64_Strict", |b| {
+        // `iter_batched` is essential for stateful objects.
+        // `setup` creates a fresh monitor for *each* iteration.
+        // `routine` runs the code to be measured.
+        b.iter_batched(
+            || {
+                // SETUP: Clone the inputs
+                let (f_clone, s_clone) = (formula.clone(), signal.clone());
+                // SETUP: Build the monitor
+                let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                    .formula(f_clone)
+                    .strategy(MonitoringStrategy::Naive)
+                    .evaluation_mode(EvaluationMode::Strict)
+                    .build()
+                    .unwrap();
+                (monitor, s_clone)
+            },
+            |(mut monitor, signal)| {
+                // ROUTINE: This is the part being timed
+                for step in signal {
+                    monitor.update(&step);
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
     // --- Benchmark Incremental (bool, Strict) ---
     group.bench_function("Incremental_bool_Strict", |b| {
         b.iter_batched(
