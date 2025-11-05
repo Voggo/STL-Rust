@@ -4,13 +4,15 @@ use ostl::stl::core::{RobustnessInterval, TimeInterval};
 
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 
-use rand::prelude::*;
-
+use rand::rngs::ThreadRng;
+use rand::rng;
 use rand_distr::{Distribution, Normal};
 
 use std::thread::sleep;
 
 use std::time::Duration;
+
+// MQTT client will be imported in main where used
 
 struct SignalStepGenerator {
     signal_name: &'static str,
@@ -31,7 +33,7 @@ impl SignalStepGenerator {
 
             current_time: Duration::from_secs(0),
 
-            rng: rand::rng(),
+            rng: rng(),
 
             normal_dist: Normal::new(mean, std_dev).unwrap(),
 
@@ -53,27 +55,39 @@ impl SignalStepGenerator {
 fn get_formula() -> FormulaDefinition {
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
 
-    FormulaDefinition::Until(
+    // FormulaDefinition::Until(
+    //     TimeInterval {
+    //         start: Duration::from_secs(0),
+
+    //         end: Duration::from_secs(6),
+    //     },
+    //     Box::new(FormulaDefinition::Globally(
+    //         TimeInterval {
+    //             start: Duration::from_secs(0),
+
+    //             end: Duration::from_secs(2),
+    //         },
+    //         Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
+    //     )),
+    //     Box::new(FormulaDefinition::Eventually(
+    //         TimeInterval {
+    //             start: Duration::from_secs(0),
+
+    //             end: Duration::from_secs(2),
+    //         },
+    //         Box::new(FormulaDefinition::GreaterThan("y", 3.0)),
+    //     )),
+    // )
+    // G[0,100] (x>0 && x < 6)
+    FormulaDefinition::Globally(
         TimeInterval {
             start: Duration::from_secs(0),
 
-            end: Duration::from_secs(6),
+            end: Duration::from_secs(100),
         },
-        Box::new(FormulaDefinition::Globally(
-            TimeInterval {
-                start: Duration::from_secs(0),
-
-                end: Duration::from_secs(2),
-            },
+        Box::new(FormulaDefinition::And(
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-        )),
-        Box::new(FormulaDefinition::Eventually(
-            TimeInterval {
-                start: Duration::from_secs(0),
-
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("y", 3.0)),
+            Box::new(FormulaDefinition::LessThan("x", 6.0)),
         )),
     )
 }
@@ -81,38 +95,104 @@ fn get_formula() -> FormulaDefinition {
 fn main() {
     let formula = get_formula();
 
-    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+    // Build the monitor
+    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula)
         .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Strict)
+        .evaluation_mode(EvaluationMode::Eager)
         .build()
         .unwrap();
 
     println!("Monitoring formula: {}", monitor.specification_to_string());
 
-    let mut signal_generator_x = SignalStepGenerator::new("x", 2.0, 1.0, 0.1);
+    // MQTT setup
+    use rumqttc::{Client, MqttOptions, QoS};
 
-    let mut signal_generator_y = SignalStepGenerator::new("y", 4.0, 4.0, 0.1);
+    let mut mqttoptions = MqttOptions::new("stl_monitor_demo", "localhost", 1883);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    let (mut client, mut connection) = Client::new(mqttoptions, 10);
+
+    // Spawn a background thread to poll the connection so outgoing packets are processed
+    std::thread::spawn(move || {
+        for event in connection.iter() {
+            // We intentionally ignore most events; printing can be uncommented for debugging
+            // e.g., println!("MQTT event: {:?}", event);
+            let _ = event;
+        }
+    });
+
+    // Helper message structs for serialization
+    #[derive(serde::Serialize)]
+    struct SignalMessage {
+        signal: &'static str,
+        value: f64,
+        timestamp_secs: f64,
+    }
+
+    #[derive(serde::Serialize)]
+    struct RobustnessMessage {
+        outputs: Vec<OutputEntry>,
+        timestamp_secs: f64,
+    }
+
+    #[derive(serde::Serialize)]
+    struct OutputEntry {
+        signal: String,
+        value: Option<f64>,
+        timestamp_secs: f64,
+    }
+
+    let mut signal_generator_x = SignalStepGenerator::new("x", 0.0, 0.1, 0.1);
 
     loop {
         let step_x = signal_generator_x.next_step();
 
-        let step_y = signal_generator_y.next_step();
+        // Publish the generated step for x
+        let msg_x = SignalMessage {
+            signal: step_x.signal,
+            value: step_x.value,
+            timestamp_secs: step_x.timestamp.as_secs_f64(),
+        };
+        let payload_x = serde_json::to_vec(&msg_x).expect("serialize step_x");
+        client
+            .publish("stl/signals/x", QoS::AtLeastOnce, false, payload_x)
+            .expect("publish x");
 
+        // Update monitor with x only and publish robustness outputs
         let result_x = monitor.update(&step_x);
 
+        // Combine outputs and publish (only from result_x)
+        let mut outputs = Vec::new();
+        for out in result_x.iter() {
+            let entry = OutputEntry {
+                signal: out.signal.to_string(),
+                value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
+                timestamp_secs: out.timestamp.as_secs_f64(),
+            };
+            outputs.push(entry);
+        }
+
+        if !outputs.is_empty() {
+            // Use the latest timestamp among output entries as the message timestamp
+            let latest_ts = outputs
+                .iter()
+                .map(|o| o.timestamp_secs)
+                .fold(0.0_f64, |a, b| a.max(b));
+            let robustness_msg = RobustnessMessage {
+                outputs,
+                timestamp_secs: latest_ts,
+            };
+            let payload = serde_json::to_vec(&robustness_msg).expect("serialize robustness");
+            client
+                .publish("stl/robustness", QoS::AtLeastOnce, false, payload)
+                .expect("publish robustness");
+        }
+
         println!(
-            "At time {:?}, signal value: {:.2}, robustness: {:?}",
+            "At time {:?}, x: {:.2}, robustness: {:?}",
             step_x.timestamp, step_x.value, result_x
         );
 
-        let result_y = monitor.update(&step_y);
-
-        println!(
-            "At time {:?}, signal value: {:.2}, robustness: {:?}",
-            step_y.timestamp, step_y.value, result_y
-        );
-
-        sleep(Duration::from_millis(1000));
+        sleep(Duration::from_millis(500));
     }
 }
