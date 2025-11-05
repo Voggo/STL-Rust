@@ -52,13 +52,14 @@ where
 }
 
 /// Processes binary operators in Eager evaluation mode.
+/// Processes binary operators in Eager evaluation mode (piecewise-constant interpolation).
 fn process_binary_eager<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
     left_last_known: &mut Step<Option<Y>>,
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
-    default_atomic: Y,
+    _default_atomic: Y, // This is not used for correct interval semantics
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
@@ -67,104 +68,109 @@ where
 {
     let mut output_robustness = Vec::new();
 
-    // Only process while both caches have data. This prevents using a stale "last_known"
-    // value when one sub-formula has not yet produced a result for a given time.
-    while let (Some(left_step), Some(right_step)) =
+    // Loop 1: Process while both caches have data, using piecewise-constant logic
+    while let (Some(left_front), Some(right_front)) =
         (left_cache.get_front(), right_cache.get_front())
     {
-        let new_step = if left_step.timestamp < right_step.timestamp {
-            // Left is earlier. Combine its value with the last known value from the right.
-            let combined_value = left_step.value.as_ref().and_then(|l_val| {
-                right_last_known
-                    .value
-                    .as_ref()
-                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update the last known value for the left side and pop the step.
-            *left_last_known = left_step.clone();
-            
-            let step = if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
-                left_cache.pop_front().unwrap()
-            } else {
-                left_cache.get_front().unwrap().clone()
-            };
-            Step::new("output", combined_value, step.timestamp)
-        } else if right_step.timestamp < left_step.timestamp {
-            // Right is earlier. Combine its value with the last known value from the left.
-            let combined_value = right_step.value.as_ref().and_then(|r_val| {
-                left_last_known
-                    .value
-                    .as_ref()
-                    .map(|l_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update the last known value for the right side and pop the step.
-            *right_last_known = right_step.clone();
-            let step = if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
-                right_cache.pop_front().unwrap()
-            } else {
-                right_cache.get_front().unwrap().clone()
-            };
-            Step::new("output", combined_value, step.timestamp)
+        let (t_out, l_val, r_val) = if left_front.timestamp < right_front.timestamp {
+            // Left is earlier. Combine with last known right.
+            let t = left_front.timestamp;
+            let l = left_front.value.clone();
+            let r = right_last_known.value.clone();
+            *left_last_known = left_cache.pop_front().unwrap(); // consume left
+            (t, l, r)
+        } else if right_front.timestamp < left_front.timestamp {
+            // Right is earlier. Combine with last known left.
+            let t = right_front.timestamp;
+            let l = left_last_known.value.clone();
+            let r = right_front.value.clone();
+            *right_last_known = right_cache.pop_front().unwrap(); // consume right
+            (t, l, r)
         } else {
-            // Timestamps are equal. Combine their current values.
-            let combined_value = left_step.value.as_ref().and_then(|l_val| {
-                right_step
-                    .value
-                    .as_ref()
-                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-            // Update last known values for both and pop from both caches.
-            *left_last_known = left_step.clone();
-            *right_last_known = right_step.clone();
-
-            let step_t = left_cache.get_front().unwrap().timestamp;
-
-            if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
-                left_cache.pop_front();
-                right_cache.pop_front();
-            }
-            Step::new("output", combined_value, step_t)
+            // Timestamps align. Combine and consume both.
+            let t = left_front.timestamp;
+            let l = left_front.value.clone();
+            let r = right_front.value.clone();
+            *left_last_known = left_cache.pop_front().unwrap();
+            *right_last_known = right_cache.pop_front().unwrap();
+            (t, l, r)
         };
-        output_robustness.push(new_step);
+
+        let combined_value = l_val.as_ref().and_then(|l_val| {
+            r_val
+                .as_ref()
+                .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
+        });
+
+        output_robustness.push(Step::new("output", combined_value, t_out));
+    }
+    
+    let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
+
+    // Process left cache: iterate so we advance even when we don't pop (interval semantics).
+    let mut left_iter2 = left_cache.iter();
+    let mut left_deferred_pops: usize = 0;
+    loop {
+        match left_iter2.next() {
+            Some(left) => {
+                let left_value = left.value.to_owned().unwrap();
+                if _default_atomic == left_value && max_timestamp <= left.timestamp {
+                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), left.timestamp);
+                    output_robustness.push(new_step.clone());
+                    // For non-interval semantics we need to remove the entry; defer pop until
+                    // after we drop the iterator to avoid borrow conflicts.
+                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                        left_deferred_pops += 1;
+                    }
+                    *left_last_known = new_step.clone();
+                    max_timestamp = max_timestamp.max(new_step.timestamp);
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), left.timestamp);
+                    output_robustness.push(new_step.clone());
+                } else {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    drop(left_iter2);
+    for _ in 0..left_deferred_pops {
+        left_cache.pop_front();
     }
 
-    // 'short-circuit' logic:
-    // for and: if either left or right is false, result is false
-    // for or: if either left or right is true, result is true
-    let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
-    while let Some(left) = left_cache.get_front() {
-        let left_value = left.value.to_owned().unwrap();
-        if default_atomic == left_value && max_timestamp <= left.timestamp {
-            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step::new("output", Some(value), left.timestamp);
-            output_robustness.push(new_step.clone());
-            left_cache.pop_front();
-            *left_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-            let value = combine_op(left.value.to_owned().unwrap(), default_atomic.clone());
-            let new_step = Step::new("output", Some(value), left.timestamp);
-            output_robustness.push(new_step.clone());
-        } else {
-            break;
+    // Process right cache similarly.
+    let mut right_iter2 = right_cache.iter();
+    let mut right_deferred_pops: usize = 0;
+    loop {
+        match right_iter2.next() {
+            Some(right) => {
+                let right_value = right.value.to_owned().unwrap();
+                if _default_atomic == right_value && max_timestamp <= right.timestamp {
+                    let value = combine_op(right_value, _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), right.timestamp);
+                    output_robustness.push(new_step.clone());
+                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
+                        right_deferred_pops += 1;
+                    }
+                    *right_last_known = new_step.clone();
+                    max_timestamp = max_timestamp.max(new_step.timestamp);
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    let value = combine_op(right_value, _default_atomic.clone());
+                    let new_step = Step::new("output", Some(value), right.timestamp);
+                    output_robustness.push(new_step.clone());
+                } else {
+                    break;
+                }
+            }
+            None => break,
         }
     }
-    while let Some(right) = right_cache.get_front() {
-        let right_value = right.value.to_owned().unwrap();
-        if default_atomic == right_value && max_timestamp <= right.timestamp {
-            let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step::new("output", Some(value), right.timestamp);
-            output_robustness.push(new_step.clone());
-            right_cache.pop_front();
-            *right_last_known = new_step.clone();
-            max_timestamp = max_timestamp.max(new_step.timestamp);
-        } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-            let value = combine_op(right_value, default_atomic.clone());
-            let new_step = Step::new("output", Some(value), right.timestamp);
-            output_robustness.push(new_step.clone());
-        } else {
-            break;
-        }
+    drop(right_iter2);
+    for _ in 0..right_deferred_pops {
+        right_cache.pop_front();
     }
 
     output_robustness
@@ -660,7 +666,7 @@ where
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let windowed_max_value = self
+            let mut windowed_max_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -674,6 +680,7 @@ where
                     tasks_to_remove.push(t_eval);
                     output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    windowed_max_value = Y::or(windowed_max_value, Y::unknown());
                     output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
                 }
                 continue;
@@ -767,13 +774,15 @@ where
             self.eval_buffer.insert(sub_step.timestamp);
         }
 
+        let mut tasks_to_remove = Vec::new();
+
         // 2. Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
             // Find the maximum robustness within the part of the window we have seen so far.
-            let windowed_min_value = self
+            let mut windowed_min_value = self
                 .cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -781,22 +790,27 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
-                self.eval_buffer.pop_first();
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if windowed_min_value == Y::atomic_false() {
+                    // self.eval_buffer.pop_first();
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    windowed_min_value = Y::and(windowed_min_value, Y::unknown());
+                    output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
+                }
+                continue; // Move to the next task
+            } else if step.timestamp >= (window_end) {
+                // B. Check for normal completion: if the full time window has passed.
+                // self.eval_buffer.pop_first(); // Task is done
+                tasks_to_remove.push(t_eval);
                 output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
                 continue; // Move to the next task
+            } else {
+                // C. If neither condition is met, we can't resolve this task yet.
+                // Since the buffer is time-ordered, we stop for this cycle.
+                break;
             }
-
-            // B. Check for normal completion: if the full time window has passed.
-            if step.timestamp >= (t_eval + self.max_lookahead) {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                continue; // Move to the next task
-            }
-
-            // C. If neither condition is met, we can't resolve this task yet.
-            // Since the buffer is time-ordered, we stop for this cycle.
-            break;
         }
 
         // 3. Prune the cache to remove old values that are no longer needed.
@@ -805,6 +819,9 @@ where
         // back to `step.timestamp + interval.start - interval.end`.
         // A simpler, safe bound is to just keep `interval.end` duration of history.
         self.cache.prune(self.interval.end);
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         output_robustness
     }
@@ -922,13 +939,14 @@ where
                     .map_or(self.t_max, |s| s.timestamp),
             );
 
+        let mut tasks_to_remove = Vec::new();
         // Process the evaluation buffer for tasks that can now be completed.
-        while let Some(&t_eval) = self.eval_buffer.first() {
+        for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
             // Find out if the robustness values in the window allow us to conclude the until value.
-            let left_min_value = self
+            let mut left_min_value = self
                 .left_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -936,14 +954,20 @@ where
                 .fold(Y::globally_identity(), Y::and);
 
             // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && left_min_value == Y::atomic_false() {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
-                continue; // Move to the next task
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if left_min_value == Y::atomic_false() {
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
+                    continue; // Move to the next task
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    left_min_value = Y::and(left_min_value, Y::unknown());
+                    output_robustness.push(Step::new("output", Some(left_min_value), t_eval));
+                    continue; // Move to the next task
+                }
             }
 
             // Check if right is true at some point in the window
-            let right_max_value = self
+            let mut right_max_value = self
                 .right_cache
                 .iter()
                 .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
@@ -951,19 +975,23 @@ where
                 .fold(Y::eventually_identity(), Y::or);
 
             // Short-circuit: if right is true in the window, until is true
-            if self.mode == EvaluationMode::Eager
-                && right_max_value == Y::atomic_true()
-                && self.t_max >= t_eval
-            {
-                self.eval_buffer.pop_first(); // Task is done
-                output_robustness.push(Step::new("output", Some(Y::atomic_true()), t_eval));
-                continue; // Move to the next task
+            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
+                if right_max_value == Y::atomic_true() && self.t_max >= t_eval {
+                    tasks_to_remove.push(t_eval);
+                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
+                    continue; // Move to the next task
+                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                    right_max_value = Y::or(right_max_value, Y::unknown());
+                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
+                    continue;
+                }
             }
 
             // Normal completion: if the full time window has passed.
             if step.timestamp >= (t_eval + self.max_lookahead) {
                 let until_value = Y::or(left_min_value, right_max_value);
-                self.eval_buffer.pop_first(); // Task is done
+                // self.eval_buffer.pop_first(); // Task is done
+                tasks_to_remove.push(t_eval);
                 output_robustness.push(Step::new("output", Some(until_value), t_eval));
                 continue; // Move to the next task
             }
@@ -974,6 +1002,10 @@ where
         // Prune the caches.
         self.left_cache.prune(self.interval.end);
         self.right_cache.prune(self.interval.end);
+
+        for t in tasks_to_remove {
+            self.eval_buffer.remove(&t);
+        }
 
         // update last eval time to max in output_robustness
         if let Some(last_step) = output_robustness.last() {
