@@ -6,6 +6,7 @@ use ostl::stl::core::TimeInterval;
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
 
+#[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
@@ -61,7 +62,9 @@ fn benchmark_monitors(c: &mut Criterion) {
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
+    #[cfg(feature = "dhat-heap")]
     run_memory_profiling(&formula, &signal);
+
 
     run_performance_benchmark(c, formula, signal_size, signal);
 }
@@ -145,6 +148,7 @@ fn run_performance_benchmark(c: &mut Criterion, formula: FormulaDefinition, sign
     group.finish();
 }
 
+#[cfg(feature = "dhat-heap")]
 fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
     // Start memory profiling
     let _profiler = dhat::Profiler::builder().testing().build();
@@ -188,6 +192,7 @@ fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
     print_heap_stats("Incremental Eager bool");
 }
 
+#[cfg(feature = "dhat-heap")]
 fn print_heap_stats(test_name: &'static str) {
     // use serde_json to write dhat profile to file
     let heap_stats = dhat::HeapStats::get();
