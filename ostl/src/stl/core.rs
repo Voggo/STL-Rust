@@ -156,6 +156,7 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn atomic_false() -> Self;
     fn atomic_greater_than(value: f64, c: f64) -> Self;
     fn atomic_less_than(value: f64, c: f64) -> Self;
+    fn unknown() -> Self;
 }
 impl RobustnessSemantics for f64 {
     fn and(l: f64, r: f64) -> f64 {
@@ -187,6 +188,9 @@ impl RobustnessSemantics for f64 {
     }
     fn atomic_less_than(value: f64, c: f64) -> Self {
         c - value
+    }
+    fn unknown() -> Self {
+        f64::NAN
     }
 }
 
@@ -222,6 +226,10 @@ impl RobustnessSemantics for bool {
     fn atomic_less_than(value: f64, c: f64) -> Self {
         value < c
     }
+    fn unknown() -> Self {
+        // In the boolean case, we can represent "unknown" as false
+        false
+    }
 }
 
 impl RobustnessSemantics for RobustnessInterval {
@@ -242,17 +250,18 @@ impl RobustnessSemantics for RobustnessInterval {
 
     fn implies(antecedent: Self, consequent: Self) -> Self {
         // implication: max(-antecedent, consequent)
-        (-antecedent).max(consequent)
+        // (-antecedent).max(consequent)
+        Self::or(-antecedent, consequent)
     }
 
     fn eventually_identity() -> Self {
         // identity for sup / eventuality is negative infinity
-        RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY)
+        RobustnessInterval(f64::NEG_INFINITY, f64::NEG_INFINITY)
     }
 
     fn globally_identity() -> Self {
         // identity for inf / globally is positive infinity
-        RobustnessInterval(f64::INFINITY, f64::NEG_INFINITY)
+        RobustnessInterval(f64::INFINITY, f64::INFINITY)
     }
 
     fn atomic_true() -> Self {
@@ -271,5 +280,9 @@ impl RobustnessSemantics for RobustnessInterval {
 
     fn atomic_less_than(value: f64, c: f64) -> Self {
         RobustnessInterval(c - value, c - value)
+    }
+
+    fn unknown() -> Self {
+        RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY)
     }
 }
