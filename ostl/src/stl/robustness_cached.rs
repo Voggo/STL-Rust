@@ -104,7 +104,7 @@ where
 
         output_robustness.push(Step::new("output", combined_value, t_out));
     }
-    
+
     let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
 
     // Process left cache: iterate so we advance even when we don't pop (interval semantics).
@@ -651,56 +651,66 @@ where
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
-        // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
+        // 1. Add new sub-formula results to the cache
+        //    By using `into_iter`, we consume the vector and move the steps,
+        //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
-            self.cache.add_step(sub_step.clone());
-            // Add a task to the evaluation buffer for this new timestamp.
-            // Keep track of timestamps we need to evaluate.
             self.eval_buffer.insert(sub_step.timestamp);
+            self.cache.add_step(sub_step); // sub_step is moved
         }
 
         let mut tasks_to_remove = Vec::new();
-        // 2. Process the evaluation buffer for tasks that can now be completed.
+        let current_time = step.timestamp;
+
+        // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Find the maximum robustness within the part of the window we have seen so far.
-            let mut windowed_max_value = self
+            // Use `skip_while` and `take_while` to iterate only over
+            // the relevant part of the cache, not the whole thing.
+            let windowed_max_value = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
                 .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or);
+                .fold(Y::eventually_identity(), Y::or); // Use the identity from your code
 
-            // A. Check for short-circuiting: if the max value is "true", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if windowed_max_value == Y::atomic_true() {
-                    // self.eval_buffer.pop_first(); // Task is done
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    windowed_max_value = Y::or(windowed_max_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                }
-                continue;
-            } else if step.timestamp >= (window_end) {
-                // self.eval_buffer.pop_first(); // Task is done
-                tasks_to_remove.push(t_eval);
-                output_robustness.push(Step::new("output", Some(windowed_max_value), t_eval));
-                continue; // Move to the next task
+            let final_value: Option<Y>;
+            let mut remove_task = false;
+
+            // state-based logic
+            if current_time >= window_end {
+                // Case 1: Full window has passed. This is a final, "closed" value.
+                final_value = Some(windowed_max_value);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
+                // Case 2: Eager short-circuit. Found "true" before window closed.
+                final_value = Some(windowed_max_value);
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open.
+                // We must 'or' with the unknown future.
+                let intermediate_value = Y::or(windowed_max_value, Y::unknown()); // Use unknown() from your code
+                final_value = Some(intermediate_value);
+                // DO NOT remove task, it's not finished
             } else {
-                // C. If neither condition is met, we can't resolve this task yet.
-                // Since the buffer is time-ordered, we stop for this cycle.
+                // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
                 break;
+            }
+
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
+            }
+
+            if remove_task {
+                tasks_to_remove.push(t_eval);
             }
         }
 
-        // 3. Prune the cache to remove old values that are no longer needed.
-        // A value at time `t` is only needed as long as it can be in some future window.
-        // The latest possible window starts at `step.timestamp`, so we need to keep values
-        // back to `step.timestamp + interval.start - interval.end`.
-        // A simpler, safe bound is to just keep `interval.end` duration of history.
+        // 3. Prune the cache and buffer
         self.cache.prune(self.interval.end);
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
@@ -767,57 +777,66 @@ where
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
-        // 1. Add new sub-formula results to the cache and queue up new evaluation tasks.
+        // 1. Add new sub-formula results to the cache
+        //    By using `into_iter`, we consume the vector and move the steps,
+        //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
-            self.cache.add_step(sub_step.clone());
-            // Add a task to the evaluation buffer for this new timestamp.
             self.eval_buffer.insert(sub_step.timestamp);
+            self.cache.add_step(sub_step); // sub_step is moved
         }
 
         let mut tasks_to_remove = Vec::new();
+        let current_time = step.timestamp;
 
-        // 2. Process the evaluation buffer for tasks that can now be completed.
+        // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Find the maximum robustness within the part of the window we have seen so far.
-            let mut windowed_min_value = self
+            // Use `skip_while` and `take_while` to iterate only over
+            // the relevant part of the cache, not the whole thing.
+            let windowed_min_value = self
                 .cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
                 .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and);
+                .fold(Y::globally_identity(), Y::and); // Use the identity from your code
 
-            // A. Check for short-circuiting: if the max value is "false", we have a definitive result.
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if windowed_min_value == Y::atomic_false() {
-                    // self.eval_buffer.pop_first();
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    windowed_min_value = Y::and(windowed_min_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                }
-                continue; // Move to the next task
-            } else if step.timestamp >= (window_end) {
-                // B. Check for normal completion: if the full time window has passed.
-                // self.eval_buffer.pop_first(); // Task is done
-                tasks_to_remove.push(t_eval);
-                output_robustness.push(Step::new("output", Some(windowed_min_value), t_eval));
-                continue; // Move to the next task
+            let final_value: Option<Y>;
+            let mut remove_task = false;
+
+            // state-based logic
+            if current_time >= window_end {
+                // Case 1: Full window has passed. This is a final, "closed" value.
+                final_value = Some(windowed_min_value);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
+                // Case 2: Eager short-circuit. Found "false" before window closed.
+                final_value = Some(windowed_min_value);
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open.
+                // We must 'and' with the unknown future.
+                let intermediate_value = Y::and(windowed_min_value, Y::unknown()); // Use unknown() from your code
+                final_value = Some(intermediate_value);
+                // DO NOT remove task, it's not finished
             } else {
-                // C. If neither condition is met, we can't resolve this task yet.
-                // Since the buffer is time-ordered, we stop for this cycle.
+                // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
                 break;
+            }
+
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
+            }
+
+            if remove_task {
+                tasks_to_remove.push(t_eval);
             }
         }
 
-        // 3. Prune the cache to remove old values that are no longer needed.
-        // A value at time `t` is only needed as long as it can be in some future window.
-        // The latest possible window starts at `step.timestamp`, so we need to keep values
-        // back to `step.timestamp + interval.start - interval.end`.
-        // A simpler, safe bound is to just keep `interval.end` duration of history.
+        // 3. Prune the cache and buffer
         self.cache.prune(self.interval.end);
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
