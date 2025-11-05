@@ -24,10 +24,25 @@ struct SignalStepGenerator {
     normal_dist: Normal<f64>,
 
     jitter: Normal<f64>,
+    // anomaly configuration
+    anomaly_at: Option<Duration>,
+    anomaly_applied: bool,
+    original_mean: f64,
+    original_std: f64,
+    anomaly_mean_shift: f64,
+    anomaly_std_multiplier: f64,
 }
 
 impl SignalStepGenerator {
-    fn new(signal_name: &'static str, mean: f64, std_dev: f64, jitter: f64) -> Self {
+    fn new(
+        signal_name: &'static str,
+        mean: f64,
+        std_dev: f64,
+        jitter: f64,
+        anomaly_at: Option<Duration>,
+        anomaly_mean_shift: f64,
+        anomaly_std_multiplier: f64,
+    ) -> Self {
         SignalStepGenerator {
             signal_name: signal_name,
 
@@ -38,10 +53,34 @@ impl SignalStepGenerator {
             normal_dist: Normal::new(mean, std_dev).unwrap(),
 
             jitter: Normal::new(0.0, jitter).unwrap(),
+
+            anomaly_at,
+            anomaly_applied: false,
+            original_mean: mean,
+            original_std: std_dev,
+            anomaly_mean_shift,
+            anomaly_std_multiplier,
         }
     }
 
     fn next_step(&mut self) -> Step<f64> {
+        // If an anomaly is scheduled and time has been reached, update distribution once
+        if !self.anomaly_applied {
+            if let Some(at) = self.anomaly_at {
+                if self.current_time >= at {
+                    // compute new parameters
+                    let new_mean = self.original_mean + self.anomaly_mean_shift;
+                    let new_std = (self.original_std * self.anomaly_std_multiplier).max(1e-12);
+                    self.normal_dist = Normal::new(new_mean, new_std).unwrap();
+                    self.anomaly_applied = true;
+                    println!(
+                        "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
+                        self.current_time, new_mean, self.anomaly_mean_shift, new_std, self.anomaly_std_multiplier
+                    );
+                }
+            }
+        }
+
         let value = self.normal_dist.sample(&mut self.rng);
 
         let step = Step::new(self.signal_name, value, self.current_time);
@@ -83,7 +122,7 @@ fn get_formula() -> FormulaDefinition {
         TimeInterval {
             start: Duration::from_secs(0),
 
-            end: Duration::from_secs(100),
+            end: Duration::from_secs(20),
         },
         Box::new(FormulaDefinition::And(
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
@@ -142,7 +181,60 @@ fn main() {
         timestamp_secs: f64,
     }
 
-    let mut signal_generator_x = SignalStepGenerator::new("x", 0.0, 0.1, 0.1);
+    // Basic CLI parsing for anomaly injection (no external crates required)
+    let mut anomaly_time: Option<Duration> = None;
+    let mut anomaly_mean_shift: f64 = 0.0;
+    let mut anomaly_std_multiplier: f64 = 1.0;
+
+    let argv: Vec<String> = std::env::args().collect();
+    let mut idx = 1usize;
+    while idx < argv.len() {
+        match argv[idx].as_str() {
+            "--anomaly-time" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(secs) = argv[idx + 1].parse::<f64>() {
+                        anomaly_time = Some(Duration::from_secs_f64(secs));
+                    }
+                    idx += 1;
+                }
+            }
+            "--anomaly-mean-shift" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
+                        anomaly_mean_shift = v;
+                    }
+                    idx += 1;
+                }
+            }
+            "--anomaly-std-multiplier" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
+                        anomaly_std_multiplier = v;
+                    }
+                    idx += 1;
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+
+    if anomaly_time.is_some() {
+        println!(
+            "Configured anomaly at {:?}: mean_shift={}, std_multiplier={}",
+            anomaly_time, anomaly_mean_shift, anomaly_std_multiplier
+        );
+    }
+
+    let mut signal_generator_x = SignalStepGenerator::new(
+        "x",
+        0.0,
+        0.1,
+        0.1,
+        anomaly_time,
+        anomaly_mean_shift,
+        anomaly_std_multiplier,
+    );
 
     loop {
         let step_x = signal_generator_x.next_step();
