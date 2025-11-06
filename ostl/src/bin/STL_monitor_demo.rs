@@ -1,6 +1,6 @@
 use ostl::ring_buffer::Step;
 
-use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::core::{TimeInterval};
 
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 
@@ -96,6 +96,7 @@ impl SignalStepGenerator {
 }
 
 fn get_formula() -> FormulaDefinition {
+    // G[0,20] ( (x < 5 && x > -5) && (x > 1 || x < -1) ) -> F[0,5] ( G[0,2] (x < 1 && x > -1) )
     FormulaDefinition::Globally(
         TimeInterval {
             start: Duration::from_secs(0),
@@ -210,12 +211,68 @@ fn main() {
 
     println!("Monitoring formula: {}", monitor.specification_to_string());
 
+    // Basic CLI parsing for anomaly injection (no external crates required)
+    let mut anomaly_time: Option<Duration> = None;
+    let mut anomaly_mean_shift: f64 = 0.0;
+    let mut anomaly_std_multiplier: f64 = 1.0;
+    // MQTT broker port (default 1883)
+    let mut broker_port: u16 = 1883;
+
+    let argv: Vec<String> = std::env::args().collect();
+    let mut idx = 1usize;
+    while idx < argv.len() {
+        match argv[idx].as_str() {
+            "--anomaly-time" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(secs) = argv[idx + 1].parse::<f64>() {
+                        anomaly_time = Some(Duration::from_secs_f64(secs));
+                    }
+                    idx += 1;
+                }
+            }
+            "--anomaly-mean-shift" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
+                        anomaly_mean_shift = v;
+                    }
+                    idx += 1;
+                }
+            }
+            "--anomaly-std-multiplier" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
+                        anomaly_std_multiplier = v;
+                    }
+                    idx += 1;
+                }
+            }
+            "--port" => {
+                if idx + 1 < argv.len() {
+                    if let Ok(p) = argv[idx + 1].parse::<u16>() {
+                        broker_port = p;
+                    }
+                    idx += 1;
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+
+    if anomaly_time.is_some() {
+        println!(
+            "Configured anomaly at {:?}: mean_shift={}, std_multiplier={}",
+            anomaly_time, anomaly_mean_shift, anomaly_std_multiplier
+        );
+    }
+
     // MQTT setup
     use rumqttc::{Client, MqttOptions, QoS};
 
-    let mut mqttoptions = MqttOptions::new("stl_monitor_demo", "localhost", 1883);
+    // broker port configured via CLI (default 1883)
+    let mut mqttoptions = MqttOptions::new("stl_monitor_demo", "localhost", broker_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
-    let (mut client, mut connection) = Client::new(mqttoptions, 10);
+    let (client, mut connection) = Client::new(mqttoptions, 10);
 
     // Spawn a background thread to poll the connection so outgoing packets are processed
     std::thread::spawn(move || {
@@ -247,50 +304,7 @@ fn main() {
         timestamp_secs: f64,
     }
 
-    // Basic CLI parsing for anomaly injection (no external crates required)
-    let mut anomaly_time: Option<Duration> = None;
-    let mut anomaly_mean_shift: f64 = 0.0;
-    let mut anomaly_std_multiplier: f64 = 1.0;
-
-    let argv: Vec<String> = std::env::args().collect();
-    let mut idx = 1usize;
-    while idx < argv.len() {
-        match argv[idx].as_str() {
-            "--anomaly-time" => {
-                if idx + 1 < argv.len() {
-                    if let Ok(secs) = argv[idx + 1].parse::<f64>() {
-                        anomaly_time = Some(Duration::from_secs_f64(secs));
-                    }
-                    idx += 1;
-                }
-            }
-            "--anomaly-mean-shift" => {
-                if idx + 1 < argv.len() {
-                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
-                        anomaly_mean_shift = v;
-                    }
-                    idx += 1;
-                }
-            }
-            "--anomaly-std-multiplier" => {
-                if idx + 1 < argv.len() {
-                    if let Ok(v) = argv[idx + 1].parse::<f64>() {
-                        anomaly_std_multiplier = v;
-                    }
-                    idx += 1;
-                }
-            }
-            _ => {}
-        }
-        idx += 1;
-    }
-
-    if anomaly_time.is_some() {
-        println!(
-            "Configured anomaly at {:?}: mean_shift={}, std_multiplier={}",
-            anomaly_time, anomaly_mean_shift, anomaly_std_multiplier
-        );
-    }
+    
 
     let mut signal_generator_x = SignalStepGenerator::new(
         "x",
