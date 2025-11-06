@@ -4,8 +4,8 @@ use ostl::stl::core::{RobustnessInterval, TimeInterval};
 
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 
-use rand::rngs::ThreadRng;
 use rand::rng;
+use rand::rngs::ThreadRng;
 use rand_distr::{Distribution, Normal};
 
 use std::thread::sleep;
@@ -75,7 +75,11 @@ impl SignalStepGenerator {
                     self.anomaly_applied = true;
                     println!(
                         "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
-                        self.current_time, new_mean, self.anomaly_mean_shift, new_std, self.anomaly_std_multiplier
+                        self.current_time,
+                        new_mean,
+                        self.anomaly_mean_shift,
+                        new_std,
+                        self.anomaly_std_multiplier
                     );
                 }
             }
@@ -92,6 +96,40 @@ impl SignalStepGenerator {
 }
 
 fn get_formula() -> FormulaDefinition {
+    FormulaDefinition::Globally(
+        TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(20),
+        },
+        Box::new(FormulaDefinition::Implies(
+            Box::new(FormulaDefinition::And(
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::LessThan("x", 5.0)),
+                    Box::new(FormulaDefinition::GreaterThan("x", -5.0)),
+                )),
+                Box::new(FormulaDefinition::Or(
+                    Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                    Box::new(FormulaDefinition::LessThan("x", -1.0)),
+                )),
+            )),
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5),
+                },
+                Box::new(FormulaDefinition::Globally(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(2),
+                    },
+                    Box::new(FormulaDefinition::And(
+                        Box::new(FormulaDefinition::LessThan("x", 1.0)),
+                        Box::new(FormulaDefinition::GreaterThan("x", -1.0)),
+                    )),
+                )),
+            )),
+        )),
+    )
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
 
     // FormulaDefinition::Until(
@@ -118,15 +156,35 @@ fn get_formula() -> FormulaDefinition {
     //     )),
     // )
     // G[0,100] (x>0 && x < 6)
-    FormulaDefinition::Globally(
+    // FormulaDefinition::Globally(
+    //     TimeInterval {
+    //         start: Duration::from_secs(0),
+
+    //         end: Duration::from_secs(20),
+    //     },
+    //     Box::new(FormulaDefinition::And(
+    //         Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
+    //         Box::new(FormulaDefinition::LessThan("x", 6.0)),
+    //     )),
+    // )
+}
+
+fn get_eventually_formula() -> FormulaDefinition {
+    // F[0,20] (G[0,4] (x < 0.5 && x > -0.5))
+    FormulaDefinition::Eventually(
         TimeInterval {
             start: Duration::from_secs(0),
-
             end: Duration::from_secs(20),
         },
-        Box::new(FormulaDefinition::And(
-            Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            Box::new(FormulaDefinition::LessThan("x", 6.0)),
+        Box::new(FormulaDefinition::Globally(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(4),
+            },
+            Box::new(FormulaDefinition::And(
+                Box::new(FormulaDefinition::LessThan("x", 0.5)),
+                Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
+            )),
         )),
     )
 }
@@ -137,6 +195,14 @@ fn main() {
     // Build the monitor
     let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula)
+        .strategy(MonitoringStrategy::Incremental)
+        .evaluation_mode(EvaluationMode::Eager)
+        .build()
+        .unwrap();
+
+    // Build a second monitor that checks an "eventually" property on the same signal
+    let mut monitor_eventually: StlMonitor<f64, bool> = StlMonitor::builder()
+        .formula(get_eventually_formula())
         .strategy(MonitoringStrategy::Incremental)
         .evaluation_mode(EvaluationMode::Eager)
         .build()
@@ -229,7 +295,7 @@ fn main() {
     let mut signal_generator_x = SignalStepGenerator::new(
         "x",
         0.0,
-        0.1,
+        0.25,
         0.1,
         anomaly_time,
         anomaly_mean_shift,
@@ -250,14 +316,24 @@ fn main() {
             .publish("stl/signals/x", QoS::AtLeastOnce, false, payload_x)
             .expect("publish x");
 
-        // Update monitor with x only and publish robustness outputs
+        // Update monitors with x and collect robustness outputs from both
         let result_x = monitor.update(&step_x);
+        let result_evt = monitor_eventually.update(&step_x);
 
-        // Combine outputs and publish (only from result_x)
+        // Combine outputs from both monitors and publish
         let mut outputs = Vec::new();
         for out in result_x.iter() {
             let entry = OutputEntry {
-                signal: out.signal.to_string(),
+                // prefix signal name so the plot can distinguish monitors
+                signal: format!("spec1_/{}/{}", monitor.specification_to_string(), out.signal),
+                value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
+                timestamp_secs: out.timestamp.as_secs_f64(),
+            };
+            outputs.push(entry);
+        }
+        for out in result_evt.iter() {
+            let entry = OutputEntry {
+                signal: format!("spec2_/{}/{}", monitor_eventually.specification_to_string(), out.signal),
                 value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
@@ -281,10 +357,10 @@ fn main() {
         }
 
         println!(
-            "At time {:?}, x: {:.2}, robustness: {:?}",
-            step_x.timestamp, step_x.value, result_x
+            "At time {:?}, x: {:.2}, robustness_spec1: {:?}, robustness_spec2: {:?}",
+            step_x.timestamp, step_x.value, result_x, result_evt
         );
 
-        sleep(Duration::from_millis(500));
+        sleep(Duration::from_millis(750));
     }
 }

@@ -20,6 +20,7 @@ from collections import defaultdict, deque
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import gridspec
+from matplotlib.lines import Line2D
 
 import paho.mqtt.client as mqtt
 
@@ -130,11 +131,13 @@ def make_plot(window_seconds=None):
     gs = gridspec.GridSpec(2, 1, height_ratios=[2, 1], hspace=0.35)
     ax_signals = fig.add_subplot(gs[0])
     ax_rob = fig.add_subplot(gs[1], sharex=ax_signals)
-    ax_signals.set_title("Signals (real-time)")
+    ax_signals.set_title("Signal")
     ax_signals.set_ylabel("Value")
-    ax_rob.set_title("Robustness (real-time)")
+    ax_rob.set_title("Robustness")
     ax_rob.set_ylabel("Robustness")
     ax_rob.set_xlabel("Time (s)")
+    ax_rob.grid(True)
+    ax_signals.grid(True)
     return fig, ax_signals, ax_rob
 
 
@@ -151,6 +154,8 @@ def run_plot(broker_host="localhost", broker_port=1883, window_seconds=None, ref
     robustness_lines = {}
     # single fill for area <= 0.0 on robustness axis
     robustness_zero_fill = None
+    # legend artist for per-spec status (we'll recreate per-frame)
+    robustness_legend = None
 
     # start MQTT in background thread
     thr = threading.Thread(target=mqtt_thread, args=(broker_host, broker_port), daemon=True)
@@ -203,7 +208,7 @@ def run_plot(broker_host="localhost", broker_port=1883, window_seconds=None, ref
                     robustness[name]["v"].append(vf)
 
     def animate(frame):
-        nonlocal robustness_zero_fill
+        nonlocal robustness_zero_fill, robustness_legend
         process_queue()
 
         # Update signal lines
@@ -223,9 +228,9 @@ def run_plot(broker_host="localhost", broker_port=1883, window_seconds=None, ref
         # Update robustness lines
         for name, data in list(robustness.items()):
             if name not in robustness_lines:
-                line, = ax_rob.plot([], [], label=name, marker="x", markersize=4, linewidth=1, linestyle="-")
+                line, = ax_rob.plot([], [], label=name, marker="x", markersize=4, linewidth=2, linestyle="-")
                 robustness_lines[name] = line
-                ax_rob.legend(loc="upper left")
+                ax_rob.legend(loc="lower right")
             xs = data["t"]
             ys = data["v"]
             if len(xs) == 0:
@@ -253,6 +258,7 @@ def run_plot(broker_host="localhost", broker_port=1883, window_seconds=None, ref
 
         # y autoscale per axis for signals (keep default behavior)
         ax_signals.relim()
+        # ax_signals.set_ylim([-3, 3])
         ax_signals.autoscale_view(scalex=False, scaley=True)
 
         # compute robustness y-limits manually to avoid drifting caused by
@@ -291,6 +297,91 @@ def run_plot(broker_host="localhost", broker_port=1883, window_seconds=None, ref
                 top = min(0.0, ylim[1])
                 robustness_zero_fill = ax_rob.axhspan(ylim[0], top, color="red", alpha=0.25, zorder=0)
         except Exception:
+            pass
+
+        # Update/Show large status label on the signals axis based on latest robustness values
+        try:
+
+            # Build latest (value,timestamp) pairs grouped by specification prefix.
+            # robustness keys may be like "spec1/output" (we prefix them in the publisher),
+            # so group by the first path segment to get per-spec information.
+            spec_pairs = defaultdict(list)  # spec -> list of (value, timestamp)
+            for name, d in robustness.items():
+                if len(d["v"]) > 0 and len(d["t"]) > 0:
+                    spec = name.split("/")[0] if "/" in name else name
+                    spec_pairs[spec].append((d["v"][-1], d["t"][-1]))
+
+            # compute the latest signal timestamp (signal front) so we can show lag
+            signal_times = []
+            for d in signals.values():
+                signal_times.extend(d["t"])
+            latest_signal_ts = max(signal_times) if signal_times else None
+
+            # For positioning multiple spec labels stacked at the top
+            specs = list(spec_pairs.keys())
+            specs.sort()
+
+            status_infos = []  # list of (spec, status_text, status_color)
+            for spec in specs:
+                pairs = spec_pairs.get(spec, [])
+                if not pairs:
+                    continue
+                # choose by value so 0.0 (violation) takes precedence; on tie choose latest ts
+                min_val = min(v for v, t in pairs)
+                candidates = [(v, t) for v, t in pairs if v == min_val]
+                selected_val, selected_ts = max(candidates, key=lambda p: p[1])
+
+                status_text = None
+                status_color = None
+                if selected_val == 0.0:
+                    status_color = "red"
+                    status_text = "VIOLATED"
+                elif selected_val == 1.0:
+                    status_color = "green"
+                    status_text = "SATISFIED"
+
+                if status_text is not None:
+                    try:
+                        ts_str = f"{selected_ts:.2f}"
+                    except Exception:
+                        ts_str = str(selected_ts)
+                    if latest_signal_ts is not None:
+                        try:
+                            lag = latest_signal_ts - selected_ts
+                            lag_display = max(0.0, lag)
+                            lag_str = f"{lag_display:.2f}"
+                        except Exception:
+                            lag_str = "N/A"
+                    else:
+                        lag_str = "N/A"
+                    status_text = f"{status_text} at t={ts_str}\nlag: {lag_str}s"
+                    status_infos.append((spec, status_text, status_color))
+
+            # create/update a legend on the signals axis showing per-spec status
+            # remove previous per-spec legend if present
+            try:
+                if robustness_legend is not None:
+                    robustness_legend.remove()
+                    robustness_legend = None
+            except Exception:
+                robustness_legend = None
+
+            if status_infos:
+                handles = []
+                labels = []
+                for spec, txt, col in status_infos:
+                    # use a square marker handle colored to the status
+                    handles.append(Line2D([0], [0], color=col, marker='s', markersize=8, linewidth=0))
+                    # replace newline with space for legend readability
+                    labels.append(f"{spec}: {txt.replace('\n', ' ')}")
+                try:
+                    robustness_legend = ax_signals.legend(handles, labels, loc="upper right", framealpha=0.85, title="Specs")
+                    # ensure the signals legend (if any) remains by adding the new legend artist
+                    ax_signals.add_artist(robustness_legend)
+                except Exception:
+                    robustness_legend = None
+        except Exception:
+            # don't let label errors break animation
             pass
 
         return list(signal_lines.values()) + list(robustness_lines.values())
