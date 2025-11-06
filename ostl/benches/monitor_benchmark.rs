@@ -16,7 +16,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
 fn formula_1() -> FormulaDefinition {
-    // G[30, 100]((x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
+    //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
     FormulaDefinition::Globally(
         TimeInterval {
             start: Duration::from_secs(30),
@@ -28,9 +28,9 @@ fn formula_1() -> FormulaDefinition {
                     Box::new(FormulaDefinition::LessThan("x", 30.0)),
                     Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
                 )),
-                Box::new(FormulaDefinition::And(
-                    Box::new(FormulaDefinition::LessThan("x", 0.5)),
-                    Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
+                Box::new(FormulaDefinition::Or(
+                    Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
+                    Box::new(FormulaDefinition::LessThan("x", -0.5)),
                 )),
             )),
             Box::new(FormulaDefinition::Eventually(
@@ -100,7 +100,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = formula_1();
+    let formula = formula_3();
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
@@ -117,7 +117,9 @@ fn run_performance_benchmark(
     signal: Vec<Step<f64>>,
 ) {
     // Create a benchmark group to compare implementations
-    let mut group = c.benchmark_group("STL Monitor Performance");
+    let temp:StlMonitor<f64, bool> = StlMonitor::builder().formula(formula.clone()).build().unwrap();
+    let group_name = format!("STL Monitor Performance, Formula: {:?}, Signal Size: {}", temp.specification_to_string(), signal_size);
+    let mut group = c.benchmark_group(group_name);
     group.throughput(Throughput::Elements(signal_size as u64));
 
     // --- Benchmark Naive (f64, Strict) ---
