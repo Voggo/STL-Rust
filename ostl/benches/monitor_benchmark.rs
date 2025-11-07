@@ -1,11 +1,11 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use ostl::ring_buffer::Step;
-use ostl::stl::core::TimeInterval;
-use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
-use std::time::Duration;
 #[cfg(feature = "dhat-heap")]
 use dhat;
+use ostl::ring_buffer::Step;
+use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
+use std::time::Duration;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -15,20 +15,62 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // Copy-paste your formula/signal fixtures here
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
+fn formula_1() -> FormulaDefinition {
+    //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
+    FormulaDefinition::Globally(
+        TimeInterval {
+            start: Duration::from_secs(30),
+            end: Duration::from_secs(100),
+        },
+        Box::new(FormulaDefinition::Implies(
+            Box::new(FormulaDefinition::And(
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::LessThan("x", 30.0)),
+                    Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
+                )),
+                Box::new(FormulaDefinition::Or(
+                    Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
+                    Box::new(FormulaDefinition::LessThan("x", -0.5)),
+                )),
+            )),
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(50),
+                },
+                Box::new(FormulaDefinition::Globally(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(20),
+                    },
+                    Box::new(FormulaDefinition::And(
+                        Box::new(FormulaDefinition::LessThan("x", 0.5)),
+                        Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
+                    )),
+                )),
+            )),
+        )),
+    )
+}
+
 fn formula_2() -> FormulaDefinition {
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-    FormulaDefinition::And(
+    FormulaDefinition::Until(
+        TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(6),
+        },
         Box::new(FormulaDefinition::Globally(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(20),
+                end: Duration::from_secs(2),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )),
         Box::new(FormulaDefinition::Eventually(
             TimeInterval {
                 start: Duration::from_secs(0),
-                end: Duration::from_secs(25),
+                end: Duration::from_secs(2),
             },
             Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
         )),
@@ -42,7 +84,6 @@ fn formula_3() -> FormulaDefinition {
         Box::new(FormulaDefinition::LessThan("x", 10.0)),
     )
 }
-
 
 // IMPORTANT: Create a *long* signal for meaningful benchmarks
 fn get_long_signal(size: usize) -> Vec<Step<f64>> {
@@ -59,20 +100,26 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = formula_2();
+    let formula = formula_3();
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
     #[cfg(feature = "dhat-heap")]
     run_memory_profiling(&formula, &signal);
 
-
     run_performance_benchmark(c, formula, signal_size, signal);
 }
 
-fn run_performance_benchmark(c: &mut Criterion, formula: FormulaDefinition, signal_size: usize, signal: Vec<Step<f64>>) {
+fn run_performance_benchmark(
+    c: &mut Criterion,
+    formula: FormulaDefinition,
+    signal_size: usize,
+    signal: Vec<Step<f64>>,
+) {
     // Create a benchmark group to compare implementations
-    let mut group = c.benchmark_group("Formula 2 (f64, Strict) 1k steps");
+    let temp:StlMonitor<f64, bool> = StlMonitor::builder().formula(formula.clone()).build().unwrap();
+    let group_name = format!("STL Monitor Performance, Formula: {:?}, Signal Size: {}", temp.specification_to_string(), signal_size);
+    let mut group = c.benchmark_group(group_name);
     group.throughput(Throughput::Elements(signal_size as u64));
 
     // --- Benchmark Naive (f64, Strict) ---
@@ -102,7 +149,27 @@ fn run_performance_benchmark(c: &mut Criterion, formula: FormulaDefinition, sign
             criterion::BatchSize::SmallInput,
         );
     });
-
+    // --- Benchmark Incremental (bool, Strict) ---
+    group.bench_function("Incremental_bool_Strict", |b| {
+        b.iter_batched(
+            || {
+                let (f_clone, s_clone) = (formula.clone(), signal.clone());
+                let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+                    .formula(f_clone)
+                    .strategy(MonitoringStrategy::Incremental)
+                    .evaluation_mode(EvaluationMode::Strict)
+                    .build()
+                    .unwrap();
+                (monitor, s_clone)
+            },
+            |(mut monitor, signal)| {
+                for step in signal {
+                    monitor.update(&step);
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
     // --- Benchmark Incremental (f64, Strict) ---
     group.bench_function("Incremental_f64_Strict", |b| {
         b.iter_batched(
@@ -146,6 +213,27 @@ fn run_performance_benchmark(c: &mut Criterion, formula: FormulaDefinition, sign
             criterion::BatchSize::SmallInput,
         );
     });
+    // --- Benchmark Eager Incremental (f64, eager) ---
+    // group.bench_function("Incremental_RobustnessInterval_eager", |b| {
+    //     b.iter_batched(
+    //         || {
+    //             let (f_clone, s_clone) = (formula.clone(), signal.clone());
+    //             let monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+    //                 .formula(f_clone)
+    //                 .strategy(MonitoringStrategy::Incremental)
+    //                 .evaluation_mode(EvaluationMode::Eager)
+    //                 .build()
+    //                 .unwrap();
+    //             (monitor, s_clone)
+    //         },
+    //         |(mut monitor, signal)| {
+    //             for step in signal {
+    //                 monitor.update(&step);
+    //             }
+    //         },
+    //         criterion::BatchSize::SmallInput,
+    //     );
+    // });
     group.finish();
 }
 
@@ -181,7 +269,7 @@ fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
     drop(_profiler); // Stop profiling
     let _profiler = dhat::Profiler::builder().testing().build();
     // SETUP: Build the monitor for incremental and eager evaluation for bool
-    let mut monitor:StlMonitor<f64, bool> = StlMonitor::builder()
+    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula.clone())
         .strategy(MonitoringStrategy::Incremental)
         .evaluation_mode(EvaluationMode::Eager)
