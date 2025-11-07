@@ -811,7 +811,8 @@ where
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
+            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false()
+            {
                 // Case 2: Eager short-circuit. Found "false" before window closed.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
@@ -911,16 +912,19 @@ where
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
     }
-
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(
+        &mut self,
+        step: &Step<T>,
+    ) -> Vec<Step<Option<<Self as StlOperatorTrait<T>>::Output>>> {
         let mut output_robustness = Vec::new();
 
+        // 1. Populate caches with results from children operators
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
             // Add new sub-formula results to the cache and queue up new evaluation tasks.
             for update in left_updates {
                 self.left_cache.add_step(update.clone());
-
+                // Add the output timestamp from the child as a new t_eval task
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
                         self.eval_buffer.insert(update.timestamp);
@@ -944,92 +948,89 @@ where
             }
         }
 
-        // t_max is the max time we can evaluate up to, based on available data.
-        // it is the minimum of the latest timestamps in both caches.
-        self.t_max = self
-            .left_cache
-            .iter()
-            .last()
-            .map_or(self.t_max, |s| s.timestamp)
-            .min(
-                self.right_cache
-                    .iter()
-                    .last()
-                    .map_or(self.t_max, |s| s.timestamp),
-            );
-
         let mut tasks_to_remove = Vec::new();
-        // Process the evaluation buffer for tasks that can now be completed.
+        let current_time = step.timestamp;
+
+        // 2. Process the evaluation buffer for tasks that can now be completed
         for &t_eval in self.eval_buffer.iter() {
-            let window_start = t_eval + self.interval.start;
-            let window_end = t_eval + self.interval.end;
+            let window_start_t_eval = t_eval + self.interval.start;
+            let window_end_t_eval = t_eval + self.interval.end;
 
-            // Find out if the robustness values in the window allow us to conclude the until value.
-            let mut left_min_value = self
-                .left_cache
-                .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and);
-
-            // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if left_min_value == Y::atomic_false() {
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
-                    continue; // Move to the next task
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    left_min_value = Y::and(left_min_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(left_min_value), t_eval));
-                    continue; // Move to the next task
-                }
+            // In Strict mode, we can only evaluate if the full window [t_eval+a, t_eval+b]
+            // has passed relative to the current time.
+            if current_time < t_eval + self.get_max_lookahead() {
+                // Not enough data yet. Since the eval_buffer is time-ordered,
+                // we can stop processing tasks for this update.
+                break;
             }
 
-            // Check if right is true at some point in the window
-            let mut right_max_value = self
+            // If we are here, current_time >= window_end_t_eval, so we have all
+            // data for [t_eval+a, t_eval+b] and can compute the final robustness.
+
+            // The formula is:
+            // max_{t' \in [t_eval+a, t_eval+b]} (
+            //   min(
+            //     rho_psi(t'),
+            //     min_{t'' \in [t_eval+a, t')} rho_phi(t'')
+            //   )
+            // )
+
+            // This is the outer `max` (Eventually)
+            let mut max_robustness_in_window = Y::eventually_identity();
+
+            // Iterate over all t' in [window_start_t_eval, window_end_t_eval].
+            // We use the right_cache as the source of t' timestamps.
+            let t_prime_iter = self
                 .right_cache
                 .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or);
+                .skip_while(|s| s.timestamp < window_start_t_eval)
+                .take_while(|s| s.timestamp <= window_end_t_eval);
 
-            // Short-circuit: if right is true in the window, until is true
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if right_max_value == Y::atomic_true() && self.t_max >= t_eval {
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
-                    continue; // Move to the next task
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    right_max_value = Y::or(right_max_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
-                    continue;
-                }
+            for step_psi_t_prime in t_prime_iter {
+                let t_prime = step_psi_t_prime.timestamp;
+
+                // 1. Get rho_psi(t')
+                let robustness_psi = match &step_psi_t_prime.value {
+                    Some(val) => val.clone(),
+                    None => continue, // Cannot compute with None
+                };
+
+                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
+                let robustness_phi_g = self
+                    .left_cache
+                    .iter()
+                    .skip_while(|s| s.timestamp < window_start_t_eval) // t'' >= t_eval+a
+                    .take_while(|s| s.timestamp < t_prime) // t'' < t'
+                    .filter_map(|s| s.value.clone())
+                    .fold(Y::globally_identity(), Y::and);
+
+                // 3. Combine: min(rho_psi(t'), robustness_phi_g)
+                let robustness_at_t_prime = Y::and(robustness_psi, robustness_phi_g);
+
+                // 4. Outer max: max(..., robustness_at_t_prime)
+                max_robustness_in_window = Y::or(max_robustness_in_window, robustness_at_t_prime);
             }
 
-            // Normal completion: if the full time window has passed.
-            if step.timestamp >= (t_eval + self.max_lookahead) {
-                let until_value = Y::or(left_min_value, right_max_value);
-                // self.eval_buffer.pop_first(); // Task is done
-                tasks_to_remove.push(t_eval);
-                output_robustness.push(Step::new("output", Some(until_value), t_eval));
-                continue; // Move to the next task
-            }
-            // If no condition is met, we can't resolve this task yet.
-            break;
+            // ---
+            // **END OF FIXED LOGIC**
+            // ---
+
+            output_robustness.push(Step::new("output", Some(max_robustness_in_window), t_eval));
+            tasks_to_remove.push(t_eval);
         }
 
-        // Prune the caches.
-        self.left_cache.prune(self.interval.end);
-        self.right_cache.prune(self.interval.end);
+        // 3. Prune the caches and remove completed tasks from the buffer.
+        let lookahead = self.get_max_lookahead();
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
 
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
 
-        // update last eval time to max in output_robustness
         if let Some(last_step) = output_robustness.last() {
             self.last_eval_time = Some(last_step.timestamp);
-        }
+        };
 
         output_robustness
     }

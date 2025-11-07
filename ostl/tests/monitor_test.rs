@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use ostl::ring_buffer::Step;
-    use ostl::stl::core::{RobustnessSemantics, TimeInterval, RobustnessInterval};
+    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
@@ -650,26 +650,46 @@ mod tests {
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )
     )]
-    fn test_f64_interval_robustness(
-        #[case] formula: FormulaDefinition,
-    ) {
+    #[case(
+        // F[0,2](x>0) U[0,5] x<4
+        FormulaDefinition::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(2),
+            },
+            Box::new(FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
+            )),
+            Box::new(FormulaDefinition::LessThan("x", 4.0)),
+        )
+    )]
+    fn test_f64_interval_robustness(#[case] formula: FormulaDefinition) {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-        .formula(formula)
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Eager)
-        .build()
-        .unwrap();
-    
+            .formula(formula)
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+
         println!("Testing formula: {} \n", monitor.specification_to_string());
         // pass step to monitor to ensure it works
-        let step = vec![Step::new("x",  5.0, Duration::from_secs(0)),
-                         Step::new("x", 4.0, Duration::from_secs(1)),
-                         Step::new("x", 6.0, Duration::from_secs(2))];
-        
+        let step = vec![
+            Step::new("x", 5.0, Duration::from_secs(0)),
+            Step::new("x", 4.0, Duration::from_secs(1)),
+            Step::new("x", 6.0, Duration::from_secs(2)),
+        ];
+
         for s in step {
             let output = monitor.update(&s);
-            println!("Monitor output at {:?} with input: {:?}: \n {:?} \n", &s.timestamp, s.value, output);
+            println!(
+                "Monitor output at {:?} with input: {:?}: \n {:?} \n",
+                &s.timestamp, s.value, output
+            );
         }
 
         // println!("Monitor output: {:?}", output);
