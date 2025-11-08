@@ -980,6 +980,7 @@ where
                 .skip_while(|s| s < &window_start_t_eval)
                 .take_while(|s| s <= &effective_end_time); // Only up to current time
             // Only up to current time
+            let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
 
             for step_psi_t_prime in t_prime_iter {
                 let t_prime = step_psi_t_prime;
@@ -1005,13 +1006,16 @@ where
                     break; // Short-circuit: Falsified
                 }
 
-                // !!!!!!!!!!!!! IMPORTANT !!!!!!!!!!!!!
-                // We use `find` here to get the first step at or after t'.
-                // This seems very inefficient, and should be looked into.
-                let t_prime_right_step = self
-                    .right_cache
-                    .iter()
-                    .find(|s| s.timestamp >= t_prime && s.timestamp <= self.t_max);
+                // Advance the right_cache iterator to find the step corresponding to t_prime
+                while let Some(step) = right_cache_t_prime_iter.peek() {
+                    if step.timestamp < t_prime {
+                        right_cache_t_prime_iter.next(); // Consume and advance
+                    } else {
+                        break; // Found t' or passed it
+                    }
+                }
+                let t_prime_right_step = right_cache_t_prime_iter
+                    .find(|s| s.timestamp <= self.t_max);
                 // 1. Get rho_psi(t')
                 let robustness_psi = match t_prime_right_step {
                     Some(val) => val.value.clone().unwrap(),
@@ -1608,15 +1612,14 @@ mod tests {
         };
         let atomic_left = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic_right = Atomic::<f64>::new_less_than("y", 5.0);
-        let mut until =
-            Until::<f64, RingBuffer<Option<f64>>, f64>::new(
-                interval,
-                Box::new(atomic_left),
-                Box::new(atomic_right),
-                None,
-                None,
-                EvaluationMode::Eager,
-            );
+        let mut until = Until::<f64, RingBuffer<Option<f64>>, f64>::new(
+            interval,
+            Box::new(atomic_left),
+            Box::new(atomic_right),
+            None,
+            None,
+            EvaluationMode::Eager,
+        );
         until.get_signal_identifiers();
 
         println!("Until operator: {}", until.to_string());
@@ -1683,6 +1686,5 @@ mod tests {
         ];
 
         assert_eq!(all_outputs, expected_outputs);
-
     }
 }
