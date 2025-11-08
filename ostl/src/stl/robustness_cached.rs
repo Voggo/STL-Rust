@@ -5,6 +5,7 @@ use crate::stl::core::{
 };
 use crate::stl::monitor::EvaluationMode;
 use std::any::TypeId;
+use std::clone;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
@@ -912,19 +913,14 @@ where
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
     }
-    fn update(
-        &mut self,
-        step: &Step<T>,
-    ) -> Vec<Step<Option<<Self as StlOperatorTrait<T>>::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let mut output_robustness = Vec::new();
 
         // 1. Populate caches with results from children operators
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
-            // Add new sub-formula results to the cache and queue up new evaluation tasks.
             for update in left_updates {
                 self.left_cache.add_step(update.clone());
-                // Add the output timestamp from the child as a new t_eval task
                 if let Some(last_time) = self.last_eval_time {
                     if update.timestamp > last_time {
                         self.eval_buffer.insert(update.timestamp);
@@ -950,73 +946,129 @@ where
 
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
+        self.t_max = self
+            .left_cache
+            .iter()
+            .last()
+            .map_or(self.t_max, |s| s.timestamp)
+            .min(
+                self.right_cache
+                    .iter()
+                    .last()
+                    .map_or(self.t_max, |s| s.timestamp),
+            );
 
-        // 2. Process the evaluation buffer for tasks that can now be completed
+        // 2. Process the evaluation buffer for tasks
         for &t_eval in self.eval_buffer.iter() {
             let window_start_t_eval = t_eval + self.interval.start;
             let window_end_t_eval = t_eval + self.interval.end;
 
-            // In Strict mode, we can only evaluate if the full window [t_eval+a, t_eval+b]
-            // has passed relative to the current time.
-            if current_time < t_eval + self.get_max_lookahead() {
-                // Not enough data yet. Since the eval_buffer is time-ordered,
-                // we can stop processing tasks for this update.
-                break;
-            }
-
-            // If we are here, current_time >= window_end_t_eval, so we have all
-            // data for [t_eval+a, t_eval+b] and can compute the final robustness.
-
-            // The formula is:
-            // max_{t' \in [t_eval+a, t_eval+b]} (
-            //   min(
-            //     rho_psi(t'),
-            //     min_{t'' \in [t_eval+a, t')} rho_phi(t'')
-            //   )
-            // )
-
             // This is the outer `max` (Eventually)
-            let mut max_robustness_in_window = Y::eventually_identity();
+            let mut max_robustness = Y::eventually_identity();
+            let mut falsified = false;
 
-            // Iterate over all t' in [window_start_t_eval, window_end_t_eval].
-            // We use the right_cache as the source of t' timestamps.
+            // We can only evaluate up to the data we have.
+            // We must use the minimum of the current time and the window end.
+            let effective_end_time = current_time.min(window_end_t_eval);
+
+            // Iterate over all t' in [window_start_t_eval, effective_end_time].
+            // We use the eval_buffer as the source of t' timestamps.
             let t_prime_iter = self
-                .right_cache
+                .eval_buffer
                 .iter()
-                .skip_while(|s| s.timestamp < window_start_t_eval)
-                .take_while(|s| s.timestamp <= window_end_t_eval);
+                .map(|t| *t)
+                .skip_while(|s| s < &window_start_t_eval)
+                .take_while(|s| s <= &effective_end_time); // Only up to current time
+            // Only up to current time
 
             for step_psi_t_prime in t_prime_iter {
-                let t_prime = step_psi_t_prime.timestamp;
-
-                // 1. Get rho_psi(t')
-                let robustness_psi = match &step_psi_t_prime.value {
-                    Some(val) => val.clone(),
-                    None => continue, // Cannot compute with None
-                };
+                let t_prime = step_psi_t_prime;
 
                 // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
                 let robustness_phi_g = self
                     .left_cache
                     .iter()
                     .skip_while(|s| s.timestamp < window_start_t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp < t_prime) // t'' < t'
+                    .take_while(|s| s.timestamp <= t_prime) // t'' < t'
                     .filter_map(|s| s.value.clone())
                     .fold(Y::globally_identity(), Y::and);
+
+                // --- EAGER FALSIFICATION CHECK ---
+                // If phi has become false, and psi has not *already* made us true,
+                // then we are (and will remain) false.
+                if self.mode == EvaluationMode::Eager
+                    && robustness_phi_g == Y::atomic_false()
+                    && max_robustness == Y::atomic_false()
+                {
+                    max_robustness = Y::atomic_false();
+                    falsified = true;
+                    break; // Short-circuit: Falsified
+                }
+
+                // !!!!!!!!!!!!! IMPORTANT !!!!!!!!!!!!!
+                // We use `find` here to get the first step at or after t'.
+                // This seems very inefficient, and should be looked into.
+                let t_prime_right_step = self
+                    .right_cache
+                    .iter()
+                    .find(|s| s.timestamp >= t_prime && s.timestamp <= self.t_max);
+                // 1. Get rho_psi(t')
+                let robustness_psi = match t_prime_right_step {
+                    Some(val) => val.value.clone().unwrap(),
+                    None => continue, // Cannot compute with None
+                };
 
                 // 3. Combine: min(rho_psi(t'), robustness_phi_g)
                 let robustness_at_t_prime = Y::and(robustness_psi, robustness_phi_g);
 
                 // 4. Outer max: max(..., robustness_at_t_prime)
-                max_robustness_in_window = Y::or(max_robustness_in_window, robustness_at_t_prime);
+                max_robustness = Y::or(max_robustness, robustness_at_t_prime);
+
+                // --- EAGER SATISFACTION CHECK ---
+                if self.mode == EvaluationMode::Eager && max_robustness == Y::atomic_true() {
+                    break; // Short-circuit: Satisfied
+                }
             }
 
             // ---
-            // **END OF FIXED LOGIC**
+            // **State-based Eager/Strict/ROSI logic**
             // ---
+            let mut final_value: Option<Y> = None;
+            let mut remove_task = false;
 
-            output_robustness.push(Step::new("output", Some(max_robustness_in_window), t_eval));
-            tasks_to_remove.push(t_eval);
+            // **FIX 1: Use get_max_lookahead() for the Strict mode check.**
+            if current_time >= t_eval + self.get_max_lookahead() {
+                // Case 1: Full window *and* child lookaheads have passed.
+                // This is a final, "closed" value for Strict mode.
+                // (This also captures Eager results that were `false` until the end)
+                final_value = Some(max_robustness);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && max_robustness == Y::atomic_true() {
+                // Case 2: Eager short-circuit (Satisfaction). Found "true" before window closed.
+                final_value = Some(max_robustness); // which is Y::atomic_true()
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && falsified {
+                // **FIX 2: Add Eager short-circuit (Falsification).**
+                final_value = Some(max_robustness); // which is Y::atomic_false()
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open, no short-circuit.
+                let intermediate_value = Y::or(max_robustness, Y::unknown());
+                final_value = Some(intermediate_value);
+                // DO NOT remove task, it's not finished
+            } else {
+                // Case 4: Cannot evaluate yet (e.g., Strict/Eager bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
+                break;
+            }
+
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
+            }
+
+            if remove_task {
+                tasks_to_remove.push(t_eval);
+            }
         }
 
         // 3. Prune the caches and remove completed tasks from the buffer.
@@ -1206,6 +1258,7 @@ mod tests {
     use crate::ring_buffer::{RingBuffer, Step};
     use crate::stl::core::{StlOperatorTrait, TimeInterval};
     use crate::stl::monitor::EvaluationMode;
+    use pretty_assertions::{assert_eq, assert_ne};
     use std::time::Duration;
 
     // Atomic operators
@@ -1545,5 +1598,91 @@ mod tests {
                 expected.value.unwrap()
             );
         }
+    }
+
+    #[test]
+    fn until_operator_robustness() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(4),
+        };
+        let atomic_left = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic_right = Atomic::<f64>::new_less_than("y", 5.0);
+        let mut until =
+            Until::<f64, RingBuffer<Option<f64>>, f64>::new(
+                interval,
+                Box::new(atomic_left),
+                Box::new(atomic_right),
+                None,
+                None,
+                EvaluationMode::Eager,
+            );
+        until.get_signal_identifiers();
+
+        println!("Until operator: {}", until.to_string());
+
+        let signal_x_values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
+        let signal_x_timestamps = vec![0, 2, 4, 6, 8];
+        let signal_y_values = vec![10.0, 4.0, 6.0, 3.0, 7.0];
+        let signal_y_timestamps = vec![1, 3, 5, 7, 9];
+
+        let signal_x: Vec<_> = signal_x_values
+            .into_iter()
+            .zip(signal_x_timestamps.into_iter())
+            .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
+            .collect();
+
+        let signal_y: Vec<_> = signal_y_values
+            .into_iter()
+            .zip(signal_y_timestamps.into_iter())
+            .map(|(val, ts)| Step::new("y", val, Duration::from_secs(ts)))
+            .collect();
+
+        let mut x_iter = signal_x.iter().peekable();
+        let mut y_iter = signal_y.iter().peekable();
+        let mut all_outputs = Vec::new();
+        while x_iter.peek().is_some() || y_iter.peek().is_some() {
+            let mut outputs = Vec::new();
+            if let Some(x_step) = x_iter.peek() {
+                if let Some(y_step) = y_iter.peek() {
+                    if x_step.timestamp <= y_step.timestamp {
+                        println!("Processing x at {:?}", x_step.timestamp);
+                        outputs.extend(until.update(x_step));
+                        x_iter.next();
+                    } else {
+                        println!("Processing y at {:?}", y_step.timestamp);
+                        outputs.extend(until.update(y_step));
+                        y_iter.next();
+                    }
+                } else {
+                    println!("Processing x at {:?}", x_step.timestamp);
+                    outputs.extend(until.update(x_step));
+                    x_iter.next();
+                }
+            } else if let Some(y_step) = y_iter.peek() {
+                println!("Processing y at {:?}", y_step.timestamp);
+                outputs.extend(until.update(y_step));
+                y_iter.next();
+            }
+            for output in outputs.clone() {
+                println!(
+                    "Output at {:?}: {:?}",
+                    output.timestamp,
+                    output.value.unwrap()
+                );
+            }
+            all_outputs.extend(outputs);
+        }
+        let expected_outputs = vec![
+            Step::new("output", Some(1.0), Duration::from_secs(0)),
+            Step::new("output", Some(1.0), Duration::from_secs(1)),
+            Step::new("output", Some(1.0), Duration::from_secs(2)),
+            Step::new("output", Some(1.0), Duration::from_secs(3)),
+            Step::new("output", Some(-2.0), Duration::from_secs(4)),
+            Step::new("output", Some(-1.0), Duration::from_secs(5)),
+        ];
+
+        assert_eq!(all_outputs, expected_outputs);
+
     }
 }
