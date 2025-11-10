@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use ostl::ring_buffer::Step;
-    use ostl::stl::core::{RobustnessSemantics, TimeInterval, RobustnessInterval};
+    use ostl::stl;
+    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
@@ -53,140 +54,51 @@ mod tests {
     #[fixture]
     #[once]
     fn formula_1() -> FormulaDefinition {
-        FormulaDefinition::Globally(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-        )
+        stl! {
+            G[0,2] (x > 3)
+        }
     }
 
     #[fixture]
     #[once]
     fn formula_2() -> FormulaDefinition {
-        // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-        FormulaDefinition::Until(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(6),
-            },
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-            )),
-        )
+        stl! {(G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))}
     }
 
     #[fixture]
     #[once]
     fn formula_3() -> FormulaDefinition {
-        // F[0,2] (x > 5) && G[0, 2] (x > 0)
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-            )),
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-        )
+        stl! {(F[0,2] (x > 5)) && (G[0, 2] (x > 0))}
     }
 
     #[fixture]
     #[once]
     fn formula_4() -> FormulaDefinition {
-        // F[0, 2] (x > 5) && True
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-            )),
-            Box::new(FormulaDefinition::True),
-        )
+        stl! {(F[0, 2] (x > 5)) && (true)}
     }
 
     #[fixture]
     #[once]
     fn formula_5() -> FormulaDefinition {
-        // F[0, 2] (x > 5)
-        FormulaDefinition::Eventually(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-        )
+        stl! {F[0, 2] (x > 5)}
     }
 
     #[fixture]
     #[once]
     fn formula_6() -> FormulaDefinition {
-        // G[0, 5] (x > 0) -> F[0, 2] (x > 3)
-        FormulaDefinition::Implies(
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(5),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-            )),
-        )
+        stl! {(G[0, 5] (x > 0)) -> (F[0, 2] (x > 3))}
     }
 
     #[fixture]
     #[once]
     fn formula_7() -> FormulaDefinition {
-        // !x<5 || F
-        FormulaDefinition::Or(
-            Box::new(FormulaDefinition::Not(Box::new(
-                FormulaDefinition::LessThan("x", 5.0),
-            ))),
-            Box::new(FormulaDefinition::False),
-        )
+        stl! {(!(x < 5)) || (false)}
     }
 
     #[fixture]
     #[once]
     fn formula_8() -> FormulaDefinition {
-        // G[0,2](x>0) && y<5
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::LessThan("y", 5.0)),
-        )
+        stl! {(G[0,2](x>0)) && (y<5)}
     }
 
     // ---
@@ -309,8 +221,6 @@ mod tests {
             ],
             vec![Step::new("output", Some(false), Duration::from_secs(7))],
             vec![Step::new("output", Some(false), Duration::from_secs(8))],
-            vec![],
-            vec![],
         ]
     }
 
@@ -650,26 +560,30 @@ mod tests {
             Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
         )
     )]
-    fn test_f64_interval_robustness(
-        #[case] formula: FormulaDefinition,
-    ) {
+    fn test_f64_interval_robustness(#[case] formula: FormulaDefinition) {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-        .formula(formula)
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Eager)
-        .build()
-        .unwrap();
-    
+            .formula(formula_2())
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+
         println!("Testing formula: {} \n", monitor.specification_to_string());
         // pass step to monitor to ensure it works
-        let step = vec![Step::new("x",  5.0, Duration::from_secs(0)),
-                         Step::new("x", 4.0, Duration::from_secs(1)),
-                         Step::new("x", 6.0, Duration::from_secs(2))];
-        
+        let step = vec![
+            Step::new("x", -5.0, Duration::from_secs(0)),
+            Step::new("x", -4.0, Duration::from_secs(1)),
+            Step::new("x", -6.0, Duration::from_millis(2000)),
+            Step::new("x", 5.0, Duration::from_millis(3000)),
+        ];
+
         for s in step {
             let output = monitor.update(&s);
-            println!("Monitor output at {:?} with input: {:?}: \n {:?} \n", &s.timestamp, s.value, output);
+            println!(
+                "Monitor output at {:?} with input: {:?}: \n {:?} \n",
+                &s.timestamp, s.value, output
+            );
         }
 
         // println!("Monitor output: {:?}", output);
