@@ -978,20 +978,37 @@ where
                 .iter()
                 .skip_while(|s| s.timestamp < window_start_t_eval)
                 .take_while(|s| s.timestamp <= effective_end_time); // Only up to current time
-            // Only up to current time
-            let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
 
             for step_psi_t_prime in t_prime_iter {
                 let t_prime = step_psi_t_prime.timestamp;
 
-                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
-                let robustness_phi_g = self
+                let mut phi_iter = self
                     .left_cache
                     .iter()
-                    .skip_while(|s| s.timestamp < window_start_t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t'
-                    .filter_map(|s| s.value.clone())
-                    .fold(Y::globally_identity(), Y::and);
+                    .skip_while(|s| s.timestamp < window_start_t_eval)
+                    .take_while(|s| s.timestamp <= t_prime) // Strong: <=
+                    .peekable(); // Use peekable to check emptiness
+
+                let robustness_phi_g = if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>()
+                    && window_start_t_eval >= t_prime // we include equality for ROSI since it treats [a,a] as non-empty
+                {
+                    // Special Case for ROSI: When the interval is empty,
+                    // ROSI semantics dictate that we return the globally identity.
+                    Y::globally_identity()
+                } else if window_start_t_eval > t_prime {
+                    // Case 1: Interval is semantically empty (e.g., [1, 0]).
+                    // This is vacuously true.
+                    Y::globally_identity()
+                } else if phi_iter.peek().is_none() {
+                    // Case 2: Interval [a, b] is non-empty, but we have NO data.
+                    // The result is UNKNOWN.
+                    Y::unknown()
+                } else {
+                    // Case 3: We have data. Compute the infimum.
+                    phi_iter
+                        .filter_map(|s| s.value.clone())
+                        .fold(Y::globally_identity(), Y::and)
+                };
 
                 // 1. Get rho_psi(t')
                 let robustness_psi = match step_psi_t_prime.value.clone() {
