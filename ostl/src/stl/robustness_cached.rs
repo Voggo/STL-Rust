@@ -971,19 +971,18 @@ where
             // We must use the minimum of the current time and the window end.
             let effective_end_time = current_time.min(window_end_t_eval);
 
-            // Iterate over all t' in [window_start_t_eval, effective_end_time].
+            // Iterate over all t' in [t+a, t+b] ([window_start_t_eval, effective_end_time]).
             // We use the eval_buffer as the source of t' timestamps.
             let t_prime_iter = self
-                .eval_buffer
+                .right_cache
                 .iter()
-                .map(|t| *t)
-                .skip_while(|s| s < &window_start_t_eval)
-                .take_while(|s| s <= &effective_end_time); // Only up to current time
+                .skip_while(|s| s.timestamp < window_start_t_eval)
+                .take_while(|s| s.timestamp <= effective_end_time); // Only up to current time
             // Only up to current time
             let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
 
             for step_psi_t_prime in t_prime_iter {
-                let t_prime = step_psi_t_prime;
+                let t_prime = step_psi_t_prime.timestamp;
 
                 // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
                 let robustness_phi_g = self
@@ -994,50 +993,40 @@ where
                     .filter_map(|s| s.value.clone())
                     .fold(Y::globally_identity(), Y::and);
 
-                // --- EAGER FALSIFICATION CHECK ---
-                // If phi has become false, and psi has not *already* made us true,
-                // then we are (and will remain) false.
-                if self.mode == EvaluationMode::Eager
-                    && robustness_phi_g == Y::atomic_false()
-                    && max_robustness == Y::atomic_false()
-                {
-                    max_robustness = Y::atomic_false();
-                    falsified = true;
-                    break; // Short-circuit: Falsified
-                }
-
-                // Advance the right_cache iterator to find the step corresponding to t_prime
-                while let Some(step) = right_cache_t_prime_iter.peek() {
-                    if step.timestamp < t_prime {
-                        right_cache_t_prime_iter.next(); // Consume and advance
-                    } else {
-                        break; // Found t' or passed it
-                    }
-                }
-                let t_prime_right_step = right_cache_t_prime_iter
-                    .find(|s| s.timestamp <= self.t_max);
                 // 1. Get rho_psi(t')
-                let robustness_psi = match t_prime_right_step {
-                    Some(val) => val.value.clone().unwrap(),
+                let robustness_psi = match step_psi_t_prime.value.clone() {
+                    Some(val) => val,
                     None => continue, // Cannot compute with None
                 };
+
+                // --- EAGER SHORT-CIRCUIT LOGIC ---
+                if self.mode == EvaluationMode::Eager {
+                    // --- FALSIFICATION CHECK ---
+                    // If phi has become false, and psi has not *already* made us true,
+                    // then we are (and will remain) false.
+                    if robustness_phi_g == Y::atomic_false() && robustness_psi != Y::atomic_true() {
+                        max_robustness = Y::atomic_false();
+                        falsified = true;
+                        break; // Short-circuit: Falsified
+                    }
+                    // --- SATISFACTION CHECK ---
+                    else if robustness_psi == Y::atomic_true() {
+                        max_robustness = Y::atomic_true();
+                        break; // Short-circuit: Satisfied
+                    }
+                }
 
                 // 3. Combine: min(rho_psi(t'), robustness_phi_g)
                 let robustness_at_t_prime = Y::and(robustness_psi, robustness_phi_g);
 
                 // 4. Outer max: max(..., robustness_at_t_prime)
                 max_robustness = Y::or(max_robustness, robustness_at_t_prime);
-
-                // --- EAGER SATISFACTION CHECK ---
-                if self.mode == EvaluationMode::Eager && max_robustness == Y::atomic_true() {
-                    break; // Short-circuit: Satisfied
-                }
             }
 
             // ---
             // **State-based Eager/Strict/ROSI logic**
             // ---
-            let mut final_value: Option<Y> = None;
+            let final_value: Option<Y>;
             let mut remove_task = false;
 
             // **FIX 1: Use get_max_lookahead() for the Strict mode check.**
@@ -1262,7 +1251,7 @@ mod tests {
     use crate::ring_buffer::{RingBuffer, Step};
     use crate::stl::core::{StlOperatorTrait, TimeInterval};
     use crate::stl::monitor::EvaluationMode;
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::assert_eq;
     use std::time::Duration;
 
     // Atomic operators

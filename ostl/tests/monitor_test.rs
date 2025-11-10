@@ -3,11 +3,11 @@ mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
+    use pretty_assertions::{assert_eq, assert_ne};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
     use std::time::Duration;
     use std::vec;
-    use pretty_assertions::{assert_eq, assert_ne};
 
     // ---
     // Helper Functions
@@ -302,12 +302,12 @@ mod tests {
                 Step::new("output", Some(true), Duration::from_secs(1)),
                 Step::new("output", Some(true), Duration::from_secs(2)),
                 Step::new("output", Some(true), Duration::from_secs(3)),
+                Step::new("output", Some(true), Duration::from_secs(4)),
+                Step::new("output", Some(true), Duration::from_secs(5)),
             ],
-            vec![
-                Step::new("output", Some(false), Duration::from_secs(4)),
-                Step::new("output", Some(false), Duration::from_secs(5)),
-                Step::new("output", Some(false), Duration::from_secs(6)),
-            ],
+            vec![],
+            vec![],
+            vec![Step::new("output", Some(false), Duration::from_secs(6))],
             vec![Step::new("output", Some(false), Duration::from_secs(7))],
             vec![Step::new("output", Some(false), Duration::from_secs(8))],
             vec![],
