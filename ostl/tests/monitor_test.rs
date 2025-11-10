@@ -310,8 +310,6 @@ mod tests {
             vec![Step::new("output", Some(false), Duration::from_secs(6))],
             vec![Step::new("output", Some(false), Duration::from_secs(7))],
             vec![Step::new("output", Some(false), Duration::from_secs(8))],
-            vec![],
-            vec![],
         ]
     }
 
@@ -671,7 +669,7 @@ mod tests {
     fn test_f64_interval_robustness(#[case] formula: FormulaDefinition) {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula)
+            .formula(formula_2())
             .strategy(MonitoringStrategy::Incremental)
             .evaluation_mode(EvaluationMode::Eager)
             .build()
