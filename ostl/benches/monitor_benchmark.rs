@@ -100,7 +100,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = formula_3();
+    let formula = formula_2();
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
@@ -214,26 +214,26 @@ fn run_performance_benchmark(
         );
     });
     // --- Benchmark Eager Incremental (f64, eager) ---
-    // group.bench_function("Incremental_RobustnessInterval_eager", |b| {
-    //     b.iter_batched(
-    //         || {
-    //             let (f_clone, s_clone) = (formula.clone(), signal.clone());
-    //             let monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-    //                 .formula(f_clone)
-    //                 .strategy(MonitoringStrategy::Incremental)
-    //                 .evaluation_mode(EvaluationMode::Eager)
-    //                 .build()
-    //                 .unwrap();
-    //             (monitor, s_clone)
-    //         },
-    //         |(mut monitor, signal)| {
-    //             for step in signal {
-    //                 monitor.update(&step);
-    //             }
-    //         },
-    //         criterion::BatchSize::SmallInput,
-    //     );
-    // });
+    group.bench_function("Incremental_RoSI", |b| {
+        b.iter_batched(
+            || {
+                let (f_clone, s_clone) = (formula.clone(), signal.clone());
+                let monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+                    .formula(f_clone)
+                    .strategy(MonitoringStrategy::Incremental)
+                    .evaluation_mode(EvaluationMode::Eager)
+                    .build()
+                    .unwrap();
+                (monitor, s_clone)
+            },
+            |(mut monitor, signal)| {
+                for step in signal {
+                    monitor.update(&step);
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
     group.finish();
 }
 
