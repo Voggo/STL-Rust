@@ -958,6 +958,11 @@ where
                     .map_or(self.t_max, |s| s.timestamp),
             );
 
+        // If there is no data in the left cache it cannot be calculated yet
+        if self.left_cache.is_empty() || self.right_cache.is_empty() {
+            return output_robustness;
+        }
+
         // 2. Process the evaluation buffer for tasks
         for &t_eval in self.eval_buffer.iter() {
             let window_start_t_eval = t_eval + self.interval.start;
@@ -990,10 +995,9 @@ where
                     .left_cache
                     .iter()
                     .skip_while(|s| s.timestamp < window_start_t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t'
+                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
                     .filter_map(|s| s.value.clone())
                     .fold(Y::globally_identity(), Y::and);
-
                 // --- EAGER FALSIFICATION CHECK ---
                 // If phi has become false, and psi has not *already* made us true,
                 // then we are (and will remain) false.
@@ -1014,8 +1018,8 @@ where
                         break; // Found t' or passed it
                     }
                 }
-                let t_prime_right_step = right_cache_t_prime_iter
-                    .find(|s| s.timestamp <= self.t_max);
+                let t_prime_right_step =
+                    right_cache_t_prime_iter.find(|s| s.timestamp <= self.t_max);
                 // 1. Get rho_psi(t')
                 let robustness_psi = match t_prime_right_step {
                     Some(val) => val.value.clone().unwrap(),
