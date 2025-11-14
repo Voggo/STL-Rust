@@ -6,10 +6,14 @@ pub struct Step<T> {
     pub value: T,
     pub timestamp: Duration,
 }
-    
+
 impl<T> Step<T> {
-    pub fn new(signal : &'static str, value: T, timestamp: Duration) -> Self {
-        Step { signal, value, timestamp }
+    pub fn new(signal: &'static str, value: T, timestamp: Duration) -> Self {
+        Step {
+            signal,
+            value,
+            timestamp,
+        }
     }
 }
 
@@ -23,6 +27,10 @@ pub trait RingBufferTrait {
     // A Generic Associated Type (GAT) for the iterator.
     // The <'a> here links the iterator's lifetime to the lifetime of `&'a self`.
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>>
+    where
+        Self: 'a;
+
+    type IterMut<'a>: Iterator<Item = &'a mut Step<Self::Value>>
     where
         Self: 'a;
 
@@ -40,9 +48,10 @@ pub trait RingBufferTrait {
 
     // The iter method now returns the generic iterator type.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
+    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RingBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
@@ -64,6 +73,10 @@ where
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }
+
+    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<'_, Step<T>> {
+        self.steps.iter_mut()
+    }
 }
 
 impl<T> RingBufferTrait for RingBuffer<T>
@@ -74,6 +87,11 @@ where
     type Container = VecDeque<Step<T>>;
     type Iter<'a>
         = std::collections::vec_deque::Iter<'a, Step<T>>
+    where
+        Self: 'a;
+
+    type IterMut<'a>
+        = std::collections::vec_deque::IterMut<'a, Step<T>>
     where
         Self: 'a;
 
@@ -116,6 +134,10 @@ where
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a> {
+        self.iter_mut()
     }
 }
 

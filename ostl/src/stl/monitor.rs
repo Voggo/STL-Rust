@@ -1,5 +1,8 @@
 use crate::ring_buffer::{RingBuffer, Step};
-use crate::stl::core::{RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait, TimeInterval, RobustnessInterval};
+use crate::stl::core::{
+    RobustnessInterval, RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait,
+    TimeInterval,
+};
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Implies, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
@@ -98,8 +101,8 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     /// Builds the final StlMonitor by recursively constructing the operator tree.
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
     where
-        T: Into<f64> + Copy + 'static,           // Add required bounds
-        Y: RobustnessSemantics + Copy + 'static, // Add required bounds
+        T: Into<f64> + Copy + 'static, // Add required bounds
+        Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug, // Add required bounds
     {
         let is_bool = TypeId::of::<Y>() == TypeId::of::<bool>();
         let is_f64 = TypeId::of::<Y>() == TypeId::of::<f64>();
@@ -108,11 +111,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             "bool"
         } else if is_f64 {
             "f64"
-        } 
-        else if is_robustness_interval {
+        } else if is_robustness_interval {
             "RobustnessInterval"
-        }
-        else {
+        } else {
             return Err("Unsupported output type for robustness semantics");
         };
 
@@ -127,7 +128,8 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
                 return Err("Eager evaluation mode is not supported for f64 output type");
             }
             (MonitoringStrategy::Incremental, _, _) => {
-                let mut root_operator = self.build_incremental_operator(formula_def, self.evaluation_mode);
+                let mut root_operator =
+                    self.build_incremental_operator(formula_def, self.evaluation_mode);
                 root_operator.get_signal_identifiers();
                 root_operator
             }
@@ -216,7 +218,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>>
     where
         T: Into<f64> + Copy + 'static,
-        Y: RobustnessSemantics + Copy + 'static,
+        Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
     {
         match formula {
             FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
