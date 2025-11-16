@@ -42,6 +42,8 @@ pub trait RingBufferTrait {
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
+    fn update_step(&mut self, step: Step<Self::Value>) -> bool;
+
     /// Prune steps older than `max_age` from the buffer.
     /// This method removes all steps with a timestamp less than `current_time - max_age`.
     fn prune(&mut self, max_age: Duration);
@@ -70,6 +72,14 @@ where
         self.steps.push_back(step);
     }
 
+    pub fn update_step(&mut self, step: Step<T>) -> bool {
+        self.steps.binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
+            .map(|index| {
+                self.steps[index] = step;
+            })
+            .is_ok()
+    }
+
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }
@@ -77,6 +87,7 @@ where
     pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<'_, Step<T>> {
         self.steps.iter_mut()
     }
+
 }
 
 impl<T> RingBufferTrait for RingBuffer<T>
@@ -116,6 +127,9 @@ where
 
     fn add_step(&mut self, step: Step<T>) {
         self.add_step(step)
+    }
+    fn update_step(&mut self, step: Step<Self::Value>) -> bool {
+        self.update_step(step)
     }
     fn prune(&mut self, max_age: Duration) {
         let current_time = match self.get_back() {

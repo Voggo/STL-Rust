@@ -682,7 +682,7 @@ where
             let mut remove_task = false;
 
             // state-based logic
-            if current_time >= t_eval + self.max_lookahead{
+            if current_time >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
@@ -917,66 +917,98 @@ where
         let mut output_robustness = Vec::new();
 
         // 1. Populate caches with results from children operators
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.update(step);
-            for update in left_updates {
+        let left_updates =
+            if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
+                self.left.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut left_updates = left_updates.iter().peekable();
+        let right_updates =
+            if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
+                self.right.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut right_updates = right_updates.iter().peekable();
 
-                let mut found = false;
+		while left_updates.peek().is_some() || right_updates.peek().is_some() {
+			match (left_updates.peek(), right_updates.peek()) {
+				(Some(l), Some(r)) if l.timestamp == r.timestamp => {
+					let left_update = left_updates.next().unwrap();
+					let right_update = right_updates.next().unwrap();
+					if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+                    if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+                    self.eval_buffer.insert(left_update.timestamp);
+				}
+				(Some(l), Some(r)) if l.timestamp < r.timestamp => {
+					let left_update = left_updates.next().unwrap();
+					if let (Some(last_left), Some(last_right)) =
+						(self.left_cache.iter().last(), self.right_cache.iter().last())
+					{
+						if last_left.timestamp < last_right.timestamp {
+							self.left_cache.add_step(Step::new(
+								"interpolated",
+								last_left.value.clone(),
+								last_right.timestamp,
+							));
+						}
+					}
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+					self.eval_buffer.insert(left_update.timestamp);
+				}
+                (Some(_), None) => {
+                    let left_update = left_updates.next().unwrap();
+					if let (Some(last_left), Some(last_right)) =
+						(self.left_cache.iter().last(), self.right_cache.iter().last())
+					{
+						if last_left.timestamp < last_right.timestamp {
+							self.left_cache.add_step(Step::new(
+								"interpolated",
+								last_left.value.clone(),
+								last_right.timestamp,
+							));
+						}
+					}
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+					self.eval_buffer.insert(left_update.timestamp);
+				}
+				(Some(_), Some(_)) | (None, Some(_)) => { // Implies r.timestamp < l.timestamp
+					let right_update = right_updates.next().unwrap();
+					if let (Some(last_right), Some(last_left)) =
+						(self.right_cache.iter().last(), self.left_cache.iter().last())
+					{
+						if last_right.timestamp < last_left.timestamp {
+							self.right_cache.add_step(Step::new(
+								"interpolated",
+								last_right.value.clone(),
+								last_left.timestamp,
+							));
+						}
+					}
+					if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+					self.eval_buffer.insert(right_update.timestamp);
+				}
+				(None, None) => break, // Both iterators are empty
+			}
+		}
 
-                // NOTE: This only needs to update existing entries if the same timestamp can appear
-                // multiple times with different values. If this is not the case, we can skip this
-                // search and directly add the new step (i.e. only do this if RobustnessInterval is used)
-                self.left_cache
-                    .iter_mut()
-                    .filter(|s| s.timestamp == update.timestamp)
-                    .for_each(|s| {
-                        *s = update.clone();
-                        found = true;
-                    });
+        // for left in self.left_cache.iter() {
+        //     println!("Left cache: {:?}", left);
+        // }
 
-                if !found {
-                    self.left_cache.add_step(update.clone());
-                }
-
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
-                }
-            }
-        }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.update(step);
-            for update in right_updates {
-                let mut found = false;
-                self.right_cache
-                    .iter_mut()
-                    .filter(|s| s.timestamp == update.timestamp)
-                    .for_each(|s| {
-                        *s = update.clone();
-                        found = true;
-                    });
-
-                if !found {
-                    self.right_cache.add_step(update.clone());
-                }
-
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
-                }
-            }
-        }
-
-        //// PRINT CACHES FOR DEBUGGING
-        // println!("Left cache:");
-        // for step in self.left_cache.iter() {
-        //     println!("  time = {:?}, value = {:?}", step.timestamp, step.value);
+        // for right in self.right_cache.iter() {
+        //     println!("Right cache: {:?}", right);
         // }
 
         let mut tasks_to_remove = Vec::new();
