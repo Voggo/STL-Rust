@@ -5,7 +5,6 @@ use crate::stl::core::{
 };
 use crate::stl::monitor::EvaluationMode;
 use std::any::TypeId;
-use std::clone;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
@@ -471,133 +470,6 @@ where
 impl<T, Y> SignalIdentifier for Not<T, Y> {
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
-    }
-}
-
-#[derive(Clone)]
-pub struct Implies<T, C, Y> {
-    pub antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub left_cache: C,
-    pub right_cache: C,
-    last_eval_time: Option<Duration>,
-    pub left_last_known: Step<Option<Y>>,
-    pub right_last_known: Step<Option<Y>>,
-    left_signals_set: HashSet<&'static str>,
-    right_signals_set: HashSet<&'static str>,
-    mode: EvaluationMode,
-}
-
-impl<T, C, Y> Implies<T, C, Y> {
-    pub fn new(
-        antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache: Option<C>,
-        right_cache: Option<C>,
-        mode: EvaluationMode,
-    ) -> Self
-    where
-        T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-        Y: RobustnessSemantics + 'static,
-    {
-        Implies {
-            antecedent,
-            consequent,
-            left_cache: left_cache.unwrap_or_else(|| C::new()),
-            right_cache: right_cache.unwrap_or_else(|| C::new()),
-            last_eval_time: None,
-            left_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            right_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            left_signals_set: HashSet::new(),
-            right_signals_set: HashSet::new(),
-            mode,
-        }
-    }
-}
-
-impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
-where
-    T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
-{
-    type Output = Y;
-
-    fn get_max_lookahead(&self) -> Duration {
-        let left_lookahead = self.antecedent.get_max_lookahead();
-        let right_lookahead = self.consequent.get_max_lookahead();
-        left_lookahead.max(right_lookahead)
-    }
-
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.antecedent.update(step);
-            for update in left_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.left_cache.add_step(update);
-                    }
-                } else {
-                    self.left_cache.add_step(update);
-                }
-            }
-        }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.consequent.update(step);
-            for update in right_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.right_cache.add_step(update);
-                    }
-                } else {
-                    self.right_cache.add_step(update);
-                }
-            }
-        }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
-            }
-            EvaluationMode::Eager => process_binary_eager(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                &mut self.left_last_known,
-                &mut self.right_last_known,
-                Y::implies,
-                Y::atomic_true(), // Default atomic value for 'implies'
-            ),
-        };
-
-        let lookahead = self.get_max_lookahead();
-        self.left_cache.prune(lookahead);
-        self.right_cache.prune(lookahead);
-
-        if let Some(last_step) = output.last() {
-            self.last_eval_time = Some(last_step.timestamp);
-        };
-        output
-    }
-}
-
-impl<T, C, Y> SignalIdentifier for Implies<T, C, Y> {
-    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
-        let mut ids = std::collections::HashSet::new();
-        self.left_signals_set
-            .extend(self.antecedent.get_signal_identifiers());
-        self.right_signals_set
-            .extend(self.consequent.get_signal_identifiers());
-        ids.extend(self.left_signals_set.iter().cloned());
-        ids.extend(self.right_signals_set.iter().cloned());
-        ids
     }
 }
 
@@ -1324,16 +1196,6 @@ impl<T, Y> Display for Not<T, Y> {
         write!(f, "¬({})", self.operand.to_string())
     }
 }
-impl<T, C, Y> Display for Implies<T, C, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) → ({})",
-            self.antecedent.to_string(),
-            self.consequent.to_string()
-        )
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1561,27 +1423,6 @@ mod tests {
 
         let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = or.update(&step);
-        assert_eq!(
-            robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
-        );
-    }
-
-    #[test]
-    fn implies_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
-        let mut implies = Implies::<f64, RingBuffer<Option<f64>>, f64>::new(
-            Box::new(atomic1),
-            Box::new(atomic2),
-            None,
-            None,
-            EvaluationMode::Strict,
-        );
-        implies.get_signal_identifiers();
-
-        let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = implies.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
