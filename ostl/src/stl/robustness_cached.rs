@@ -5,7 +5,6 @@ use crate::stl::core::{
 };
 use crate::stl::monitor::EvaluationMode;
 use std::any::TypeId;
-use std::clone;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
@@ -475,133 +474,6 @@ impl<T, Y> SignalIdentifier for Not<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Implies<T, C, Y> {
-    pub antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub left_cache: C,
-    pub right_cache: C,
-    last_eval_time: Option<Duration>,
-    pub left_last_known: Step<Option<Y>>,
-    pub right_last_known: Step<Option<Y>>,
-    left_signals_set: HashSet<&'static str>,
-    right_signals_set: HashSet<&'static str>,
-    mode: EvaluationMode,
-}
-
-impl<T, C, Y> Implies<T, C, Y> {
-    pub fn new(
-        antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache: Option<C>,
-        right_cache: Option<C>,
-        mode: EvaluationMode,
-    ) -> Self
-    where
-        T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-        Y: RobustnessSemantics + 'static,
-    {
-        Implies {
-            antecedent,
-            consequent,
-            left_cache: left_cache.unwrap_or_else(|| C::new()),
-            right_cache: right_cache.unwrap_or_else(|| C::new()),
-            last_eval_time: None,
-            left_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            right_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            left_signals_set: HashSet::new(),
-            right_signals_set: HashSet::new(),
-            mode,
-        }
-    }
-}
-
-impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
-where
-    T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
-{
-    type Output = Y;
-
-    fn get_max_lookahead(&self) -> Duration {
-        let left_lookahead = self.antecedent.get_max_lookahead();
-        let right_lookahead = self.consequent.get_max_lookahead();
-        left_lookahead.max(right_lookahead)
-    }
-
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.antecedent.update(step);
-            for update in left_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.left_cache.add_step(update);
-                    }
-                } else {
-                    self.left_cache.add_step(update);
-                }
-            }
-        }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.consequent.update(step);
-            for update in right_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.right_cache.add_step(update);
-                    }
-                } else {
-                    self.right_cache.add_step(update);
-                }
-            }
-        }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
-            }
-            EvaluationMode::Eager => process_binary_eager(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                &mut self.left_last_known,
-                &mut self.right_last_known,
-                Y::implies,
-                Y::atomic_true(), // Default atomic value for 'implies'
-            ),
-        };
-
-        let lookahead = self.get_max_lookahead();
-        self.left_cache.prune(lookahead);
-        self.right_cache.prune(lookahead);
-
-        if let Some(last_step) = output.last() {
-            self.last_eval_time = Some(last_step.timestamp);
-        };
-        output
-    }
-}
-
-impl<T, C, Y> SignalIdentifier for Implies<T, C, Y> {
-    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
-        let mut ids = std::collections::HashSet::new();
-        self.left_signals_set
-            .extend(self.antecedent.get_signal_identifiers());
-        self.right_signals_set
-            .extend(self.consequent.get_signal_identifiers());
-        ids.extend(self.left_signals_set.iter().cloned());
-        ids.extend(self.right_signals_set.iter().cloned());
-        ids
-    }
-}
-
-#[derive(Clone)]
 pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -682,7 +554,7 @@ where
             let mut remove_task = false;
 
             // state-based logic
-            if current_time >= t_eval + self.max_lookahead{
+            if current_time >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
@@ -917,67 +789,91 @@ where
         let mut output_robustness = Vec::new();
 
         // 1. Populate caches with results from children operators
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.update(step);
-            for update in left_updates {
+        let left_updates =
+            if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
+                self.left.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut left_updates = left_updates.iter().peekable();
+        let right_updates =
+            if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
+                self.right.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut right_updates = right_updates.iter().peekable();
 
-                let mut found = false;
-
-                // NOTE: This only needs to update existing entries if the same timestamp can appear
-                // multiple times with different values. If this is not the case, we can skip this
-                // search and directly add the new step (i.e. only do this if RobustnessInterval is used)
-                self.left_cache
-                    .iter_mut()
-                    .filter(|s| s.timestamp == update.timestamp)
-                    .for_each(|s| {
-                        *s = update.clone();
-                        found = true;
-                    });
-
-                if !found {
-                    self.left_cache.add_step(update.clone());
-                }
-
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
-                }
-            }
-        }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.update(step);
-            for update in right_updates {
-                let mut found = false;
-                self.right_cache
-                    .iter_mut()
-                    .filter(|s| s.timestamp == update.timestamp)
-                    .for_each(|s| {
-                        *s = update.clone();
-                        found = true;
-                    });
-
-                if !found {
-                    self.right_cache.add_step(update.clone());
-                }
-
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
-                }
-            }
-        }
-
-        //// PRINT CACHES FOR DEBUGGING
-        // println!("Left cache:");
-        // for step in self.left_cache.iter() {
-        //     println!("  time = {:?}, value = {:?}", step.timestamp, step.value);
-        // }
+		while left_updates.peek().is_some() || right_updates.peek().is_some() {
+			match (left_updates.peek(), right_updates.peek()) {
+				(Some(l), Some(r)) if l.timestamp == r.timestamp => {
+					let left_update = left_updates.next().unwrap();
+					let right_update = right_updates.next().unwrap();
+					if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+                    if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+                    self.eval_buffer.insert(left_update.timestamp);
+				}
+				(Some(l), Some(r)) if l.timestamp < r.timestamp => {
+					let left_update = left_updates.next().unwrap();
+					if let (Some(last_left), Some(last_right)) =
+						(self.left_cache.iter().last(), self.right_cache.iter().last())
+					{
+						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
+							self.left_cache.add_step(Step::new(
+								"interpolated",
+								last_left.value.clone(),
+								last_right.timestamp,
+							));
+						}
+					}
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+					self.eval_buffer.insert(left_update.timestamp);
+				}
+                (Some(_), None) => {
+                    let left_update = left_updates.next().unwrap();
+					if let (Some(last_left), Some(last_right)) =
+						(self.left_cache.iter().last(), self.right_cache.iter().last())
+					{
+						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
+							self.left_cache.add_step(Step::new(
+								"interpolated",
+								last_left.value.clone(),
+								last_right.timestamp,
+							));
+						}
+					}
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+					self.eval_buffer.insert(left_update.timestamp);
+				}
+				(Some(_), Some(_)) | (None, Some(_)) => { // Implies r.timestamp < l.timestamp
+					let right_update = right_updates.next().unwrap();
+					if let (Some(last_right), Some(last_left)) =
+						(self.right_cache.iter().last(), self.left_cache.iter().last())
+					{
+						if last_right.timestamp < last_left.timestamp && right_update.timestamp > last_left.timestamp {
+							self.right_cache.add_step(Step::new(
+								"interpolated",
+								last_right.value.clone(),
+								last_left.timestamp,
+							));
+						}
+					}
+					if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+					self.eval_buffer.insert(right_update.timestamp);
+				}
+				(None, None) => break, // Both iterators are empty
+			}
+		}
 
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
@@ -1300,16 +1196,6 @@ impl<T, Y> Display for Not<T, Y> {
         write!(f, "¬({})", self.operand.to_string())
     }
 }
-impl<T, C, Y> Display for Implies<T, C, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) → ({})",
-            self.antecedent.to_string(),
-            self.consequent.to_string()
-        )
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1537,27 +1423,6 @@ mod tests {
 
         let step = Step::new("x", 15.0, Duration::from_secs(5));
         let robustness = or.update(&step);
-        assert_eq!(
-            robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
-        );
-    }
-
-    #[test]
-    fn implies_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
-        let mut implies = Implies::<f64, RingBuffer<Option<f64>>, f64>::new(
-            Box::new(atomic1),
-            Box::new(atomic2),
-            None,
-            None,
-            EvaluationMode::Strict,
-        );
-        implies.get_signal_identifiers();
-
-        let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = implies.update(&step);
         assert_eq!(
             robustness,
             vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
