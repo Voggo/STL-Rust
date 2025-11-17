@@ -620,9 +620,9 @@ mod tests {
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula_2())
+            .formula(formula_3())
             .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Eager)
+            .evaluation_mode(EvaluationMode::Strict)
             .build()
             .unwrap();
 
@@ -644,6 +644,67 @@ mod tests {
         }
 
         // println!("Monitor output: {:?}", output);
+    }
+
+    #[rstest]
+    #[case(formula_1())]
+    #[case(formula_2())]
+    #[case(formula_3())]
+    #[case(formula_4())]
+    #[case(formula_5())]
+    #[case(formula_6())]
+    #[case(formula_7())]
+    fn test_final_rosi_verdicts(#[case] formula: FormulaDefinition) {
+        // Build an incremental, eager monitor that emits RobustnessInterval outputs
+        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+            .formula(formula.clone())
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Eager)
+            .build()
+            .unwrap();
+
+        // build a strict monitor for comparison
+        let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+            .formula(formula)
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Strict)
+            .build()
+            .unwrap();
+
+        let input_steps: Vec<Step<f64>> = (0..20)
+            .map(|i| {
+                let timestamp = Duration::from_secs(i);
+                let value = (i as f64 % 21.0) - 10.0; // values cycling from -10.0 to 10.0
+                // let value = rand::random::<f64>() * 20.0 - 10.0; // random values in range [-10.0, 10.0]
+                Step::new("x", value, timestamp)
+            })
+            .collect();
+
+        println!("Testing formula: {} \n", monitor.specification_to_string());
+
+        for s in input_steps.clone() {
+            let rosi_outputs = monitor.update(&s);
+            let strict_outputs = strict_monitor.update(&s);
+
+            for (rosi_step, strict_step) in rosi_outputs.iter().zip(strict_outputs.iter()) {
+                if let Some(rosi_iv) = rosi_step.value {
+                    if let Some(strict_val) = strict_step.value {
+                        // The strict value must be equal to both bounds of the robustness interval
+                        assert!(
+                            rosi_iv.0 == strict_val && strict_val == rosi_iv.1,
+                            "Final strict value {:?} not equal to robustness interval {:?} at timestamp {:?}",
+                            strict_val,
+                            rosi_iv,
+                            rosi_step.timestamp
+                        );
+                        println!(
+                            "Final strict value: {:?}, RoSI: {:?} at timestamp {:?} (for step at timestamp {:?})",
+                            strict_val, rosi_iv, rosi_step.timestamp, s.timestamp
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[rstest]
@@ -678,8 +739,7 @@ mod tests {
         // Track the last seen interval for each timestamp. As the monitor refines
         // partial/unknown intervals, the lower bound should never decrease and the
         // upper bound should never increase for a given timestamp.
-        let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> =
-            HashMap::new();
+        let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> = HashMap::new();
 
         for s in input_steps {
             let outputs = monitor.update(&s);
