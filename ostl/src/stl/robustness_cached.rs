@@ -950,7 +950,7 @@ where
 					if let (Some(last_left), Some(last_right)) =
 						(self.left_cache.iter().last(), self.right_cache.iter().last())
 					{
-						if last_left.timestamp < last_right.timestamp {
+						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
 							self.left_cache.add_step(Step::new(
 								"interpolated",
 								last_left.value.clone(),
@@ -968,7 +968,7 @@ where
 					if let (Some(last_left), Some(last_right)) =
 						(self.left_cache.iter().last(), self.right_cache.iter().last())
 					{
-						if last_left.timestamp < last_right.timestamp {
+						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
 							self.left_cache.add_step(Step::new(
 								"interpolated",
 								last_left.value.clone(),
@@ -986,7 +986,7 @@ where
 					if let (Some(last_right), Some(last_left)) =
 						(self.right_cache.iter().last(), self.left_cache.iter().last())
 					{
-						if last_right.timestamp < last_left.timestamp {
+						if last_right.timestamp < last_left.timestamp && right_update.timestamp > last_left.timestamp {
 							self.right_cache.add_step(Step::new(
 								"interpolated",
 								last_right.value.clone(),
@@ -1002,14 +1002,6 @@ where
 				(None, None) => break, // Both iterators are empty
 			}
 		}
-
-        // for left in self.left_cache.iter() {
-        //     println!("Left cache: {:?}", left);
-        // }
-
-        // for right in self.right_cache.iter() {
-        //     println!("Right cache: {:?}", right);
-        // }
 
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
