@@ -177,7 +177,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct And<T, C, Y> {
+pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub left_cache: C,
@@ -187,16 +187,15 @@ pub struct And<T, C, Y> {
     right_last_known: Step<Option<Y>>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
-    mode: EvaluationMode,
+
 }
 
-impl<T, C, Y> And<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, IS_ROSI> {
     pub fn new(
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
-        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -213,12 +212,12 @@ impl<T, C, Y> And<T, C, Y> {
             right_last_known: Step::new("", None, Duration::ZERO),
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
-            mode,
         }
     }
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for And<T, C, Y>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
+    for And<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
@@ -257,18 +256,17 @@ where
                 }
             }
         }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::and)
-            }
-            EvaluationMode::Eager => process_binary_eager(
+        let output = if IS_EAGER {
+            process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
                 &mut self.left_last_known,
                 &mut self.right_last_known,
                 Y::and,
                 Y::atomic_false(),
-            ),
+            )
+        } else {
+            process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::and)
         };
 
         let lookahead = self.get_max_lookahead();
@@ -283,7 +281,9 @@ where
     }
 }
 
-impl<T, C, Y> SignalIdentifier for And<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
+    for And<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         self.left_signals_set
@@ -297,7 +297,7 @@ impl<T, C, Y> SignalIdentifier for And<T, C, Y> {
 }
 
 #[derive(Clone)]
-pub struct Or<T, C, Y> {
+pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub left_cache: C,
@@ -307,16 +307,14 @@ pub struct Or<T, C, Y> {
     right_last_known: Step<Option<Y>>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
-    mode: EvaluationMode,
 }
 
-impl<T, C, Y> Or<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, IS_ROSI> {
     pub fn new(
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
-        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -341,12 +339,12 @@ impl<T, C, Y> Or<T, C, Y> {
             },
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
-            mode,
         }
     }
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for Or<T, C, Y>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
+    for Or<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
@@ -385,18 +383,17 @@ where
                 }
             }
         }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::or)
-            }
-            EvaluationMode::Eager => process_binary_eager(
+        let output = if IS_EAGER {
+            process_binary_eager(
                 &mut self.left_cache,
                 &mut self.right_cache,
                 &mut self.left_last_known,
                 &mut self.right_last_known,
                 Y::or,
                 Y::atomic_true(),
-            ),
+            )
+        } else {
+            process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::or)
         };
 
         let lookahead = self.get_max_lookahead();
@@ -409,7 +406,9 @@ where
     }
 }
 
-impl<T, C, Y> SignalIdentifier for Or<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
+    for Or<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         self.left_signals_set
@@ -474,22 +473,20 @@ impl<T, Y> SignalIdentifier for Not<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Eventually<T, C, Y> {
+pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     pub cache: C,
     pub eval_buffer: BTreeSet<Duration>,
-    pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
 
-impl<T, C, Y> Eventually<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_EAGER, IS_ROSI> {
     pub fn new(
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
         eval_buffer: Option<BTreeSet<Duration>>,
-        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -502,13 +499,13 @@ impl<T, C, Y> Eventually<T, C, Y> {
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
-            mode,
             max_lookahead,
         }
     }
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for Eventually<T, C, Y>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
@@ -527,9 +524,18 @@ where
         // 1. Add new sub-formula results to the cache
         //    By using `into_iter`, we consume the vector and move the steps,
         //    avoiding a clone for `add_step`.
-        for sub_step in sub_robustness_vec {
-            self.eval_buffer.insert(sub_step.timestamp);
-            self.cache.add_step(sub_step); // sub_step is moved
+        if IS_ROSI {
+            for sub_step in sub_robustness_vec {
+                self.eval_buffer.insert(sub_step.timestamp);
+                if self.cache.update_step(sub_step.clone()) {
+                    self.cache.add_step(sub_step);
+                }
+            }
+        } else {
+            for sub_step in sub_robustness_vec {
+                self.eval_buffer.insert(sub_step.timestamp);
+                self.cache.add_step(sub_step); // sub_step is moved
+            }
         }
 
         let mut tasks_to_remove = Vec::new();
@@ -558,11 +564,11 @@ where
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && windowed_max_value == Y::atomic_true() {
+            } else if IS_EAGER && windowed_max_value == Y::atomic_true() {
                 // Case 2: Eager short-circuit. Found "true" before window closed.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
-            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+            } else if IS_ROSI {
                 // Case 3: Intermediate ROSI. Window is still open.
                 // We must 'or' with the unknown future.
                 let intermediate_value = Y::or(windowed_max_value, Y::unknown()); // Use unknown() from your code
@@ -593,29 +599,29 @@ where
     }
 }
 
-impl<T, C, Y> SignalIdentifier for Eventually<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
 
 #[derive(Clone)]
-pub struct Globally<T, Y, C> {
+pub struct Globally<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     pub cache: C,
     pub eval_buffer: BTreeSet<Duration>,
-    pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
 
-impl<T, C, Y> Globally<T, Y, C> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EAGER, IS_ROSI> {
     pub fn new(
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         cache: Option<C>,
         eval_buffer: Option<BTreeSet<Duration>>,
-        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -628,13 +634,13 @@ impl<T, C, Y> Globally<T, Y, C> {
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
-            mode,
             max_lookahead,
         }
     }
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for Globally<T, Y, C>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
+    for Globally<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
@@ -653,9 +659,18 @@ where
         // 1. Add new sub-formula results to the cache
         //    By using `into_iter`, we consume the vector and move the steps,
         //    avoiding a clone for `add_step`.
-        for sub_step in sub_robustness_vec {
-            self.eval_buffer.insert(sub_step.timestamp);
-            self.cache.add_step(sub_step); // sub_step is moved
+        if IS_ROSI {
+            for sub_step in sub_robustness_vec {
+                self.eval_buffer.insert(sub_step.timestamp);
+                if self.cache.update_step(sub_step.clone()) {
+                    self.cache.add_step(sub_step);
+                }
+            }
+        } else {
+            for sub_step in sub_robustness_vec {
+                self.eval_buffer.insert(sub_step.timestamp);
+                self.cache.add_step(sub_step); // sub_step is moved
+            }
         }
 
         let mut tasks_to_remove = Vec::new();
@@ -684,12 +699,12 @@ where
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false()
+            } else if IS_EAGER && windowed_min_value == Y::atomic_false()
             {
                 // Case 2: Eager short-circuit. Found "false" before window closed.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
-            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+            } else if IS_ROSI {
                 // Case 3: Intermediate ROSI. Window is still open.
                 // We must 'and' with the unknown future.
                 let intermediate_value = Y::and(windowed_min_value, Y::unknown()); // Use unknown() from your code
@@ -720,14 +735,16 @@ where
     }
 }
 
-impl<T, C, Y> SignalIdentifier for Globally<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
+    for Globally<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
 
 #[derive(Clone)]
-pub struct Until<T, C, Y> {
+pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     pub interval: TimeInterval,
     pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
@@ -738,18 +755,16 @@ pub struct Until<T, C, Y> {
     pub eval_buffer: BTreeSet<Duration>,
     pub left_signals_set: HashSet<&'static str>,
     pub right_signals_set: HashSet<&'static str>,
-    pub mode: EvaluationMode,
     max_lookahead: Duration,
 }
 
-impl<T, C, Y> Until<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER, IS_ROSI> {
     pub fn new(
         interval: TimeInterval,
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         left_cache: Option<C>,
         right_cache: Option<C>,
-        mode: EvaluationMode,
     ) -> Self
     where
         T: Clone + 'static,
@@ -768,13 +783,13 @@ impl<T, C, Y> Until<T, C, Y> {
             eval_buffer: BTreeSet::new(),
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
-            mode,
             max_lookahead,
         }
     }
 }
 
-impl<T, C, Y> StlOperatorTrait<T> for Until<T, C, Y>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
+    for Until<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
@@ -804,76 +819,103 @@ where
             };
         let mut right_updates = right_updates.iter().peekable();
 
-		while left_updates.peek().is_some() || right_updates.peek().is_some() {
-			match (left_updates.peek(), right_updates.peek()) {
-				(Some(l), Some(r)) if l.timestamp == r.timestamp => {
-					let left_update = left_updates.next().unwrap();
-					let right_update = right_updates.next().unwrap();
-					if !self.left_cache.update_step(left_update.clone()) {
+        while left_updates.peek().is_some() || right_updates.peek().is_some() {
+            match (left_updates.peek(), right_updates.peek()) {
+                (Some(l), Some(r)) if l.timestamp == r.timestamp => {
+                    let left_update = left_updates.next().unwrap();
+                    let right_update = right_updates.next().unwrap();
+                    if IS_ROSI {
+                        if !self.left_cache.update_step(left_update.clone()) {
+                            self.left_cache.add_step(left_update.clone());
+                        };
+                        if !self.right_cache.update_step(right_update.clone()) {
+                            self.right_cache.add_step(right_update.clone());
+                        };
+                    } else {
                         self.left_cache.add_step(left_update.clone());
-                    };
-                    if !self.right_cache.update_step(right_update.clone()) {
                         self.right_cache.add_step(right_update.clone());
-                    };
+                    }
                     self.eval_buffer.insert(left_update.timestamp);
-				}
-				(Some(l), Some(r)) if l.timestamp < r.timestamp => {
-					let left_update = left_updates.next().unwrap();
-					if let (Some(last_left), Some(last_right)) =
-						(self.left_cache.iter().last(), self.right_cache.iter().last())
-					{
-						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
-							self.left_cache.add_step(Step::new(
-								"interpolated",
-								last_left.value.clone(),
-								last_right.timestamp,
-							));
-						}
-					}
-                    if !self.left_cache.update_step(left_update.clone()) {
+                }
+                (Some(l), Some(r)) if l.timestamp < r.timestamp => {
+                    let left_update = left_updates.next().unwrap();
+                    if let (Some(last_left), Some(last_right)) = (
+                        self.left_cache.iter().last(),
+                        self.right_cache.iter().last(),
+                    ) {
+                        if last_left.timestamp < last_right.timestamp
+                            && left_update.timestamp > last_right.timestamp
+                        {
+                            self.left_cache.add_step(Step::new(
+                                "interpolated",
+                                last_left.value.clone(),
+                                last_right.timestamp,
+                            ));
+                        }
+                    }
+                    if IS_ROSI {
+                        if !self.left_cache.update_step(left_update.clone()) {
+                            self.left_cache.add_step(left_update.clone());
+                        };
+                    } else {
                         self.left_cache.add_step(left_update.clone());
-                    };
-					self.eval_buffer.insert(left_update.timestamp);
-				}
+                    }
+                    self.eval_buffer.insert(left_update.timestamp);
+                }
                 (Some(_), None) => {
                     let left_update = left_updates.next().unwrap();
-					if let (Some(last_left), Some(last_right)) =
-						(self.left_cache.iter().last(), self.right_cache.iter().last())
-					{
-						if last_left.timestamp < last_right.timestamp && left_update.timestamp > last_right.timestamp {
-							self.left_cache.add_step(Step::new(
-								"interpolated",
-								last_left.value.clone(),
-								last_right.timestamp,
-							));
-						}
-					}
-                    if !self.left_cache.update_step(left_update.clone()) {
+                    if let (Some(last_left), Some(last_right)) = (
+                        self.left_cache.iter().last(),
+                        self.right_cache.iter().last(),
+                    ) {
+                        if last_left.timestamp < last_right.timestamp
+                            && left_update.timestamp > last_right.timestamp
+                        {
+                            self.left_cache.add_step(Step::new(
+                                "interpolated",
+                                last_left.value.clone(),
+                                last_right.timestamp,
+                            ));
+                        }
+                    }
+                    if IS_ROSI {
+                        if !self.left_cache.update_step(left_update.clone()) {
+                            self.left_cache.add_step(left_update.clone());
+                        };
+                    } else {
                         self.left_cache.add_step(left_update.clone());
-                    };
-					self.eval_buffer.insert(left_update.timestamp);
-				}
-				(Some(_), Some(_)) | (None, Some(_)) => { // Implies r.timestamp < l.timestamp
-					let right_update = right_updates.next().unwrap();
-					if let (Some(last_right), Some(last_left)) =
-						(self.right_cache.iter().last(), self.left_cache.iter().last())
-					{
-						if last_right.timestamp < last_left.timestamp && right_update.timestamp > last_left.timestamp {
-							self.right_cache.add_step(Step::new(
-								"interpolated",
-								last_right.value.clone(),
-								last_left.timestamp,
-							));
-						}
-					}
-					if !self.right_cache.update_step(right_update.clone()) {
+                    }
+                    self.eval_buffer.insert(left_update.timestamp);
+                }
+                (Some(_), Some(_)) | (None, Some(_)) => {
+                    // Implies r.timestamp < l.timestamp
+                    let right_update = right_updates.next().unwrap();
+                    if let (Some(last_right), Some(last_left)) = (
+                        self.right_cache.iter().last(),
+                        self.left_cache.iter().last(),
+                    ) {
+                        if last_right.timestamp < last_left.timestamp
+                            && right_update.timestamp > last_left.timestamp
+                        {
+                            self.right_cache.add_step(Step::new(
+                                "interpolated",
+                                last_right.value.clone(),
+                                last_left.timestamp,
+                            ));
+                        }
+                    }
+                    if IS_ROSI {
+                        if !self.right_cache.update_step(right_update.clone()) {
+                            self.right_cache.add_step(right_update.clone());
+                        };
+                    } else {
                         self.right_cache.add_step(right_update.clone());
-                    };
-					self.eval_buffer.insert(right_update.timestamp);
-				}
-				(None, None) => break, // Both iterators are empty
-			}
-		}
+                    }
+                    self.eval_buffer.insert(right_update.timestamp);
+                }
+                (None, None) => break, // Both iterators are empty
+            }
+        }
 
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
@@ -963,7 +1005,7 @@ where
                 // --- EAGER FALSIFICATION CHECK ---
                 // If phi has become false, and psi has not *already* made us true,
                 // then we are (and will remain) false.
-                if self.mode == EvaluationMode::Eager
+                if IS_EAGER
                     && robustness_phi_left == Y::atomic_false()
                     && robustness_psi_right != Y::atomic_true()
                     && self.t_max >= t_eval
@@ -998,15 +1040,15 @@ where
                 // (This also captures Eager results that were `false` until the end)
                 final_value = Some(max_robustness);
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && max_robustness == Y::atomic_true() {
+            } else if IS_EAGER && max_robustness == Y::atomic_true() {
                 // Case 2: Eager short-circuit (Satisfaction). Found "true" before window closed.
                 final_value = Some(max_robustness); // which is Y::atomic_true()
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && falsified {
+            } else if IS_EAGER && falsified {
                 // **FIX 2: Add Eager short-circuit (Falsification).**
                 final_value = Some(max_robustness); // which is Y::atomic_false()
                 remove_task = true;
-            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+            } else if IS_ROSI {
                 // Case 3: Intermediate ROSI. Window is still open, no short-circuit.
                 // let intermediate_value = Y::or(max_robustness, Y::unknown());
                 final_value = Some(max_robustness);
@@ -1043,7 +1085,9 @@ where
     }
 }
 
-impl<T, C, Y> SignalIdentifier for Until<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
+    for Until<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         self.left_signals_set
@@ -1133,7 +1177,9 @@ impl<Y> Display for Atomic<Y> {
         }
     }
 }
-impl<T, C, Y> Display for And<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
+    for And<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1144,7 +1190,9 @@ impl<T, C, Y> Display for And<T, C, Y> {
     }
 }
 
-impl<T, C, Y> Display for Until<T, Y, C> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
+    for Until<T, Y, C, IS_EAGER, IS_ROSI>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1157,7 +1205,9 @@ impl<T, C, Y> Display for Until<T, Y, C> {
     }
 }
 
-impl<T, C, Y> Display for Or<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
+    for Or<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1168,7 +1218,9 @@ impl<T, C, Y> Display for Or<T, C, Y> {
     }
 }
 
-impl<T, C, Y> Display for Globally<T, Y, C> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
+    for Globally<T, Y, C, IS_EAGER, IS_ROSI>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1180,7 +1232,9 @@ impl<T, C, Y> Display for Globally<T, Y, C> {
     }
 }
 
-impl<T, C, Y> Display for Eventually<T, C, Y> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1305,12 +1359,11 @@ mod tests {
         assert_eq!(ids_false, expected_empty);
 
         // Composite: And(x>10, y<5)
-        let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut and = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
             Box::new(Atomic::<f64>::new_less_than("y", 5.0)),
             None,
             None,
-            EvaluationMode::Strict,
         );
         let ids_and = and.get_signal_identifiers();
         let mut expected_and: std::collections::HashSet<&'static str> =
@@ -1320,12 +1373,11 @@ mod tests {
         assert_eq!(ids_and, expected_and);
 
         // Composite with constant: And(True, x>10) -> should report only 'x'
-        let mut and2 = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut and2 = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             Box::new(Atomic::<f64>::new_true()),
             Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
             None,
             None,
-            EvaluationMode::Strict,
         );
         let ids_and2 = and2.get_signal_identifiers();
         let mut expected_and2: std::collections::HashSet<&'static str> =
@@ -1337,22 +1389,22 @@ mod tests {
     #[test]
     fn get_signal_identifiers_nested() {
         // And(x>10, U(y>5, z<0))
-        let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut and = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             Box::new(Atomic::<f64>::new_greater_than("x", 10.0)),
-            Box::new(Until::<f64, RingBuffer<Option<f64>>, f64>::new(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(5),
-                },
-                Box::new(Atomic::<f64>::new_greater_than("y", 5.0)),
-                Box::new(Atomic::<f64>::new_less_than("z", 0.0)),
-                None,
-                None,
-                EvaluationMode::Strict,
-            )),
+            Box::new(
+                Until::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(5),
+                    },
+                    Box::new(Atomic::<f64>::new_greater_than("y", 5.0)),
+                    Box::new(Atomic::<f64>::new_less_than("z", 0.0)),
+                    None,
+                    None,
+                ),
+            ),
             None,
             None,
-            EvaluationMode::Strict,
         );
         let mut expected_and: std::collections::HashSet<&'static str> =
             std::collections::HashSet::new();
@@ -1391,12 +1443,11 @@ mod tests {
     fn and_operator_robustness_strict() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
-        let mut and = And::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut and = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             Box::new(atomic1),
             Box::new(atomic2),
             None,
             None,
-            EvaluationMode::Strict,
         );
         and.get_signal_identifiers();
 
@@ -1412,12 +1463,11 @@ mod tests {
     fn or_operator_robustness_strict() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 5.0);
-        let mut or = Or::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut or = Or::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             Box::new(atomic1),
             Box::new(atomic2),
             None,
             None,
-            EvaluationMode::Strict,
         );
         or.get_signal_identifiers();
 
@@ -1437,12 +1487,11 @@ mod tests {
             end: Duration::from_secs(4),
         };
         let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
-        let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64>::new(
+        let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             interval,
             Box::new(atomic),
             None,
             None,
-            EvaluationMode::Strict,
         );
         eventually.get_signal_identifiers();
 
@@ -1484,12 +1533,11 @@ mod tests {
             end: Duration::from_secs(4),
         };
         let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
-        let mut globally = Globally::<f64, f64, RingBuffer<Option<f64>>>::new(
+        let mut globally = Globally::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
             interval,
             Box::new(atomic),
             None,
             None,
-            EvaluationMode::Strict,
         );
         globally.get_signal_identifiers();
 
@@ -1532,15 +1580,19 @@ mod tests {
         };
         let atomic_left = Atomic::<RobustnessInterval>::new_greater_than("x", 10.0);
         let atomic_right = Atomic::<RobustnessInterval>::new_less_than("y", 5.0);
-        let mut until =
-            Until::<f64, RingBuffer<Option<RobustnessInterval>>, RobustnessInterval>::new(
-                interval,
-                Box::new(atomic_left),
-                Box::new(atomic_right),
-                None,
-                None,
-                EvaluationMode::Strict,
-            );
+        let mut until = Until::<
+            f64,
+            RingBuffer<Option<RobustnessInterval>>,
+            RobustnessInterval,
+            true,
+            true,
+        >::new(
+            interval,
+            Box::new(atomic_left),
+            Box::new(atomic_right),
+            None,
+            None,
+        );
         until.get_signal_identifiers();
 
         println!("Until operator: {}", until.to_string());
