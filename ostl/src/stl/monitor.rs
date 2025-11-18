@@ -7,7 +7,6 @@ use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Not, Or, 
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
 
 use std::any::TypeId;
-use std::collections::BTreeSet;
 
 // The input definition of the STL formula, independent of implementation.
 // This mirrors the structure of the NaiveOperator enum for formula definition.
@@ -69,6 +68,12 @@ pub struct StlMonitorBuilder<T, Y> {
     strategy: MonitoringStrategy,
     evaluation_mode: EvaluationMode,
     _phantom: std::marker::PhantomData<(T, Y)>,
+}
+
+impl<T, Y> Default for StlMonitorBuilder<T, Y> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T, Y> StlMonitorBuilder<T, Y> {
@@ -142,7 +147,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         };
 
         Ok(StlMonitor {
-            root_operator: root_operator,
+            root_operator,
             strategy: self.strategy,
         })
     }

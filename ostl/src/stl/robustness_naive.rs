@@ -63,7 +63,7 @@ where
     C: RingBufferTrait<Value = T>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.formula.to_string())
+        write!(f, "{}", self.formula)
     }
 }
 
@@ -135,11 +135,11 @@ impl StlOperator {
             StlOperator::False => self.eval_false(t_eval),
             StlOperator::GreaterThan(name, c) => {
                 // FIX: Pass the name "name" to the eval function
-                self.eval_greater_than(*c, *name, signal, t_eval)
+                self.eval_greater_than(*c, name, signal, t_eval)
             }
             StlOperator::LessThan(name, c) => {
                 // FIX: Pass the name "name" to the eval function
-                self.eval_less_than(*c, *name, signal, t_eval)
+                self.eval_less_than(*c, name, signal, t_eval)
             }
             // FIX: Remove signal_name from all recursive calls
             StlOperator::Not(phi) => self.eval_not(phi, signal, t_eval),
@@ -204,7 +204,7 @@ impl StlOperator {
             .map(|step| {
                 Step::new(
                     "output",
-                    Y::atomic_greater_than(step.value.clone().into(), c),
+                    Y::atomic_greater_than(step.value.into(), c),
                     t_eval,
                 )
             })
@@ -229,7 +229,7 @@ impl StlOperator {
             .map(|step| {
                 Step::new(
                     "output",
-                    Y::atomic_less_than(step.value.clone().into(), c),
+                    Y::atomic_less_than(step.value.into(), c),
                     t_eval,
                 )
             })
@@ -516,30 +516,30 @@ impl Display for StlOperator {
             match self {
                 StlOperator::True => "True".to_string(),
                 StlOperator::False => "False".to_string(),
-                StlOperator::Not(f) => format!("¬({})", f.to_string()),
-                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
-                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
+                StlOperator::Not(f) => format!("¬({})", f),
+                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1, f2),
+                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1, f2),
                 StlOperator::Globally(interval, f) => format!(
                     "G[{}, {}]({})",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f.to_string()
+                    f
                 ),
                 StlOperator::Eventually(interval, f) => format!(
                     "F[{}, {}]({})",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f.to_string()
+                    f
                 ),
                 StlOperator::Until(interval, f1, f2) => format!(
                     "({}) U[{}, {}] ({})",
-                    f1.to_string(),
+                    f1,
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f2.to_string()
+                    f2
                 ),
                 StlOperator::Implies(f1, f2) =>
-                    format!("({}) → ({})", f1.to_string(), f2.to_string()),
+                    format!("({}) → ({})", f1, f2),
                 StlOperator::GreaterThan(s, val) => format!("{} > {}", s, val),
                 StlOperator::LessThan(s, val) => format!("{} < {}", s, val),
             }

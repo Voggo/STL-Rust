@@ -115,13 +115,12 @@ where
                     let r_ts = r.timestamp;
                     let r_val = r.value;
 
-                    if IS_EAGER {
-                        if let (Some(rv), Some(ll)) = (r_val, left_last_known.value) {
+                    if IS_EAGER
+                        && let (Some(rv), Some(ll)) = (r_val, left_last_known.value) {
                             output_robustness.push(Step::new("output", Some(combine_op(ll, rv)), r_ts));
                             *right_last_known = right_cache.pop_front().unwrap();
                             continue;
                         }
-                    }
 
                     if !IS_EAGER { break; }
                     
@@ -135,13 +134,12 @@ where
                     let l_val = l.value;
 
                     // Check Short Circuit
-                    if let (Some(sc), Some(lv)) = (short_circuit_val, l_val) {
-                        if lv == sc {
+                    if let (Some(sc), Some(lv)) = (short_circuit_val, l_val)
+                        && lv == sc {
                             output_robustness.push(Step::new("output", Some(sc), l_ts));
                             *left_last_known = left_cache.pop_front().unwrap();
                             continue;
                         }
-                    }
                 }
                 break; // Wait for Right
             }
@@ -151,13 +149,12 @@ where
                     let r_ts = r.timestamp;
                     let r_val = r.value;
 
-                    if let (Some(sc), Some(rv)) = (short_circuit_val, r_val) {
-                        if rv == sc {
+                    if let (Some(sc), Some(rv)) = (short_circuit_val, r_val)
+                        && rv == sc {
                             output_robustness.push(Step::new("output", Some(sc), r_ts));
                             *right_last_known = right_cache.pop_front().unwrap();
                             continue;
                         }
-                    }
                 }
                 break; // Wait for Left
             }
@@ -240,22 +237,20 @@ where
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
             for update in left_updates {
-                if check_relevance(update.timestamp, self.last_eval_time) {
-                    if !self.left_cache.update_step(update.clone()) {
+                if check_relevance(update.timestamp, self.last_eval_time)
+                    && !self.left_cache.update_step(update.clone()) {
                         self.left_cache.add_step(update);
                     }
-                }
             }
         }
 
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.update(step);
             for update in right_updates {
-                if check_relevance(update.timestamp, self.last_eval_time) {
-                    if !self.right_cache.update_step(update.clone()) {
+                if check_relevance(update.timestamp, self.last_eval_time)
+                    && !self.right_cache.update_step(update.clone()) {
                         self.right_cache.add_step(update);
                     }
-                }
             }
         }
 
@@ -269,11 +264,10 @@ where
         );
 
         // Ensure we don't emit stale timestamps for non-refinable types.
-        if !IS_ROSI {
-            if let Some(last_time) = self.last_eval_time {
+        if !IS_ROSI
+            && let Some(last_time) = self.last_eval_time {
                 output.retain(|step| step.timestamp > last_time);
             }
-        }
 
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
@@ -388,22 +382,20 @@ where
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
             for update in left_updates {
-                if check_relevance(update.timestamp, self.last_eval_time) {
-                    if !self.left_cache.update_step(update.clone()) {
+                if check_relevance(update.timestamp, self.last_eval_time)
+                    && !self.left_cache.update_step(update.clone()) {
                         self.left_cache.add_step(update);
                     }
-                }
             }
         }
 
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.update(step);
             for update in right_updates {
-                if check_relevance(update.timestamp, self.last_eval_time) {
-                    if !self.right_cache.update_step(update.clone()) {
+                if check_relevance(update.timestamp, self.last_eval_time)
+                    && !self.right_cache.update_step(update.clone()) {
                         self.right_cache.add_step(update);
                     }
-                }
             }
         }
 
@@ -417,11 +409,10 @@ where
         );
 
         // Ensure we don't emit stale timestamps for non-refinable types.
-        if !IS_ROSI {
-            if let Some(last_time) = self.last_eval_time {
+        if !IS_ROSI
+            && let Some(last_time) = self.last_eval_time {
                 output.retain(|step| step.timestamp > last_time);
             }
-        }
 
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
@@ -534,7 +525,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(BTreeSet::new),
             max_lookahead,
         }
     }
@@ -669,7 +660,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EA
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(|| BTreeSet::new()),
+            eval_buffer: eval_buffer.unwrap_or_else(BTreeSet::new),
             max_lookahead,
         }
     }
@@ -878,8 +869,8 @@ where
                     if let (Some(last_left), Some(last_right)) = (
                         self.left_cache.iter().last(),
                         self.right_cache.iter().last(),
-                    ) {
-                        if last_left.timestamp < last_right.timestamp
+                    )
+                        && last_left.timestamp < last_right.timestamp
                             && left_update.timestamp > last_right.timestamp
                         {
                             self.left_cache.add_step(Step::new(
@@ -888,7 +879,6 @@ where
                                 last_right.timestamp,
                             ));
                         }
-                    }
                     if IS_ROSI {
                         if !self.left_cache.update_step(left_update.clone()) {
                             self.left_cache.add_step(left_update.clone());
@@ -903,8 +893,8 @@ where
                     if let (Some(last_left), Some(last_right)) = (
                         self.left_cache.iter().last(),
                         self.right_cache.iter().last(),
-                    ) {
-                        if last_left.timestamp < last_right.timestamp
+                    )
+                        && last_left.timestamp < last_right.timestamp
                             && left_update.timestamp > last_right.timestamp
                         {
                             self.left_cache.add_step(Step::new(
@@ -913,7 +903,6 @@ where
                                 last_right.timestamp,
                             ));
                         }
-                    }
                     if IS_ROSI {
                         if !self.left_cache.update_step(left_update.clone()) {
                             self.left_cache.add_step(left_update.clone());
@@ -929,8 +918,8 @@ where
                     if let (Some(last_right), Some(last_left)) = (
                         self.right_cache.iter().last(),
                         self.left_cache.iter().last(),
-                    ) {
-                        if last_right.timestamp < last_left.timestamp
+                    )
+                        && last_right.timestamp < last_left.timestamp
                             && right_update.timestamp > last_left.timestamp
                         {
                             self.right_cache.add_step(Step::new(
@@ -939,7 +928,6 @@ where
                                 last_left.timestamp,
                             ));
                         }
-                    }
                     if IS_ROSI {
                         if !self.right_cache.update_step(right_update.clone()) {
                             self.right_cache.add_step(right_update.clone());
@@ -989,8 +977,7 @@ where
             // We use the eval_buffer as the source of t' timestamps.
             let t_prime_iter = self
                 .eval_buffer
-                .iter()
-                .map(|t| *t)
+                .iter().copied()
                 .skip_while(|s| s < &window_start_t_eval)
                 .take_while(|s| s <= &effective_end_time); // Only up to current time
             // Only up to current time
@@ -1015,12 +1002,10 @@ where
                     .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
                     .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
                     .last()
-                {
-                    if last_left_step.timestamp < t_prime {
+                    && last_left_step.timestamp < t_prime {
                         // no data for t'' up to t', need to and with unknown
                         robustness_phi_left = Y::and(robustness_phi_left, Y::unknown());
                     }
-                }
 
                 // Advance the right_cache iterator to find the step corresponding to t_prime
                 while let Some(step) = right_cache_t_prime_iter.peek() {
@@ -1220,8 +1205,8 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
         write!(
             f,
             "({}) ∧ ({})",
-            self.left.to_string(),
-            self.right.to_string()
+            self.left,
+            self.right
         )
     }
 }
@@ -1233,10 +1218,10 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
         write!(
             f,
             "({}) U[{}, {}] ({})",
-            self.left.to_string(),
+            self.left,
             self.interval.start.as_secs_f64(),
             self.interval.end.as_secs_f64(),
-            self.right.to_string()
+            self.right
         )
     }
 }
@@ -1248,8 +1233,8 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
         write!(
             f,
             "({}) v ({})",
-            self.left.to_string(),
-            self.right.to_string()
+            self.left,
+            self.right
         )
     }
 }
@@ -1263,7 +1248,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
             "G[{}, {}]({})",
             self.interval.start.as_secs_f64(),
             self.interval.end.as_secs_f64(),
-            self.operand.to_string()
+            self.operand
         )
     }
 }
@@ -1277,13 +1262,13 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
             "F[{}, {}]({})",
             self.interval.start.as_secs_f64(),
             self.interval.end.as_secs_f64(),
-            self.operand.to_string()
+            self.operand
         )
     }
 }
 impl<T, Y> Display for Not<T, Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "¬({})", self.operand.to_string())
+        write!(f, "¬({})", self.operand)
     }
 }
 

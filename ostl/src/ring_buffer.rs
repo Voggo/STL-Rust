@@ -58,6 +58,15 @@ pub struct RingBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
 
+impl<T> Default for RingBuffer<T>
+where
+    T: Copy,
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> RingBuffer<T>
 where
     T: Copy,
