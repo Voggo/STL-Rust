@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use ostl::ring_buffer::Step;
+    use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
     use pretty_assertions::{assert_eq, assert_ne};
@@ -54,140 +55,51 @@ mod tests {
     #[fixture]
     #[once]
     fn formula_1() -> FormulaDefinition {
-        FormulaDefinition::Globally(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-        )
+        stl! {
+            G[0,2] (x > 3)
+        }
     }
 
     #[fixture]
     #[once]
     fn formula_2() -> FormulaDefinition {
-        // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-        FormulaDefinition::Until(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(6),
-            },
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-            )),
-        )
+        stl! {(G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))}
     }
 
     #[fixture]
     #[once]
     fn formula_3() -> FormulaDefinition {
-        // F[0,2] (x > 5) && G[0, 2] (x > 0)
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-            )),
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-        )
+        stl! {(F[0,2] (x > 5)) && (G[0, 2] (x > 0))}
     }
 
     #[fixture]
     #[once]
     fn formula_4() -> FormulaDefinition {
-        // F[0, 2] (x > 5) && True
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-            )),
-            Box::new(FormulaDefinition::True),
-        )
+        stl! {(F[0, 2] (x > 5)) && (true)}
     }
 
     #[fixture]
     #[once]
     fn formula_5() -> FormulaDefinition {
-        // F[0, 2] (x > 5)
-        FormulaDefinition::Eventually(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-        )
+        stl! {F[0, 2] (x > 5)}
     }
 
     #[fixture]
     #[once]
     fn formula_6() -> FormulaDefinition {
-        // G[0, 5] (x > 0) -> F[0, 2] (x > 3)
-        FormulaDefinition::Implies(
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(5),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-            )),
-        )
+        stl! {(G[0, 5] (x > 0)) -> (F[0, 2] (x > 3))}
     }
 
     #[fixture]
     #[once]
     fn formula_7() -> FormulaDefinition {
-        // !x<5 || F
-        FormulaDefinition::Or(
-            Box::new(FormulaDefinition::Not(Box::new(
-                FormulaDefinition::LessThan("x", 5.0),
-            ))),
-            Box::new(FormulaDefinition::False),
-        )
+        stl! {(!(x < 5)) || (false)}
     }
 
     #[fixture]
     #[once]
     fn formula_8() -> FormulaDefinition {
-        // G[0,2](x>0) && y<5
-        FormulaDefinition::And(
-            Box::new(FormulaDefinition::Globally(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(2),
-                },
-                Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-            )),
-            Box::new(FormulaDefinition::LessThan("y", 5.0)),
-        )
+        stl! {(G[0,2](x>0)) && (y<5)}
     }
 
     // ---
