@@ -48,7 +48,6 @@ pub trait RingBufferTrait {
     fn prune(&mut self, max_age: Duration);
 
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
-    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a>;
 }
 
 #[derive(Clone, Debug)]
@@ -89,10 +88,6 @@ where
 
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<'_, Step<T>> {
-        self.steps.iter_mut()
     }
 
 }
@@ -155,10 +150,6 @@ where
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.iter()
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a> {
-        self.iter_mut()
     }
 }
 

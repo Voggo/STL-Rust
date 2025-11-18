@@ -1258,7 +1258,7 @@ impl<T, Y> Display for Not<T, Y> {
 mod tests {
     use super::*;
     use crate::ring_buffer::{RingBuffer, Step};
-    use crate::stl::core::{RobustnessInterval, StlOperatorTrait, TimeInterval};
+    use crate::stl::core::{StlOperatorTrait, TimeInterval};
     use pretty_assertions::assert_eq;
     use std::time::Duration;
 
