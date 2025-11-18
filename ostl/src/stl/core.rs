@@ -157,6 +157,9 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn atomic_greater_than(value: f64, c: f64) -> Self;
     fn atomic_less_than(value: f64, c: f64) -> Self;
     fn unknown() -> Self;
+    fn is_refinable() -> bool {
+        false
+    }
 }
 impl RobustnessSemantics for f64 {
     fn and(l: f64, r: f64) -> f64 {
@@ -284,5 +287,9 @@ impl RobustnessSemantics for RobustnessInterval {
 
     fn unknown() -> Self {
         RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY)
+    }
+
+    fn is_refinable() -> bool {
+        true
     }
 }
