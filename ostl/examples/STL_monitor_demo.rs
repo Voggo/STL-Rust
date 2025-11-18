@@ -44,7 +44,7 @@ impl SignalStepGenerator {
         anomaly_std_multiplier: f64,
     ) -> Self {
         SignalStepGenerator {
-            signal_name: signal_name,
+            signal_name,
 
             current_time: Duration::from_secs(0),
 
@@ -261,8 +261,7 @@ fn main() {
 
     if anomaly_time.is_some() {
         println!(
-            "Configured anomaly at {:?}: mean_shift={}, std_multiplier={}",
-            anomaly_time, anomaly_mean_shift, anomaly_std_multiplier
+            "Configured anomaly at {anomaly_time:?}: mean_shift={anomaly_mean_shift}, std_multiplier={anomaly_std_multiplier}"
         );
     }
 

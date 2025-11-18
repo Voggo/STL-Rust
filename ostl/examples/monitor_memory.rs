@@ -160,8 +160,7 @@ fn main() {
     };
 
     println!(
-        "Using strategy: {:?}, evaluation_mode: {:?}",
-        strategy, evaluation_mode
+        "Using strategy: {strategy:?}, evaluation_mode: {evaluation_mode:?}"
     );
 
     let formula = formula_1();

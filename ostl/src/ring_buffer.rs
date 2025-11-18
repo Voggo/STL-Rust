@@ -177,9 +177,7 @@ mod tests {
         });
 
         for i in 0..3 {
-            signal.steps.get(i).map(|step| {
-                assert_eq!(step.value, i + 1);
-            });
+            if let Some(step) = signal.steps.get(i) { assert_eq!(step.value, i + 1) }
         }
     }
 

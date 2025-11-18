@@ -440,8 +440,8 @@ impl StlOperator {
     pub fn to_tree_string(&self, indent: usize) -> String {
         let padding = " ".repeat(indent);
         match self {
-            StlOperator::True => format!("{}True", padding),
-            StlOperator::False => format!("{}False", padding),
+            StlOperator::True => format!("{padding}True"),
+            StlOperator::False => format!("{padding}False"),
             StlOperator::Not(f) => format!("{}Not\n{}", padding, f.to_tree_string(indent + 2)),
             StlOperator::And(f1, f2) => format!(
                 "{}And\n{}\n{}",
@@ -483,8 +483,8 @@ impl StlOperator {
                 f1.to_tree_string(indent + 2),
                 f2.to_tree_string(indent + 2)
             ),
-            StlOperator::GreaterThan(s, val) => format!("{}{} > {}", padding, s, val),
-            StlOperator::LessThan(s, val) => format!("{}{} < {}", padding, s, val),
+            StlOperator::GreaterThan(s, val) => format!("{padding}{s} > {val}"),
+            StlOperator::LessThan(s, val) => format!("{padding}{s} < {val}"),
         }
     }
 }
@@ -496,9 +496,9 @@ impl Display for StlOperator {
             match self {
                 StlOperator::True => "True".to_string(),
                 StlOperator::False => "False".to_string(),
-                StlOperator::Not(f) => format!("¬({})", f),
-                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1, f2),
-                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1, f2),
+                StlOperator::Not(f) => format!("¬({f})"),
+                StlOperator::And(f1, f2) => format!("({f1}) ∧ ({f2})"),
+                StlOperator::Or(f1, f2) => format!("({f1}) v ({f2})"),
                 StlOperator::Globally(interval, f) => format!(
                     "G[{}, {}]({})",
                     interval.start.as_secs_f64(),
@@ -518,9 +518,9 @@ impl Display for StlOperator {
                     interval.end.as_secs_f64(),
                     f2
                 ),
-                StlOperator::Implies(f1, f2) => format!("({}) → ({})", f1, f2),
-                StlOperator::GreaterThan(s, val) => format!("{} > {}", s, val),
-                StlOperator::LessThan(s, val) => format!("{} < {}", s, val),
+                StlOperator::Implies(f1, f2) => format!("({f1}) → ({f2})"),
+                StlOperator::GreaterThan(s, val) => format!("{s} > {val}"),
+                StlOperator::LessThan(s, val) => format!("{s} < {val}"),
             }
         )
     }

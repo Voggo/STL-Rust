@@ -323,10 +323,10 @@ mod tests {
         assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
 
         let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {}", spec);
+        println!("Monitor Specification: {spec}");
 
         let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {}", spec_naive);
+        println!("Naive Monitor Specification: {spec_naive}");
 
         assert_eq!(spec, spec_naive);
     }
@@ -360,10 +360,10 @@ mod tests {
         assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
 
         let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {}", spec);
+        println!("Monitor Specification: {spec}");
 
         let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {}", spec_naive);
+        println!("Naive Monitor Specification: {spec_naive}");
 
         assert_eq!(spec, spec_naive);
     }
@@ -404,9 +404,9 @@ mod tests {
         assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
 
         let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {}", spec);
+        println!("Monitor Specification: {spec}");
         let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {}", spec_naive);
+        println!("Naive Monitor Specification: {spec_naive}");
         assert_eq!(spec, spec_naive);
     }
 }

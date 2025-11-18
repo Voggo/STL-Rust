@@ -33,7 +33,7 @@ mod tests {
     fn create_steps(name: &'static str, values: Vec<f64>, timestamps: Vec<u64>) -> Vec<Step<f64>> {
         values
             .into_iter()
-            .zip(timestamps.into_iter())
+            .zip(timestamps)
             .map(|(val, ts)| Step::new(name, val, Duration::from_secs(ts)))
             .collect()
     }

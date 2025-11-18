@@ -525,7 +525,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(BTreeSet::new),
+            eval_buffer: eval_buffer.unwrap_or_default(),
             max_lookahead,
         }
     }
@@ -658,7 +658,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EA
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_else(BTreeSet::new),
+            eval_buffer: eval_buffer.unwrap_or_default(),
             max_lookahead,
         }
     }
@@ -1183,8 +1183,8 @@ impl<Y> SignalIdentifier for Atomic<Y> {
 impl<Y> Display for Atomic<Y> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Atomic::LessThan(signal_name, c, _) => write!(f, "{} < {}", signal_name, c),
-            Atomic::GreaterThan(signal_name, c, _) => write!(f, "{} > {}", signal_name, c),
+            Atomic::LessThan(signal_name, c, _) => write!(f, "{signal_name} < {c}"),
+            Atomic::GreaterThan(signal_name, c, _) => write!(f, "{signal_name} > {c}"),
             Atomic::True(_) => write!(f, "True"),
             Atomic::False(_) => write!(f, "False"),
         }
@@ -1501,7 +1501,7 @@ mod tests {
         let signal_timestamps = vec![0, 2, 4, 6, 8];
         let signal: Vec<_> = signal_values
             .into_iter()
-            .zip(signal_timestamps.into_iter())
+            .zip(signal_timestamps)
             .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
@@ -1510,7 +1510,7 @@ mod tests {
             all_outputs.extend(eventually.update(s));
         }
 
-        let expected_outputs = vec![
+        let expected_outputs = [
             Step::new("output", Some(5.0), Duration::from_secs(0)),
             Step::new("output", Some(2.0), Duration::from_secs(2)),
             Step::new("output", Some(2.0), Duration::from_secs(4)),
@@ -1547,7 +1547,7 @@ mod tests {
         let signal_timestamps = vec![0, 2, 4, 6, 8];
         let signal: Vec<_> = signal_values
             .into_iter()
-            .zip(signal_timestamps.into_iter())
+            .zip(signal_timestamps)
             .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
@@ -1556,7 +1556,7 @@ mod tests {
             all_outputs.extend(globally.update(s));
         }
 
-        let expected_outputs = vec![
+        let expected_outputs = [
             Step::new("output", Some(-2.0), Duration::from_secs(0)),
             Step::new("output", Some(-5.0), Duration::from_secs(2)),
             Step::new("output", Some(-5.0), Duration::from_secs(4)),
@@ -1595,11 +1595,11 @@ mod tests {
 
         let signal: Vec<_> = signal_values
             .into_iter()
-            .zip(signal_timestamps.into_iter())
+            .zip(signal_timestamps)
             .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
-        let expected_outputs = vec![
+        let expected_outputs = [
             Step::new("output", Some(false), Duration::from_secs(0)),
             Step::new("output", Some(true), Duration::from_secs(2)),
             Step::new("output", Some(true), Duration::from_secs(4)),
@@ -1642,13 +1642,13 @@ mod tests {
 
         let signal_x: Vec<_> = signal_values_x
             .into_iter()
-            .zip(signal_timestamps_x.into_iter())
+            .zip(signal_timestamps_x)
             .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
             .collect();
 
         let signal_y: Vec<_> = signal_values_y
             .into_iter()
-            .zip(signal_timestamps_y.into_iter())
+            .zip(signal_timestamps_y)
             .map(|(val, ts)| Step::new("y", val, Duration::from_secs(ts)))
             .collect();
 
@@ -1665,18 +1665,20 @@ mod tests {
                 // assert all equal to 1
                 assert!(until.left_cache.iter().all(|step| step.value == Some(true)));
                 assert_eq!(until.right_cache.len(), 0);
-            }
-            else if s.timestamp == Duration::from_secs(1) {
+            } else if s.timestamp == Duration::from_secs(1) {
                 assert_eq!(until.left_cache.len(), 1);
                 assert!(until.left_cache.iter().all(|step| step.value == Some(true)));
                 assert_eq!(until.right_cache.len(), 1);
-                assert!(until.right_cache.iter().all(|step| step.value == Some(false)));
-            }
-            else if s.timestamp == Duration::from_secs(2) {
+                assert!(
+                    until
+                        .right_cache
+                        .iter()
+                        .all(|step| step.value == Some(false))
+                );
+            } else if s.timestamp == Duration::from_secs(2) {
                 assert_eq!(until.left_cache.len(), 3);
                 assert_eq!(until.right_cache.len(), 1);
-            }
-            else if s.timestamp == Duration::from_secs(3) {
+            } else if s.timestamp == Duration::from_secs(3) {
                 assert_eq!(until.left_cache.len(), 3);
                 assert!(until.left_cache.iter().all(|step| step.value == Some(true)));
                 assert_eq!(until.right_cache.len(), 3);
@@ -1685,8 +1687,7 @@ mod tests {
                 assert_eq!(iter.next().unwrap().value, Some(false));
                 assert_eq!(iter.next().unwrap().value, Some(false));
                 assert_eq!(iter.next().unwrap().value, Some(true));
-            }
-            else if s.timestamp == Duration::from_secs(4) {
+            } else if s.timestamp == Duration::from_secs(4) {
                 assert_eq!(until.left_cache.len(), 5);
                 assert!(until.left_cache.iter().all(|step| step.value == Some(true)));
                 assert_eq!(until.right_cache.len(), 3);
