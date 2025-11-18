@@ -1117,6 +1117,8 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 pub enum Atomic<Y> {
     LessThan(&'static str, f64, std::marker::PhantomData<Y>),
     GreaterThan(&'static str, f64, std::marker::PhantomData<Y>),
+    LessThanSignal(&'static str, &'static str, std::marker::PhantomData<Y>),
+    GreaterThanSignal(&'static str, &'static str, std::marker::PhantomData<Y>),
     True(std::marker::PhantomData<Y>),
     False(std::marker::PhantomData<Y>),
 }
@@ -1134,6 +1136,18 @@ impl<Y> Atomic<Y> {
     pub fn new_false() -> Self {
         Atomic::False(std::marker::PhantomData)
     }
+    pub fn new_less_than_signal(
+        signal_name: &'static str,
+        signal_to_compare: &'static str,
+    ) -> Self {
+        Atomic::LessThanSignal(signal_name, signal_to_compare, std::marker::PhantomData)
+    }
+    pub fn new_greater_than_signal(
+        signal_name: &'static str,
+        signal_to_compare: &'static str,
+    ) -> Self {
+        Atomic::GreaterThanSignal(signal_name, signal_to_compare, std::marker::PhantomData)
+    }
 }
 
 impl<T, Y> StlOperatorTrait<T> for Atomic<Y>
@@ -1149,6 +1163,12 @@ where
             Atomic::False(_) => Y::atomic_false(),
             Atomic::GreaterThan(_signal_name, c, _) => Y::atomic_greater_than(value, *c),
             Atomic::LessThan(_signal_name, c, _) => Y::atomic_less_than(value, *c),
+            Atomic::GreaterThanSignal(_signal_name, signal_to_compare, _) => {
+                Y::atomic_greater_than_signal(value, signal_to_compare)
+            }
+            Atomic::LessThanSignal(_signal_name, signal_to_compare, _) => {
+                Y::atomic_less_than_signal(value, signal_to_compare)
+            }
         };
 
         vec![Step {

@@ -153,6 +153,8 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn atomic_false() -> Self;
     fn atomic_greater_than(value: f64, c: f64) -> Self;
     fn atomic_less_than(value: f64, c: f64) -> Self;
+    fn atomic_greater_than_signal(value: f64, signal_to_compare: &f64) -> Self;
+    fn atomic_less_than_signal(value: f64, signal_to_compare: &f64) -> Self;
     fn unknown() -> Self;
 }
 impl RobustnessSemantics for f64 {
@@ -185,6 +187,9 @@ impl RobustnessSemantics for f64 {
     }
     fn atomic_less_than(value: f64, c: f64) -> Self {
         c - value
+    }
+    fn atomic_greater_than_signal(value: f64, signal_to_compare: &f64) -> Self {
+        
     }
     fn unknown() -> Self {
         f64::NAN
