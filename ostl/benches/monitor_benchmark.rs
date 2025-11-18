@@ -3,7 +3,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "dhat-heap")]
 use dhat;
 use ostl::ring_buffer::Step;
-use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::core::TimeInterval;
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
 
@@ -15,7 +15,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // Copy-paste your formula/signal fixtures here
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
-fn formula_1() -> FormulaDefinition {
+fn _formula_1() -> FormulaDefinition {
     //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
     FormulaDefinition::Globally(
         TimeInterval {
@@ -53,7 +53,7 @@ fn formula_1() -> FormulaDefinition {
     )
 }
 
-fn formula_2() -> FormulaDefinition {
+fn _formula_2() -> FormulaDefinition {
     // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
     FormulaDefinition::Until(
         TimeInterval {

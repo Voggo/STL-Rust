@@ -130,11 +130,10 @@
 //tests
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::stl::monitor::FormulaDefinition;
     #[test]
     fn test_stl_macro() {
-        let formula: FormulaDefinition = stl! {
+        let _: FormulaDefinition = stl! {
             G[0,5]((signal>5) and ((x>0)U[0,2](true)))
         };
     }

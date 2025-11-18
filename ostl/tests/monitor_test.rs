@@ -2,9 +2,9 @@
 mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl;
-    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
+    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::{assert_eq};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
     use std::time::Duration;
