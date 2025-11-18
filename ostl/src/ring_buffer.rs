@@ -6,10 +6,14 @@ pub struct Step<T> {
     pub value: T,
     pub timestamp: Duration,
 }
-    
+
 impl<T> Step<T> {
-    pub fn new(signal : &'static str, value: T, timestamp: Duration) -> Self {
-        Step { signal, value, timestamp }
+    pub fn new(signal: &'static str, value: T, timestamp: Duration) -> Self {
+        Step {
+            signal,
+            value,
+            timestamp,
+        }
     }
 }
 
@@ -26,6 +30,10 @@ pub trait RingBufferTrait {
     where
         Self: 'a;
 
+    type IterMut<'a>: Iterator<Item = &'a mut Step<Self::Value>>
+    where
+        Self: 'a;
+
     fn new() -> Self;
     fn is_empty(&self) -> bool;
     fn len(&self) -> usize;
@@ -34,15 +42,18 @@ pub trait RingBufferTrait {
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
+    fn update_step(&mut self, step: Step<Self::Value>) -> bool;
+
     /// Prune steps older than `max_age` from the buffer.
     /// This method removes all steps with a timestamp less than `current_time - max_age`.
     fn prune(&mut self, max_age: Duration);
 
     // The iter method now returns the generic iterator type.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
+    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RingBuffer<T> {
     pub steps: VecDeque<Step<T>>,
 }
@@ -61,9 +72,22 @@ where
         self.steps.push_back(step);
     }
 
+    pub fn update_step(&mut self, step: Step<T>) -> bool {
+        self.steps.binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
+            .map(|index| {
+                self.steps[index] = step;
+            })
+            .is_ok()
+    }
+
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }
+
+    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<'_, Step<T>> {
+        self.steps.iter_mut()
+    }
+
 }
 
 impl<T> RingBufferTrait for RingBuffer<T>
@@ -74,6 +98,11 @@ where
     type Container = VecDeque<Step<T>>;
     type Iter<'a>
         = std::collections::vec_deque::Iter<'a, Step<T>>
+    where
+        Self: 'a;
+
+    type IterMut<'a>
+        = std::collections::vec_deque::IterMut<'a, Step<T>>
     where
         Self: 'a;
 
@@ -99,6 +128,9 @@ where
     fn add_step(&mut self, step: Step<T>) {
         self.add_step(step)
     }
+    fn update_step(&mut self, step: Step<Self::Value>) -> bool {
+        self.update_step(step)
+    }
     fn prune(&mut self, max_age: Duration) {
         let current_time = match self.get_back() {
             Some(step) => step.timestamp,
@@ -116,6 +148,10 @@ where
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a> {
+        self.iter_mut()
     }
 }
 

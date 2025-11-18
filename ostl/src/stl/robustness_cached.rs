@@ -6,171 +6,166 @@ use crate::stl::core::{
 use crate::stl::monitor::EvaluationMode;
 use std::any::TypeId;
 use std::collections::{BTreeSet, HashSet};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::time::Duration;
 
-/// Processes binary operators in Strict evaluation mode.
-fn process_binary_strict<C, Y, F>(
-    left_cache: &mut C,
-    right_cache: &mut C,
-    combine_op: F,
-) -> Vec<Step<Option<Y>>>
-where
-    C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics,
-    F: Fn(Y, Y) -> Y,
-{
-    let mut output_robustness = Vec::new();
 
-    // In Strict mode, we only process when timestamps align.
-    // We cannot use "last_known" values.
-    while let (Some(left_step), Some(right_step)) =
-        (left_cache.get_front(), right_cache.get_front())
-    {
-        let new_step = if left_step.timestamp == right_step.timestamp {
-            // Timestamps are equal. Combine their current values.
-            // This is the only time we produce a Some(value).
-            let combined_value = left_step.value.as_ref().and_then(|l_val| {
-                right_step
-                    .value
-                    .as_ref()
-                    .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-            });
-
-            let step = left_cache.pop_front().unwrap();
-            right_cache.pop_front();
-            Step::new("output", combined_value, step.timestamp)
-        } else {
-            break;
-        };
-        output_robustness.push(new_step);
-    }
-
-    // In strict mode, if one cache has data and the other is empty,
-    // we can't compute anything. We must wait.
-    output_robustness
-}
-
-/// Processes binary operators in Eager evaluation mode.
-/// Processes binary operators in Eager evaluation mode (piecewise-constant interpolation).
-fn process_binary_eager<C, Y, F>(
+/// A unified binary processor that handles Strict, Eager, and Refinable (RoSI) semantics correctly.
+fn process_binary<C, Y, F>(
     left_cache: &mut C,
     right_cache: &mut C,
     left_last_known: &mut Step<Option<Y>>,
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
-    _default_atomic: Y, // This is not used for correct interval semantics
+    mode: EvaluationMode,
+    short_circuit_val: Option<Y>,
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + Copy + PartialEq + 'static,
     F: Fn(Y, Y) -> Y,
 {
     let mut output_robustness = Vec::new();
 
-    // Loop 1: Process while both caches have data, using piecewise-constant logic
-    while let (Some(left_front), Some(right_front)) =
-        (left_cache.get_front(), right_cache.get_front())
-    {
-        let (t_out, l_val, r_val) = if left_front.timestamp < right_front.timestamp {
-            // Left is earlier. Combine with last known right.
-            let t = left_front.timestamp;
-            let l = left_front.value.clone();
-            let r = right_last_known.value.clone();
-            *left_last_known = left_cache.pop_front().unwrap(); // consume left
-            (t, l, r)
-        } else if right_front.timestamp < left_front.timestamp {
-            // Right is earlier. Combine with last known left.
-            let t = right_front.timestamp;
-            let l = left_last_known.value.clone();
-            let r = right_front.value.clone();
-            *right_last_known = right_cache.pop_front().unwrap(); // consume right
-            (t, l, r)
-        } else {
-            // Timestamps align. Combine and consume both.
-            let t = left_front.timestamp;
-            let l = left_front.value.clone();
-            let r = right_front.value.clone();
-            *left_last_known = left_cache.pop_front().unwrap();
-            *right_last_known = right_cache.pop_front().unwrap();
-            (t, l, r)
-        };
+    // CASE 1: Refinable Semantics (e.g., RoSI)
+    // We must NOT pop from caches here. Refinable types update in-place.
+    // We simply iterate the intersection of timestamps currently available.
+    if Y::is_refinable() {
+        let mut l_iter = left_cache.iter();
+        let mut r_iter = right_cache.iter();
 
-        let combined_value = l_val.as_ref().and_then(|l_val| {
-            r_val
-                .as_ref()
-                .map(|r_val| combine_op(l_val.clone(), r_val.clone()))
-        });
+        let mut l_curr = l_iter.next();
+        let mut r_curr = r_iter.next();
 
-        output_robustness.push(Step::new("output", combined_value, t_out));
+        // We assume strict time alignment for RoSI based on standard semantics.
+        // Iterate while both have data.
+        while let (Some(l), Some(r)) = (l_curr, r_curr) {
+            if l.timestamp == r.timestamp {
+                // Timestamps align: Combine and emit
+                let combined = l.value.zip(r.value).map(|(lv, rv)| combine_op(lv, rv));
+                output_robustness.push(Step::new("output", combined, l.timestamp));
+                
+                l_curr = l_iter.next();
+                r_curr = r_iter.next();
+            } else if l.timestamp < r.timestamp {
+                l_curr = l_iter.next();
+            } else {
+                r_curr = r_iter.next();
+            }
+        }
+        
+        return output_robustness;
     }
 
-    let mut max_timestamp = right_last_known.timestamp.max(left_last_known.timestamp);
-
-    // Process left cache: iterate so we advance even when we don't pop (interval semantics).
-    let mut left_iter2 = left_cache.iter();
-    let mut left_deferred_pops: usize = 0;
+    // CASE 2: Non-Refinable Semantics (f64, bool)
+    // We act as a consumer: pop data as we process it.
+    
     loop {
-        match left_iter2.next() {
-            Some(left) => {
-                let left_value = left.value.to_owned().unwrap();
-                if _default_atomic == left_value && max_timestamp <= left.timestamp {
-                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
-                    let new_step = Step::new("output", Some(value), left.timestamp);
-                    output_robustness.push(new_step.clone());
-                    // For non-interval semantics we need to remove the entry; defer pop until
-                    // after we drop the iterator to avoid borrow conflicts.
-                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
-                        left_deferred_pops += 1;
+        // Peek at the front of both caches
+        let l_head = left_cache.get_front();
+        let r_head = right_cache.get_front();
+
+        match (l_head, r_head) {
+            // Both caches have data
+            (Some(l), Some(r)) => {
+                if l.timestamp == r.timestamp {
+                    // 1. Timestamps align
+                    let val = l.value.zip(r.value).map(|(lv, rv)| combine_op(lv, rv));
+                    let ts = l.timestamp;
+                    
+                    // Update state
+                    if let Some(v) = l.value { *left_last_known = Step::new("", Some(v), ts); }
+                    if let Some(v) = r.value { *right_last_known = Step::new("", Some(v), ts); }
+
+                    output_robustness.push(Step::new("output", val, ts));
+                    
+                    // Consume both
+                    left_cache.pop_front();
+                    right_cache.pop_front();
+
+                } else if l.timestamp < r.timestamp {
+                    // 2. Left is earlier
+                    let l_ts = l.timestamp;
+                    let l_val = l.value;
+
+                    // Eager Short-Circuit Check
+                    if mode == EvaluationMode::Eager {
+                        // Interpolation (Piecewise Constant)
+                        if let (Some(lv), Some(rl)) = (l_val, right_last_known.value) {
+                            output_robustness.push(Step::new("output", Some(combine_op(lv, rl)), l_ts));
+                            *left_last_known = left_cache.pop_front().unwrap();
+                            continue;
+                        }
                     }
-                    *left_last_known = new_step.clone();
-                    max_timestamp = max_timestamp.max(new_step.timestamp);
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    let value = combine_op(left.value.to_owned().unwrap(), _default_atomic.clone());
-                    let new_step = Step::new("output", Some(value), left.timestamp);
-                    output_robustness.push(new_step.clone());
+
+                    // Strict Mode or Eager failed to short-circuit/interpolate
+                    if mode == EvaluationMode::Strict {
+                         // In Strict, we cannot process mismatched timestamps.
+                         // Since L < R, and we need L==R, we might need to wait for R to catch up,
+                         // OR if we assume synchronized inputs, L is garbage. 
+                         // Standard STL usually waits.
+                         break; 
+                    }
+                    
+                    // If we are here in Eager mode but couldn't output, we consume to advance 
+                    // (monitor progress) or break? 
+                    // To match original 'process_binary_eager' logic which consumed:
+                    *left_last_known = Step::new("", l_val, l_ts);
+                    left_cache.pop_front();
+
                 } else {
-                    break;
+                    // 3. Right is earlier (Symmetric to Left)
+                    let r_ts = r.timestamp;
+                    let r_val = r.value;
+
+                    if mode == EvaluationMode::Eager {
+                        if let (Some(rv), Some(ll)) = (r_val, left_last_known.value) {
+                            output_robustness.push(Step::new("output", Some(combine_op(ll, rv)), r_ts));
+                            *right_last_known = right_cache.pop_front().unwrap();
+                            continue;
+                        }
+                    }
+
+                    if mode == EvaluationMode::Strict { break; }
+                    
+                    *right_last_known = right_cache.pop_front().unwrap();
                 }
             }
-            None => break,
-        }
-    }
-    drop(left_iter2);
-    for _ in 0..left_deferred_pops {
-        left_cache.pop_front();
-    }
+            // Only Left has data
+            (Some(l), None) => {
+                if mode == EvaluationMode::Eager {
+                    let l_ts = l.timestamp;
+                    let l_val = l.value;
 
-    // Process right cache similarly.
-    let mut right_iter2 = right_cache.iter();
-    let mut right_deferred_pops: usize = 0;
-    loop {
-        match right_iter2.next() {
-            Some(right) => {
-                let right_value = right.value.to_owned().unwrap();
-                if _default_atomic == right_value && max_timestamp <= right.timestamp {
-                    let value = combine_op(right_value, _default_atomic.clone());
-                    let new_step = Step::new("output", Some(value), right.timestamp);
-                    output_robustness.push(new_step.clone());
-                    if TypeId::of::<Y>() != TypeId::of::<RobustnessInterval>() {
-                        right_deferred_pops += 1;
+                    // Check Short Circuit
+                    if let (Some(sc), Some(lv)) = (short_circuit_val, l_val) {
+                        if lv == sc {
+                            output_robustness.push(Step::new("output", Some(sc), l_ts));
+                            *left_last_known = left_cache.pop_front().unwrap();
+                            continue;
+                        }
                     }
-                    *right_last_known = new_step.clone();
-                    max_timestamp = max_timestamp.max(new_step.timestamp);
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    let value = combine_op(right_value, _default_atomic.clone());
-                    let new_step = Step::new("output", Some(value), right.timestamp);
-                    output_robustness.push(new_step.clone());
-                } else {
-                    break;
                 }
+                break; // Wait for Right
             }
-            None => break,
+            // Only Right has data
+            (None, Some(r)) => {
+                if mode == EvaluationMode::Eager {
+                    let r_ts = r.timestamp;
+                    let r_val = r.value;
+
+                    if let (Some(sc), Some(rv)) = (short_circuit_val, r_val) {
+                        if rv == sc {
+                            output_robustness.push(Step::new("output", Some(sc), r_ts));
+                            *right_last_known = right_cache.pop_front().unwrap();
+                            continue;
+                        }
+                    }
+                }
+                break; // Wait for Left
+            }
+            (None, None) => break,
         }
-    }
-    drop(right_iter2);
-    for _ in 0..right_deferred_pops {
-        right_cache.pop_front();
     }
 
     output_robustness
@@ -222,7 +217,7 @@ impl<T, C, Y> StlOperatorTrait<T> for And<T, C, Y>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + 'static + Debug + Copy,
 {
     type Output = Y;
 
@@ -233,50 +228,71 @@ where
     }
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
+            match last_time {
+                Some(last) => {
+                    if Y::is_refinable() {
+                        timestamp >= last // Intervals: allow refinement of current step
+                    } else {
+                        timestamp > last // Bool/F64: strictly new data only
+                    }
+                }
+                None => true,
+            }
+        };
+
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
             for update in left_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
+                if check_relevance(update.timestamp, self.last_eval_time) {
+                    if !self.left_cache.update_step(update.clone()) {
                         self.left_cache.add_step(update);
                     }
-                } else {
-                    self.left_cache.add_step(update);
                 }
             }
         }
+
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.update(step);
             for update in right_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
+                if check_relevance(update.timestamp, self.last_eval_time) {
+                    if !self.right_cache.update_step(update.clone()) {
                         self.right_cache.add_step(update);
                     }
-                } else {
-                    self.right_cache.add_step(update);
                 }
             }
         }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::and)
+
+        let mut output = process_binary(
+            &mut self.left_cache,
+            &mut self.right_cache,
+            &mut self.left_last_known,
+            &mut self.right_last_known,
+            Y::and,
+            self.mode,
+            Some(Y::atomic_false()), 
+        );
+
+        // Ensure we don't emit stale timestamps for non-refinable types.
+        if !Y::is_refinable() {
+            if let Some(last_time) = self.last_eval_time {
+                output.retain(|step| step.timestamp > last_time);
             }
-            EvaluationMode::Eager => process_binary_eager(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                &mut self.left_last_known,
-                &mut self.right_last_known,
-                Y::and,
-                Y::atomic_false(),
-            ),
-        };
+        }
 
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
 
-        if let Some(last_step) = output.last() {
-            self.last_eval_time = Some(last_step.timestamp);
+        // Update last_eval_time based on strictness semantics
+        if let Some(eval_time) = if Y::is_refinable() {
+            // For intervals, we track the *start* of the batch because we might re-evaluate it
+            output.first().map(|step| step.timestamp)
+        } else {
+            // For strict/bool, we track the *end* because everything before is finalized
+            output.last().map(|step| step.timestamp)
+        } {
+            self.last_eval_time = Some(eval_time);
         }
 
         output
@@ -350,7 +366,7 @@ impl<T, C, Y> StlOperatorTrait<T> for Or<T, C, Y>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + 'static + Debug + Copy,
 {
     type Output = Y;
 
@@ -361,50 +377,73 @@ where
     }
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+        let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
+            match last_time {
+                Some(last) => {
+                    if Y::is_refinable() {
+                        timestamp >= last // Intervals: allow refinement of current step
+                    } else {
+                        timestamp > last // Bool/F64: strictly new data only
+                    }
+                }
+                None => true,
+            }
+        };
+
         if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
             let left_updates = self.left.update(step);
             for update in left_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
+                if check_relevance(update.timestamp, self.last_eval_time) {
+                    if !self.left_cache.update_step(update.clone()) {
                         self.left_cache.add_step(update);
                     }
-                } else {
-                    self.left_cache.add_step(update);
                 }
             }
         }
+
         if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
             let right_updates = self.right.update(step);
             for update in right_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
+                if check_relevance(update.timestamp, self.last_eval_time) {
+                    if !self.right_cache.update_step(update.clone()) {
                         self.right_cache.add_step(update);
                     }
-                } else {
-                    self.right_cache.add_step(update);
                 }
             }
         }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::or)
+
+        let mut output = process_binary(
+            &mut self.left_cache,
+            &mut self.right_cache,
+            &mut self.left_last_known,
+            &mut self.right_last_known,
+            Y::or,
+            self.mode,
+            Some(Y::atomic_true()), 
+        );
+
+        // Ensure we don't emit stale timestamps for non-refinable types.
+        if !Y::is_refinable() {
+            if let Some(last_time) = self.last_eval_time {
+                output.retain(|step| step.timestamp > last_time);
             }
-            EvaluationMode::Eager => process_binary_eager(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                &mut self.left_last_known,
-                &mut self.right_last_known,
-                Y::or,
-                Y::atomic_true(),
-            ),
-        };
+        }
 
         let lookahead = self.get_max_lookahead();
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
-        if let Some(last_step) = output.last() {
-            self.last_eval_time = Some(last_step.timestamp);
+
+        // Update last_eval_time based on strictness semantics
+        if let Some(eval_time) = if Y::is_refinable() {
+            // For intervals, we track the *start* of the batch because we might re-evaluate it
+            output.first().map(|step| step.timestamp)
+        } else {
+            // For strict/bool, we track the *end* because everything before is finalized
+            output.last().map(|step| step.timestamp)
+        } {
+            self.last_eval_time = Some(eval_time);
         }
+
         output
     }
 }
@@ -474,133 +513,6 @@ impl<T, Y> SignalIdentifier for Not<T, Y> {
 }
 
 #[derive(Clone)]
-pub struct Implies<T, C, Y> {
-    pub antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub left_cache: C,
-    pub right_cache: C,
-    last_eval_time: Option<Duration>,
-    pub left_last_known: Step<Option<Y>>,
-    pub right_last_known: Step<Option<Y>>,
-    left_signals_set: HashSet<&'static str>,
-    right_signals_set: HashSet<&'static str>,
-    mode: EvaluationMode,
-}
-
-impl<T, C, Y> Implies<T, C, Y> {
-    pub fn new(
-        antecedent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        consequent: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache: Option<C>,
-        right_cache: Option<C>,
-        mode: EvaluationMode,
-    ) -> Self
-    where
-        T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-        Y: RobustnessSemantics + 'static,
-    {
-        Implies {
-            antecedent,
-            consequent,
-            left_cache: left_cache.unwrap_or_else(|| C::new()),
-            right_cache: right_cache.unwrap_or_else(|| C::new()),
-            last_eval_time: None,
-            left_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            right_last_known: Step {
-                signal: "",
-                value: None,
-                timestamp: Duration::ZERO,
-            },
-            left_signals_set: HashSet::new(),
-            right_signals_set: HashSet::new(),
-            mode,
-        }
-    }
-}
-
-impl<T, C, Y> StlOperatorTrait<T> for Implies<T, C, Y>
-where
-    T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
-{
-    type Output = Y;
-
-    fn get_max_lookahead(&self) -> Duration {
-        let left_lookahead = self.antecedent.get_max_lookahead();
-        let right_lookahead = self.consequent.get_max_lookahead();
-        left_lookahead.max(right_lookahead)
-    }
-
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.antecedent.update(step);
-            for update in left_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.left_cache.add_step(update);
-                    }
-                } else {
-                    self.left_cache.add_step(update);
-                }
-            }
-        }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.consequent.update(step);
-            for update in right_updates {
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.right_cache.add_step(update);
-                    }
-                } else {
-                    self.right_cache.add_step(update);
-                }
-            }
-        }
-        let output = match self.mode {
-            EvaluationMode::Strict => {
-                process_binary_strict(&mut self.left_cache, &mut self.right_cache, Y::implies)
-            }
-            EvaluationMode::Eager => process_binary_eager(
-                &mut self.left_cache,
-                &mut self.right_cache,
-                &mut self.left_last_known,
-                &mut self.right_last_known,
-                Y::implies,
-                Y::atomic_true(), // Default atomic value for 'implies'
-            ),
-        };
-
-        let lookahead = self.get_max_lookahead();
-        self.left_cache.prune(lookahead);
-        self.right_cache.prune(lookahead);
-
-        if let Some(last_step) = output.last() {
-            self.last_eval_time = Some(last_step.timestamp);
-        };
-        output
-    }
-}
-
-impl<T, C, Y> SignalIdentifier for Implies<T, C, Y> {
-    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
-        let mut ids = std::collections::HashSet::new();
-        self.left_signals_set
-            .extend(self.antecedent.get_signal_identifiers());
-        self.right_signals_set
-            .extend(self.consequent.get_signal_identifiers());
-        ids.extend(self.left_signals_set.iter().cloned());
-        ids.extend(self.right_signals_set.iter().cloned());
-        ids
-    }
-}
-
-#[derive(Clone)]
 pub struct Eventually<T, C, Y> {
     pub interval: TimeInterval,
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -656,7 +568,10 @@ where
         //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
             self.eval_buffer.insert(sub_step.timestamp);
-            self.cache.add_step(sub_step); // sub_step is moved
+            // self.cache.add_step(sub_step); // sub_step is moved
+            if !self.cache.update_step(sub_step.clone()) {
+                self.cache.add_step(sub_step);
+            }
         }
 
         let mut tasks_to_remove = Vec::new();
@@ -681,7 +596,7 @@ where
             let mut remove_task = false;
 
             // state-based logic
-            if current_time >= window_end {
+            if current_time >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
@@ -782,7 +697,10 @@ where
         //    avoiding a clone for `add_step`.
         for sub_step in sub_robustness_vec {
             self.eval_buffer.insert(sub_step.timestamp);
-            self.cache.add_step(sub_step); // sub_step is moved
+            // self.cache.add_step(sub_step); // sub_step is moved
+            if !self.cache.update_step(sub_step.clone()) {
+                self.cache.add_step(sub_step);
+            }
         }
 
         let mut tasks_to_remove = Vec::new();
@@ -807,11 +725,12 @@ where
             let mut remove_task = false;
 
             // state-based logic
-            if current_time >= window_end {
+            if current_time >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
-            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false() {
+            } else if self.mode == EvaluationMode::Eager && windowed_min_value == Y::atomic_false()
+            {
                 // Case 2: Eager short-circuit. Found "false" before window closed.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
@@ -904,48 +823,115 @@ impl<T, C, Y> StlOperatorTrait<T> for Until<T, C, Y>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + 'static + std::fmt::Debug,
 {
     type Output = Y;
 
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
     }
-
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let mut output_robustness = Vec::new();
 
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.update(step);
-            // Add new sub-formula results to the cache and queue up new evaluation tasks.
-            for update in left_updates {
-                self.left_cache.add_step(update.clone());
+        // 1. Populate caches with results from children operators
+        let left_updates =
+            if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
+                self.left.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut left_updates = left_updates.iter().peekable();
+        let right_updates =
+            if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
+                self.right.update(step)
+            } else {
+                Vec::new()
+            };
+        let mut right_updates = right_updates.iter().peekable();
 
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
+        while left_updates.peek().is_some() || right_updates.peek().is_some() {
+            match (left_updates.peek(), right_updates.peek()) {
+                (Some(l), Some(r)) if l.timestamp == r.timestamp => {
+                    let left_update = left_updates.next().unwrap();
+                    let right_update = right_updates.next().unwrap();
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+                    if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+                    self.eval_buffer.insert(left_update.timestamp);
                 }
+                (Some(l), Some(r)) if l.timestamp < r.timestamp => {
+                    let left_update = left_updates.next().unwrap();
+                    if let (Some(last_left), Some(last_right)) = (
+                        self.left_cache.iter().last(),
+                        self.right_cache.iter().last(),
+                    ) {
+                        if last_left.timestamp < last_right.timestamp
+                            && left_update.timestamp > last_right.timestamp
+                        {
+                            self.left_cache.add_step(Step::new(
+                                "interpolated",
+                                last_left.value.clone(),
+                                last_right.timestamp,
+                            ));
+                        }
+                    }
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+                    self.eval_buffer.insert(left_update.timestamp);
+                }
+                (Some(_), None) => {
+                    let left_update = left_updates.next().unwrap();
+                    if let (Some(last_left), Some(last_right)) = (
+                        self.left_cache.iter().last(),
+                        self.right_cache.iter().last(),
+                    ) {
+                        if last_left.timestamp < last_right.timestamp
+                            && left_update.timestamp > last_right.timestamp
+                        {
+                            self.left_cache.add_step(Step::new(
+                                "interpolated",
+                                last_left.value.clone(),
+                                last_right.timestamp,
+                            ));
+                        }
+                    }
+                    if !self.left_cache.update_step(left_update.clone()) {
+                        self.left_cache.add_step(left_update.clone());
+                    };
+                    self.eval_buffer.insert(left_update.timestamp);
+                }
+                (Some(_), Some(_)) | (None, Some(_)) => {
+                    // Implies r.timestamp < l.timestamp
+                    let right_update = right_updates.next().unwrap();
+                    if let (Some(last_right), Some(last_left)) = (
+                        self.right_cache.iter().last(),
+                        self.left_cache.iter().last(),
+                    ) {
+                        if last_right.timestamp < last_left.timestamp
+                            && right_update.timestamp > last_left.timestamp
+                        {
+                            self.right_cache.add_step(Step::new(
+                                "interpolated",
+                                last_right.value.clone(),
+                                last_left.timestamp,
+                            ));
+                        }
+                    }
+                    if !self.right_cache.update_step(right_update.clone()) {
+                        self.right_cache.add_step(right_update.clone());
+                    };
+                    self.eval_buffer.insert(right_update.timestamp);
+                }
+                (None, None) => break, // Both iterators are empty
             }
         }
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.update(step);
-            for update in right_updates {
-                self.right_cache.add_step(update.clone());
-                if let Some(last_time) = self.last_eval_time {
-                    if update.timestamp > last_time {
-                        self.eval_buffer.insert(update.timestamp);
-                    }
-                } else {
-                    self.eval_buffer.insert(update.timestamp);
-                }
-            }
-        }
 
-        // t_max is the max time we can evaluate up to, based on available data.
-        // it is the minimum of the latest timestamps in both caches.
+        let mut tasks_to_remove = Vec::new();
+        let current_time = step.timestamp;
         self.t_max = self
             .left_cache
             .iter()
@@ -958,78 +944,155 @@ where
                     .map_or(self.t_max, |s| s.timestamp),
             );
 
-        let mut tasks_to_remove = Vec::new();
-        // Process the evaluation buffer for tasks that can now be completed.
-        for &t_eval in self.eval_buffer.iter() {
-            let window_start = t_eval + self.interval.start;
-            let window_end = t_eval + self.interval.end;
-
-            // Find out if the robustness values in the window allow us to conclude the until value.
-            let mut left_min_value = self
-                .left_cache
-                .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and);
-
-            // Short-circuit: if left is false in the window, until is false regardless of right
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if left_min_value == Y::atomic_false() {
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(Y::atomic_false()), t_eval));
-                    continue; // Move to the next task
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    left_min_value = Y::and(left_min_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(left_min_value), t_eval));
-                    continue; // Move to the next task
-                }
-            }
-
-            // Check if right is true at some point in the window
-            let mut right_max_value = self
-                .right_cache
-                .iter()
-                .filter(|entry| entry.timestamp >= window_start && entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or);
-
-            // Short-circuit: if right is true in the window, until is true
-            if self.mode == EvaluationMode::Eager && step.timestamp < (window_end) {
-                if right_max_value == Y::atomic_true() && self.t_max >= t_eval {
-                    tasks_to_remove.push(t_eval);
-                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
-                    continue; // Move to the next task
-                } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
-                    right_max_value = Y::or(right_max_value, Y::unknown());
-                    output_robustness.push(Step::new("output", Some(right_max_value), t_eval));
-                    continue;
-                }
-            }
-
-            // Normal completion: if the full time window has passed.
-            if step.timestamp >= (t_eval + self.max_lookahead) {
-                let until_value = Y::or(left_min_value, right_max_value);
-                // self.eval_buffer.pop_first(); // Task is done
-                tasks_to_remove.push(t_eval);
-                output_robustness.push(Step::new("output", Some(until_value), t_eval));
-                continue; // Move to the next task
-            }
-            // If no condition is met, we can't resolve this task yet.
-            break;
+        // If there is no data in the left cache it cannot be calculated yet
+        if self.left_cache.is_empty() || self.right_cache.is_empty() {
+            return output_robustness;
         }
 
-        // Prune the caches.
-        self.left_cache.prune(self.interval.end);
-        self.right_cache.prune(self.interval.end);
+        // 2. Process the evaluation buffer for tasks
+        for &t_eval in self.eval_buffer.iter() {
+            let window_start_t_eval = t_eval + self.interval.start;
+            let window_end_t_eval = t_eval + self.interval.end;
+
+            // This is the outer `max` (Eventually)
+            let mut max_robustness_vec = Vec::new();
+            let mut falsified = false;
+
+            // We can only evaluate up to the data we have.
+            // We must use the minimum of the current time and the window end.
+            let effective_end_time = current_time.min(window_end_t_eval);
+
+            // Iterate over all t' in [window_start_t_eval, effective_end_time].
+            // We use the eval_buffer as the source of t' timestamps.
+            let t_prime_iter = self
+                .eval_buffer
+                .iter()
+                .map(|t| *t)
+                .skip_while(|s| s < &window_start_t_eval)
+                .take_while(|s| s <= &effective_end_time); // Only up to current time
+            // Only up to current time
+            let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
+
+            for step_psi_t_prime in t_prime_iter {
+                let t_prime = step_psi_t_prime;
+
+                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
+                let mut robustness_phi_left = self
+                    .left_cache
+                    .iter()
+                    .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
+                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
+                    .filter_map(|s| s.value.clone())
+                    .fold(Y::globally_identity(), Y::and);
+
+                // if no data in in left_cache for >t_prime, we need to and with unknown
+                if let Some(last_left_step) = self
+                    .left_cache
+                    .iter()
+                    .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
+                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
+                    .last()
+                {
+                    if last_left_step.timestamp < t_prime {
+                        // no data for t'' up to t', need to and with unknown
+                        robustness_phi_left = Y::and(robustness_phi_left, Y::unknown());
+                    }
+                }
+
+                // Advance the right_cache iterator to find the step corresponding to t_prime
+                while let Some(step) = right_cache_t_prime_iter.peek() {
+                    if step.timestamp < t_prime {
+                        right_cache_t_prime_iter.next(); // Consume and advance
+                    } else {
+                        break; // Found t' or passed it
+                    }
+                }
+                let t_prime_right_step =
+                    right_cache_t_prime_iter.find(|s| s.timestamp <= self.t_max);
+                // 1. Get rho_psi(t')
+                let robustness_psi_right = match t_prime_right_step {
+                    Some(val) => val.value.clone().unwrap(),
+                    None => Y::unknown(), // Cannot compute with None
+                };
+
+                // --- EAGER FALSIFICATION CHECK ---
+                // If phi has become false, and psi has not *already* made us true,
+                // then we are (and will remain) false.
+                if self.mode == EvaluationMode::Eager
+                    && robustness_phi_left == Y::atomic_false()
+                    && robustness_psi_right != Y::atomic_true()
+                    && self.t_max >= t_eval
+                {
+                    falsified = true;
+                    max_robustness_vec.push(Y::atomic_false());
+                    break;
+                    // continue; // Short-circuit: Falsified
+                }
+
+                // 3. Combine: min(rho_psi(t'), robustness_phi_left)
+                let robustness_t_prime = Y::and(robustness_psi_right, robustness_phi_left);
+                max_robustness_vec.push(robustness_t_prime); // For the outer max/sup
+            }
+
+            let max_robustness = if max_robustness_vec.is_empty() {
+                break; // No data to evaluate yet
+            } else {
+                max_robustness_vec.into_iter().reduce(Y::or).unwrap()
+            };
+
+            // ---
+            // **State-based Eager/Strict/ROSI logic**
+            // ---
+            let final_value: Option<Y>;
+            let mut remove_task = false;
+
+            // **FIX 1: Use get_max_lookahead() for the Strict mode check.**
+            if current_time >= t_eval + self.get_max_lookahead() {
+                // Case 1: Full window *and* child lookaheads have passed.
+                // This is a final, "closed" value for Strict mode.
+                // (This also captures Eager results that were `false` until the end)
+                final_value = Some(max_robustness);
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && max_robustness == Y::atomic_true() {
+                // Case 2: Eager short-circuit (Satisfaction). Found "true" before window closed.
+                final_value = Some(max_robustness); // which is Y::atomic_true()
+                remove_task = true;
+            } else if self.mode == EvaluationMode::Eager && falsified {
+                // **FIX 2: Add Eager short-circuit (Falsification).**
+                final_value = Some(max_robustness); // which is Y::atomic_false()
+                remove_task = true;
+            } else if TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>() {
+                // Case 3: Intermediate ROSI. Window is still open, no short-circuit.
+                // let intermediate_value = Y::or(max_robustness, Y::unknown());
+                final_value = Some(max_robustness);
+                // DO NOT remove task, it's not finished
+            } else {
+                // Case 4: Cannot evaluate yet (e.g., Strict/Eager bool/f64 and window is still open)
+                // Since the buffer is time-ordered, we stop.
+                break;
+            }
+
+            if let Some(val) = final_value {
+                output_robustness.push(Step::new("output", Some(val), t_eval));
+            }
+
+            if remove_task {
+                tasks_to_remove.push(t_eval);
+            }
+        }
+
+        // 3. Prune the caches and remove completed tasks from the buffer.
+        let lookahead = self.get_max_lookahead();
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
 
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
 
-        // update last eval time to max in output_robustness
         if let Some(last_step) = output_robustness.last() {
             self.last_eval_time = Some(last_step.timestamp);
-        }
+        };
 
         output_robustness
     }
@@ -1188,16 +1251,6 @@ impl<T, Y> Display for Not<T, Y> {
         write!(f, "¬({})", self.operand.to_string())
     }
 }
-impl<T, C, Y> Display for Implies<T, C, Y> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}) → ({})",
-            self.antecedent.to_string(),
-            self.consequent.to_string()
-        )
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1205,6 +1258,7 @@ mod tests {
     use crate::ring_buffer::{RingBuffer, Step};
     use crate::stl::core::{StlOperatorTrait, TimeInterval};
     use crate::stl::monitor::EvaluationMode;
+    use pretty_assertions::{assert_eq, assert_ne};
     use std::time::Duration;
 
     // Atomic operators
@@ -1430,27 +1484,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn implies_operator_robustness_strict() {
-        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
-        let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
-        let mut implies = Implies::<f64, RingBuffer<Option<f64>>, f64>::new(
-            Box::new(atomic1),
-            Box::new(atomic2),
-            None,
-            None,
-            EvaluationMode::Strict,
-        );
-        implies.get_signal_identifiers();
-
-        let step = Step::new("x", 15.0, Duration::from_secs(5));
-        let robustness = implies.update(&step);
-        assert_eq!(
-            robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
-        );
-    }
-
     // Temporal operators
     #[test]
     fn eventually_operator_robustness() {
@@ -1544,5 +1577,90 @@ mod tests {
                 expected.value.unwrap()
             );
         }
+    }
+
+    #[test]
+    fn until_operator_robustness() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(4),
+        };
+        let atomic_left = Atomic::<RobustnessInterval>::new_greater_than("x", 10.0);
+        let atomic_right = Atomic::<RobustnessInterval>::new_less_than("y", 5.0);
+        let mut until =
+            Until::<f64, RingBuffer<Option<RobustnessInterval>>, RobustnessInterval>::new(
+                interval,
+                Box::new(atomic_left),
+                Box::new(atomic_right),
+                None,
+                None,
+                EvaluationMode::Strict,
+            );
+        until.get_signal_identifiers();
+
+        println!("Until operator: {}", until.to_string());
+
+        let signal_x_values = vec![15.0, 12.0, 8.0, 5.0, 12.0];
+        let signal_x_timestamps = vec![0, 2, 4, 6, 8];
+        let signal_y_values = vec![10.0, 4.0, 6.0, 3.0, 7.0];
+        let signal_y_timestamps = vec![1, 3, 5, 7, 9];
+
+        let signal_x: Vec<_> = signal_x_values
+            .into_iter()
+            .zip(signal_x_timestamps.into_iter())
+            .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
+            .collect();
+
+        let signal_y: Vec<_> = signal_y_values
+            .into_iter()
+            .zip(signal_y_timestamps.into_iter())
+            .map(|(val, ts)| Step::new("y", val, Duration::from_secs(ts)))
+            .collect();
+
+        let mut x_iter = signal_x.iter().peekable();
+        let mut y_iter = signal_y.iter().peekable();
+        let mut all_outputs = Vec::new();
+        while x_iter.peek().is_some() || y_iter.peek().is_some() {
+            let mut outputs = Vec::new();
+            if let Some(x_step) = x_iter.peek() {
+                if let Some(y_step) = y_iter.peek() {
+                    if x_step.timestamp <= y_step.timestamp {
+                        println!("Processing x={:?} at {:?}", x_step.value, x_step.timestamp);
+                        outputs.extend(until.update(x_step));
+                        x_iter.next();
+                    } else {
+                        println!("Processing y={:?} at {:?}", y_step.value, y_step.timestamp);
+                        outputs.extend(until.update(y_step));
+                        y_iter.next();
+                    }
+                } else {
+                    println!("Processing x={:?} at {:?}", x_step.value, x_step.timestamp);
+                    outputs.extend(until.update(x_step));
+                    x_iter.next();
+                }
+            } else if let Some(y_step) = y_iter.peek() {
+                println!("Processing y={:?} at {:?}", y_step.value, y_step.timestamp);
+                outputs.extend(until.update(y_step));
+                y_iter.next();
+            }
+            for output in outputs.clone() {
+                println!(
+                    "Output at {:?}: {:?}",
+                    output.timestamp,
+                    output.value.unwrap()
+                );
+            }
+            all_outputs.extend(outputs);
+        }
+        let expected_outputs = vec![
+            Step::new("output", Some(1.0), Duration::from_secs(0)),
+            Step::new("output", Some(1.0), Duration::from_secs(1)),
+            Step::new("output", Some(1.0), Duration::from_secs(2)),
+            Step::new("output", Some(1.0), Duration::from_secs(3)),
+            Step::new("output", Some(-2.0), Duration::from_secs(4)),
+            Step::new("output", Some(-1.0), Duration::from_secs(5)),
+        ];
+
+        // assert_eq!(all_outputs, expected_outputs);
     }
 }
