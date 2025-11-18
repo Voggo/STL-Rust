@@ -5,14 +5,11 @@ use crate::stl::core::{
 };
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
-
 use std::any::TypeId;
 
-// The input definition of the STL formula, independent of implementation.
-// This mirrors the structure of the NaiveOperator enum for formula definition.
 #[derive(Clone, Debug)]
 pub enum FormulaDefinition {
-    GreaterThan(&'static str, f64), // signal name, constant
+    GreaterThan(&'static str, f64),
     LessThan(&'static str, f64),
     True,
     False,
@@ -164,13 +161,11 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         T: Into<f64> + Copy + 'static,
         Y: RobustnessSemantics + 'static,
     {
-        // Step 1: Call the new helper to build the *entire* recursive StlOperator enum
         let formula_enum = self.build_naive_formula(formula, mode);
 
-        // Step 2: Wrap the *single* enum in the *single* StlFormula that holds the signal
         Box::new(StlFormula::<T, RingBuffer<T>, Y> {
             formula: formula_enum,
-            signal: RingBuffer::new(), // This is the only RingBuffer that gets created
+            signal: RingBuffer::new(),
             last_eval_time: None,
             _phantom: std::marker::PhantomData,
         })
@@ -227,7 +222,6 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     {
         // Determine configuration flags
         let is_eager = matches!(mode, EvaluationMode::Eager);
-        // TypeId check is virtually free or optimized away at compile time
         let is_rosi = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
 
         // We use `$( $arg:expr ),*` to capture arguments as a list.
@@ -249,7 +243,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
             FormulaDefinition::True => Box::new(Atomic::new_true()),
             FormulaDefinition::False => Box::new(Atomic::new_false()),
-            
+
             FormulaDefinition::Not(op) => {
                 let child = self.build_incremental_operator(*op, mode);
                 Box::new(Not::new(child))

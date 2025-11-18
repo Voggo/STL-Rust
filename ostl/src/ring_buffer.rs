@@ -24,7 +24,7 @@ pub trait RingBufferTrait {
     // The container that holds the steps
     type Container: IntoIterator;
 
-    // A Generic Associated Type (GAT) for the iterator.
+    // A Generic Associated Type for the iterator.
     // The <'a> here links the iterator's lifetime to the lifetime of `&'a self`.
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>>
     where
@@ -45,10 +45,8 @@ pub trait RingBufferTrait {
     fn update_step(&mut self, step: Step<Self::Value>) -> bool;
 
     /// Prune steps older than `max_age` from the buffer.
-    /// This method removes all steps with a timestamp less than `current_time - max_age`.
     fn prune(&mut self, max_age: Duration);
 
-    // The iter method now returns the generic iterator type.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
     fn iter_mut<'a>(&'a mut self) -> Self::IterMut<'a>;
 }

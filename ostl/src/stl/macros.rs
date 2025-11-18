@@ -9,7 +9,6 @@
         };
     
         // --- PREDICATES (Atomics) ---
-        // Note: signal name must be a single identifier, value can be any expression.
         ($signal:ident > $val:expr) => {
             $crate::stl::monitor::FormulaDefinition::GreaterThan(stringify!($signal), $val as f64)
         };
@@ -30,8 +29,7 @@
             $crate::stl!(($signal >= $val) && ($signal <= $val))
         };
     
-        // --- UNARY OPERATORS (Prefix) ---
-        // Requires parentheses for the sub-expression
+        // --- UNARY OPERATORS ---
         (! ($($sub:tt)+) ) => {
             $crate::stl::monitor::FormulaDefinition::Not(
                 Box::new($crate::stl!($($sub)+))
@@ -71,7 +69,6 @@
         };
     
         // --- BINARY OPERATORS (Infix) ---
-        // Requires parentheses for both sub-expressions
         ( ($($left:tt)+) && ($($right:tt)+) ) => {
             $crate::stl::monitor::FormulaDefinition::And(
                 Box::new($crate::stl!($($left)+)),
@@ -121,13 +118,11 @@
         };
     
         // --- PARENTHESES ---
-        // Allows wrapping expressions in parentheses for clarity or precedence
         ( ( $($sub:tt)+ ) ) => {
             $crate::stl!($($sub)+)
         };
     }
 
-//tests
 #[cfg(test)]
 mod tests {
     use crate::stl::monitor::FormulaDefinition;
