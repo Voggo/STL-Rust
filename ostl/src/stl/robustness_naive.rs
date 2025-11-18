@@ -326,11 +326,8 @@ impl StlOperator {
             })
             // Recursively call for each step's timestamp in the window
             .map(|step| phi.robustness_naive(signal, step.timestamp))
-            .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(current_step)) => Some(Y::or(a, current_step.value)),
-                (Some(a), None) => Some(a),
-                (None, Some(current_step)) => Some(current_step.value),
-                (None, None) => None,
+            .try_fold(Y::eventually_identity(), |acc, item| {
+                item.map(|step| Y::or(acc, step.value))
             })?;
 
         // Return the result for the original t_eval
@@ -366,11 +363,8 @@ impl StlOperator {
                 step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
             })
             .map(|step| phi.robustness_naive(signal, step.timestamp))
-            .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
-                (Some(a), None) => Some(a),
-                (None, Some(current_step)) => Some(current_step.value),
-                (None, None) => None,
+            .try_fold(Y::globally_identity(), |acc, item| {
+                item.map(|step| Y::and(acc, step.value))
             })?;
 
         Some(Step::new("output", result, t_eval))
@@ -412,25 +406,18 @@ impl StlOperator {
                 let robustness_phi_g = signal
                     .iter()
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp < t_prime) // G is up to t_prime
-                    .map(|s| phi.robustness_naive(signal, s.timestamp)) 
-                    .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
-                        (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
-                        (Some(a), None) => Some(a),
-                        (None, Some(current_step)) => Some(current_step.value),
-                        (None, None) => None,
+                    .map(|s| phi.robustness_naive(signal, s.timestamp))
+                    .try_fold(Y::globally_identity(), |acc, item| {
+                        item.map(|step| Y::and(acc, step.value))
                     });
 
                 robustness_psi
                     .zip(robustness_phi_g)
-                    .map(|(r_psi, r_phi_val)| {
-                        Y::and(r_psi.value, r_phi_val)
-                    })
+                    .map(|(r_psi, r_phi_val)| Y::and(r_psi.value, r_phi_val))
             })
-            .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
-                (Some(a), Some(robustness_value)) => Some(Y::or(a, robustness_value)),
-                (Some(a), None) => Some(a),
-                (None, Some(robustness_value)) => Some(robustness_value),
-                (None, None) => None,
+            .try_fold(Y::eventually_identity(), |acc, item| {
+                // item is Option<Y>
+                item.map(|robustness_value| Y::or(acc, robustness_value))
             })?;
 
         Some(Step::new("output", result, t_eval))
