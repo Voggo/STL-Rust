@@ -37,7 +37,7 @@ fn formula_1() -> FormulaDefinition {
     )
 }
 
-fn formula_2() -> FormulaDefinition {
+fn _formula_2() -> FormulaDefinition {
     // A very long formula for memory benchmarking
     // This formula is designed to create a deep and wide operator tree.
     // (G[0,1] (x > 0)) AND (F[0,1] (x < 10)) AND (G[0,1] (x != 5)) AND ... (repeated many times)

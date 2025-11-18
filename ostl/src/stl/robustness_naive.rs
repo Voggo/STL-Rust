@@ -1,12 +1,11 @@
 use std::fmt::Display;
 use std::time::Duration;
-
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
 
 #[derive(Debug, Clone)]
-// A generic representation of an STL formula.
+
 pub enum StlOperator {
     // Boolean operators
     Not(Box<StlOperator>),
@@ -63,7 +62,7 @@ where
     C: RingBufferTrait<Value = T>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.formula.to_string())
+        write!(f, "{}", self.formula)
     }
 }
 
@@ -93,8 +92,7 @@ where
             return vec![]; // We already evaluated this t_eval, triggered by the previous step.
         }
 
-        // contains all the steps (x, y, etc.) with their names.
-        let robustness = self.formula.robustness_naive(&self.signal, t_eval); // step.signal removed
+        let robustness = self.formula.robustness_naive(&self.signal, t_eval);
 
         if robustness.is_some() {
             self.last_eval_time = Some(t_eval);
@@ -104,9 +102,8 @@ where
 
         match robustness {
             Some(robustness_step) => {
-                debug_assert_eq!(robustness_step.timestamp, t_eval);
                 vec![Step::new(
-                    robustness_step.signal, // Should be "output"
+                    "output",
                     Some(robustness_step.value),
                     robustness_step.timestamp,
                 )]
@@ -134,14 +131,11 @@ impl StlOperator {
             StlOperator::True => self.eval_true(t_eval),
             StlOperator::False => self.eval_false(t_eval),
             StlOperator::GreaterThan(name, c) => {
-                // FIX: Pass the name "name" to the eval function
-                self.eval_greater_than(*c, *name, signal, t_eval)
+                self.eval_greater_than(*c, name, signal, t_eval)
             }
             StlOperator::LessThan(name, c) => {
-                // FIX: Pass the name "name" to the eval function
-                self.eval_less_than(*c, *name, signal, t_eval)
+                self.eval_less_than(*c, name, signal, t_eval)
             }
-            // FIX: Remove signal_name from all recursive calls
             StlOperator::Not(phi) => self.eval_not(phi, signal, t_eval),
             StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal, t_eval),
             StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal, t_eval),
@@ -188,7 +182,7 @@ impl StlOperator {
     fn eval_greater_than<T, S, Y>(
         &self,
         c: f64,
-        name: &'static str, // FIX: Added name
+        name: &'static str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -197,14 +191,13 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        // FIX: Find the step at t_eval AND with the correct signal name
         signal
             .iter()
-            .find(|s| s.timestamp == t_eval && s.signal == name) // Added s.signal == name
+            .find(|s| s.timestamp == t_eval && s.signal == name)
             .map(|step| {
                 Step::new(
                     "output",
-                    Y::atomic_greater_than(step.value.clone().into(), c),
+                    Y::atomic_greater_than(step.value.into(), c),
                     t_eval,
                 )
             })
@@ -213,7 +206,7 @@ impl StlOperator {
     fn eval_less_than<T, S, Y>(
         &self,
         c: f64,
-        name: &'static str, // FIX: Added name
+        name: &'static str,
         signal: &S,
         t_eval: Duration,
     ) -> Option<Step<Y>>
@@ -222,17 +215,10 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        // FIX: Find the step at t_eval AND with the correct signal name
         signal
             .iter()
-            .find(|s| s.timestamp == t_eval && s.signal == name) // Added s.signal == name
-            .map(|step| {
-                Step::new(
-                    "output",
-                    Y::atomic_less_than(step.value.clone().into(), c),
-                    t_eval,
-                )
-            })
+            .find(|s| s.timestamp == t_eval && s.signal == name)
+            .map(|step| Step::new("output", Y::atomic_less_than(step.value.into(), c), t_eval))
     }
 
     fn eval_not<T, S, Y>(&self, phi: &StlOperator, signal: &S, t_eval: Duration) -> Option<Step<Y>>
@@ -241,7 +227,7 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        // Recursively call for the *same* t_eval
+        // Recursively call for the same t_eval
         phi.robustness_naive(signal, t_eval)
             .map(|step| Step::new("output", Y::not(step.value), step.timestamp))
     }
@@ -258,12 +244,10 @@ impl StlOperator {
         T: Clone + Copy + Into<f64>,
         Y: RobustnessSemantics,
     {
-        // Recursively call both children for the *same* t_eval
+        // Recursively call both children for the same t_eval
         phi.robustness_naive(signal, t_eval)
             .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
-                // Timestamps are guaranteed to be equal (both are t_eval)
-                debug_assert_eq!(step1.timestamp, step2.timestamp);
                 Step::new("output", Y::and(step1.value, step2.value), step1.timestamp)
             })
     }
@@ -283,7 +267,6 @@ impl StlOperator {
         phi.robustness_naive(signal, t_eval)
             .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
-                debug_assert_eq!(step1.timestamp, step2.timestamp);
                 Step::new("output", Y::or(step1.value, step2.value), step1.timestamp)
             })
     }
@@ -303,7 +286,6 @@ impl StlOperator {
         phi.robustness_naive(signal, t_eval)
             .zip(psi.robustness_naive(signal, t_eval))
             .map(|(step1, step2)| {
-                debug_assert_eq!(step1.timestamp, step2.timestamp);
                 Step::new(
                     "output",
                     Y::implies(step1.value, step2.value),
@@ -342,11 +324,11 @@ impl StlOperator {
             .filter(|step| {
                 step.timestamp >= lower_bound_t_prime && step.timestamp <= upper_bound_t_prime
             })
-            // Recursively call for *each step's timestamp* in the window
+            // Recursively call for each step's timestamp in the window
             .map(|step| phi.robustness_naive(signal, step.timestamp))
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
                 (Some(a), Some(current_step)) => Some(Y::or(a, current_step.value)),
-                (Some(a), None) => Some(a), // Or should this be None? If one fails, all fail?
+                (Some(a), None) => Some(a),
                 (None, Some(current_step)) => Some(current_step.value),
                 (None, None) => None,
             })?;
@@ -372,10 +354,10 @@ impl StlOperator {
 
         if let Some(back_step) = signal.get_back() {
             if back_step.timestamp < upper_bound_t_prime {
-                return None; // Not enough data to evaluate yet
+                return None;
             }
         } else {
-            return None; // Signal is empty
+            return None;
         }
 
         let result = signal
@@ -412,10 +394,10 @@ impl StlOperator {
 
         if let Some(back_step) = signal.get_back() {
             if back_step.timestamp < upper_bound_t_prime {
-                return None; // Not enough data to evaluate yet
+                return None;
             }
         } else {
-            return None; // Signal is empty
+            return None;
         }
 
         let result = signal
@@ -430,7 +412,7 @@ impl StlOperator {
                 let robustness_phi_g = signal
                     .iter()
                     .filter(|s| s.timestamp >= lower_bound_t_prime && s.timestamp < t_prime) // G is up to t_prime
-                    .map(|s| phi.robustness_naive(signal, s.timestamp)) // This is Option<Step<Y>>
+                    .map(|s| phi.robustness_naive(signal, s.timestamp)) 
                     .fold(Some(Y::globally_identity()), |acc, x| match (acc, x) {
                         (Some(a), Some(current_step)) => Some(Y::and(a, current_step.value)),
                         (Some(a), None) => Some(a),
@@ -441,8 +423,7 @@ impl StlOperator {
                 robustness_psi
                     .zip(robustness_phi_g)
                     .map(|(r_psi, r_phi_val)| {
-                        // r_psi is Step<Y>, r_phi_val is Y
-                        Y::and(r_psi.value, r_phi_val) // r_psi.value
+                        Y::and(r_psi.value, r_phi_val)
                     })
             })
             .fold(Some(Y::eventually_identity()), |acc, x| match (acc, x) {
@@ -455,7 +436,6 @@ impl StlOperator {
         Some(Step::new("output", result, t_eval))
     }
 
-    // ... (to_tree_string and Display are unchanged) ...
     /// Recursively generate a tree-like string representation of the formula.
     pub fn to_tree_string(&self, indent: usize) -> String {
         let padding = " ".repeat(indent);
@@ -516,30 +496,29 @@ impl Display for StlOperator {
             match self {
                 StlOperator::True => "True".to_string(),
                 StlOperator::False => "False".to_string(),
-                StlOperator::Not(f) => format!("¬({})", f.to_string()),
-                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1.to_string(), f2.to_string()),
-                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1.to_string(), f2.to_string()),
+                StlOperator::Not(f) => format!("¬({})", f),
+                StlOperator::And(f1, f2) => format!("({}) ∧ ({})", f1, f2),
+                StlOperator::Or(f1, f2) => format!("({}) v ({})", f1, f2),
                 StlOperator::Globally(interval, f) => format!(
                     "G[{}, {}]({})",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f.to_string()
+                    f
                 ),
                 StlOperator::Eventually(interval, f) => format!(
                     "F[{}, {}]({})",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f.to_string()
+                    f
                 ),
                 StlOperator::Until(interval, f1, f2) => format!(
                     "({}) U[{}, {}] ({})",
-                    f1.to_string(),
+                    f1,
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64(),
-                    f2.to_string()
+                    f2
                 ),
-                StlOperator::Implies(f1, f2) =>
-                    format!("({}) → ({})", f1.to_string(), f2.to_string()),
+                StlOperator::Implies(f1, f2) => format!("({}) → ({})", f1, f2),
                 StlOperator::GreaterThan(s, val) => format!("{} > {}", s, val),
                 StlOperator::LessThan(s, val) => format!("{} < {}", s, val),
             }

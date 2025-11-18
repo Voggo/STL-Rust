@@ -2,17 +2,13 @@
 mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl;
-    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics, TimeInterval};
+    use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::{assert_eq};
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
     use std::time::Duration;
     use std::vec;
-
-    // ---
-    // Helper Functions
-    // ---
 
     fn convert_f64_vec_to_bool_vec(
         input: Vec<Vec<Step<Option<f64>>>>,
@@ -33,7 +29,7 @@ mod tests {
             .collect()
     }
 
-    // Helper to create a vector of steps (easier for interleaving)
+    // Helper to create a vector of steps
     fn create_steps(name: &'static str, values: Vec<f64>, timestamps: Vec<u64>) -> Vec<Step<f64>> {
         values
             .into_iter()
@@ -338,7 +334,6 @@ mod tests {
         ]
     }
     fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
-        // convert_f64_vec_to_bool_vec(exp_f6_s2_f64_strict())
         vec![
             vec![],
             vec![],
@@ -605,19 +600,18 @@ mod tests {
                         .find(|step| step.timestamp == strict_step.timestamp)
                     {
                         if let Some(rosi_iv) = rosi_step.value {
-                            assert!(
-                                (strict_val == rosi_iv.0) && (strict_val == rosi_iv.1),
-                                "Final strict value {:?} not equal to RoSI {:?} for step at timestamp {:?}",
+                            assert_eq!(
+                                strict_val, rosi_iv.0,
+                                "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
                                 strict_val,
-                                rosi_iv,
+                                rosi_iv.0,
                                 s.timestamp
                             );
-                            println!(
-                                "Final strict value: {:?} (at t={:?},  RoSI: {:?} (at t={:?}) (for step at timestamp {:?})",
+                            assert_eq!(
+                                strict_val, rosi_iv.1,
+                                "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
                                 strict_val,
-                                strict_step.timestamp,
-                                rosi_iv,
-                                rosi_step.timestamp,
+                                rosi_iv.1,
                                 s.timestamp
                             );
                         }
@@ -648,7 +642,6 @@ mod tests {
             .unwrap();
 
         // A sequence of input steps that will cause refinement of interval robustness
-        // 100 random steps over time [0, 20] seconds with values in [-10.0, 10.0]
         let input_steps: Vec<Step<f64>> = (0..100)
             .map(|i| {
                 let timestamp = Duration::from_millis(i * 200); // every 0.2 seconds

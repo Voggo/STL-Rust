@@ -67,10 +67,7 @@ impl Add<RobustnessInterval> for f64 {
     type Output = RobustnessInterval;
 
     fn add(self, other: RobustnessInterval) -> RobustnessInterval {
-        // You can just reuse the logic you already wrote!
         other + self
-        // Or be explicit:
-        // Interval(self + other.0, self + other.1)
     }
 }
 
@@ -194,7 +191,6 @@ impl RobustnessSemantics for f64 {
     }
 }
 
-// Implement the semantics for bool
 impl RobustnessSemantics for bool {
     fn and(l: bool, r: bool) -> bool {
         l && r
