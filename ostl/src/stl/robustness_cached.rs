@@ -563,7 +563,7 @@ where
         if IS_ROSI {
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                if self.cache.update_step(sub_step.clone()) {
+                if !self.cache.update_step(sub_step.clone()) {
                     self.cache.add_step(sub_step);
                 }
             }
@@ -698,7 +698,7 @@ where
         if IS_ROSI {
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                if self.cache.update_step(sub_step.clone()) {
+                if !self.cache.update_step(sub_step.clone()) {
                     self.cache.add_step(sub_step);
                 }
             }
