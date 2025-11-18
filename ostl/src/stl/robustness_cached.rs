@@ -1,23 +1,20 @@
 use crate::ring_buffer::{RingBufferTrait, Step};
 use crate::stl::core::{
-    RobustnessInterval, RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
+    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
     StlOperatorTrait, TimeInterval,
 };
-use crate::stl::monitor::EvaluationMode;
-use std::any::TypeId;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
 
 /// A unified binary processor that handles Strict, Eager, and Refinable (RoSI) semantics correctly.
-fn process_binary<C, Y, F>(
+fn process_binary<C, Y, F, const IS_EAGER: bool, const IS_ROSI: bool>(
     left_cache: &mut C,
     right_cache: &mut C,
     left_last_known: &mut Step<Option<Y>>,
     right_last_known: &mut Step<Option<Y>>,
     combine_op: F,
-    mode: EvaluationMode,
     short_circuit_val: Option<Y>,
 ) -> Vec<Step<Option<Y>>>
 where
@@ -30,7 +27,7 @@ where
     // CASE 1: Refinable Semantics (e.g., RoSI)
     // We must NOT pop from caches here. Refinable types update in-place.
     // We simply iterate the intersection of timestamps currently available.
-    if Y::is_refinable() {
+    if IS_ROSI {
         let mut l_iter = left_cache.iter();
         let mut r_iter = right_cache.iter();
 
@@ -89,7 +86,7 @@ where
                     let l_val = l.value;
 
                     // Eager Short-Circuit Check
-                    if mode == EvaluationMode::Eager {
+                    if IS_EAGER {
                         // Interpolation (Piecewise Constant)
                         if let (Some(lv), Some(rl)) = (l_val, right_last_known.value) {
                             output_robustness.push(Step::new("output", Some(combine_op(lv, rl)), l_ts));
@@ -99,7 +96,7 @@ where
                     }
 
                     // Strict Mode or Eager failed to short-circuit/interpolate
-                    if mode == EvaluationMode::Strict {
+                    if !IS_EAGER {
                          // In Strict, we cannot process mismatched timestamps.
                          // Since L < R, and we need L==R, we might need to wait for R to catch up,
                          // OR if we assume synchronized inputs, L is garbage. 
@@ -118,7 +115,7 @@ where
                     let r_ts = r.timestamp;
                     let r_val = r.value;
 
-                    if mode == EvaluationMode::Eager {
+                    if IS_EAGER {
                         if let (Some(rv), Some(ll)) = (r_val, left_last_known.value) {
                             output_robustness.push(Step::new("output", Some(combine_op(ll, rv)), r_ts));
                             *right_last_known = right_cache.pop_front().unwrap();
@@ -126,14 +123,14 @@ where
                         }
                     }
 
-                    if mode == EvaluationMode::Strict { break; }
+                    if !IS_EAGER { break; }
                     
                     *right_last_known = right_cache.pop_front().unwrap();
                 }
             }
             // Only Left has data
             (Some(l), None) => {
-                if mode == EvaluationMode::Eager {
+                if IS_EAGER {
                     let l_ts = l.timestamp;
                     let l_val = l.value;
 
@@ -150,7 +147,7 @@ where
             }
             // Only Right has data
             (None, Some(r)) => {
-                if mode == EvaluationMode::Eager {
+                if IS_EAGER {
                     let r_ts = r.timestamp;
                     let r_val = r.value;
 
@@ -230,7 +227,7 @@ where
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
                 Some(last) => {
-                    if Y::is_refinable() {
+                    if IS_ROSI {
                         timestamp >= last // Intervals: allow refinement of current step
                     } else {
                         timestamp > last // Bool/F64: strictly new data only
@@ -262,18 +259,17 @@ where
             }
         }
 
-        let mut output = process_binary(
+        let mut output = process_binary::<C, Y, _, IS_EAGER, IS_ROSI>(
             &mut self.left_cache,
             &mut self.right_cache,
             &mut self.left_last_known,
             &mut self.right_last_known,
             Y::and,
-            self.mode,
             Some(Y::atomic_false()), 
         );
 
         // Ensure we don't emit stale timestamps for non-refinable types.
-        if !Y::is_refinable() {
+        if !IS_ROSI {
             if let Some(last_time) = self.last_eval_time {
                 output.retain(|step| step.timestamp > last_time);
             }
@@ -284,7 +280,7 @@ where
         self.right_cache.prune(lookahead);
 
         // Update last_eval_time based on strictness semantics
-        if let Some(eval_time) = if Y::is_refinable() {
+        if let Some(eval_time) = if IS_ROSI {
             // For intervals, we track the *start* of the batch because we might re-evaluate it
             output.first().map(|step| step.timestamp)
         } else {
@@ -379,7 +375,7 @@ where
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
                 Some(last) => {
-                    if Y::is_refinable() {
+                    if IS_ROSI {
                         timestamp >= last // Intervals: allow refinement of current step
                     } else {
                         timestamp > last // Bool/F64: strictly new data only
@@ -411,18 +407,17 @@ where
             }
         }
 
-        let mut output = process_binary(
+        let mut output = process_binary::<C, Y, _, IS_EAGER, IS_ROSI>(
             &mut self.left_cache,
             &mut self.right_cache,
             &mut self.left_last_known,
             &mut self.right_last_known,
             Y::or,
-            self.mode,
             Some(Y::atomic_true()), 
         );
 
         // Ensure we don't emit stale timestamps for non-refinable types.
-        if !Y::is_refinable() {
+        if !IS_ROSI {
             if let Some(last_time) = self.last_eval_time {
                 output.retain(|step| step.timestamp > last_time);
             }
@@ -433,7 +428,7 @@ where
         self.right_cache.prune(lookahead);
 
         // Update last_eval_time based on strictness semantics
-        if let Some(eval_time) = if Y::is_refinable() {
+        if let Some(eval_time) = if IS_ROSI {
             // For intervals, we track the *start* of the batch because we might re-evaluate it
             output.first().map(|step| step.timestamp)
         } else {
@@ -1296,9 +1291,8 @@ impl<T, Y> Display for Not<T, Y> {
 mod tests {
     use super::*;
     use crate::ring_buffer::{RingBuffer, Step};
-    use crate::stl::core::{StlOperatorTrait, TimeInterval};
-    use crate::stl::monitor::EvaluationMode;
-    use pretty_assertions::{assert_eq, assert_ne};
+    use crate::stl::core::{StlOperatorTrait, TimeInterval, RobustnessInterval};
+    use pretty_assertions::assert_eq;
     use std::time::Duration;
 
     // Atomic operators
@@ -1690,14 +1684,14 @@ mod tests {
             }
             all_outputs.extend(outputs);
         }
-        let expected_outputs = vec![
-            Step::new("output", Some(1.0), Duration::from_secs(0)),
-            Step::new("output", Some(1.0), Duration::from_secs(1)),
-            Step::new("output", Some(1.0), Duration::from_secs(2)),
-            Step::new("output", Some(1.0), Duration::from_secs(3)),
-            Step::new("output", Some(-2.0), Duration::from_secs(4)),
-            Step::new("output", Some(-1.0), Duration::from_secs(5)),
-        ];
+        // let expected_outputs = vec![
+        //     Step::new("output", Some(1.0), Duration::from_secs(0)),
+        //     Step::new("output", Some(1.0), Duration::from_secs(1)),
+        //     Step::new("output", Some(1.0), Duration::from_secs(2)),
+        //     Step::new("output", Some(1.0), Duration::from_secs(3)),
+        //     Step::new("output", Some(-2.0), Duration::from_secs(4)),
+        //     Step::new("output", Some(-1.0), Duration::from_secs(5)),
+        // ];
 
         // assert_eq!(all_outputs, expected_outputs);
     }
