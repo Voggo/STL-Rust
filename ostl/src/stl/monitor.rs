@@ -220,57 +220,70 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         T: Into<f64> + Copy + 'static,
         Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
     {
+        // Determine configuration flags
+        let is_eager = matches!(mode, EvaluationMode::Eager);
+        // TypeId check is virtually free or optimized away at compile time
+        let is_rosi = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
+
+        // We use `$( $arg:expr ),*` to capture arguments as a list.
+        // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
+        macro_rules! dispatch_operator {
+            ($OpType:ident, $( $arg:expr ),* ) => {
+                match (is_eager, is_rosi) {
+                    (true, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, true>::new( $( $arg ),* )),
+                    (true, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, false>::new( $( $arg ),* )),
+                    (false, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, true>::new( $( $arg ),* )),
+                    (false, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, false>::new( $( $arg ),* )),
+                }
+            };
+        }
+
         match formula {
+            // --- Group A: Clean Operators (No Const Generics) ---
             FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
             FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
             FormulaDefinition::True => Box::new(Atomic::new_true()),
             FormulaDefinition::False => Box::new(Atomic::new_false()),
-            FormulaDefinition::And(l, r) => Box::new(And::new(
-                self.build_incremental_operator(*l, mode),
-                self.build_incremental_operator(*r, mode),
-                Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
-                mode,
-            )),
-            FormulaDefinition::Or(l, r) => Box::new(Or::new(
-                self.build_incremental_operator(*l, mode),
-                self.build_incremental_operator(*r, mode),
-                Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
-                mode,
-            )),
+            
             FormulaDefinition::Not(op) => {
-                Box::new(Not::new(self.build_incremental_operator(*op, mode)))
+                let child = self.build_incremental_operator(*op, mode);
+                Box::new(Not::new(child))
             }
-            FormulaDefinition::Implies(l, r) => Box::new(Or::new(
-                Box::new(Not::new(self.build_incremental_operator(*l, mode))), // Not(A)
-                self.build_incremental_operator(*r, mode),                     // B
-                Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
-                mode,
-            )),
-            FormulaDefinition::Eventually(i, op) => Box::new(Eventually::new(
-                i,
-                self.build_incremental_operator(*op, mode),
-                Some(RingBuffer::new()),
-                Some(BTreeSet::new()),
-                mode,
-            )),
-            FormulaDefinition::Globally(i, op) => Box::new(Globally::new(
-                i,
-                self.build_incremental_operator(*op, mode),
-                Some(RingBuffer::new()), // cache
-                Some(BTreeSet::new()),   // eval_buffer
-                mode,
-            )),
-            FormulaDefinition::Until(i, l, r) => Box::new(Until::new(
-                i,
-                self.build_incremental_operator(*l, mode),
-                self.build_incremental_operator(*r, mode),
-                Some(RingBuffer::new()),
-                Some(RingBuffer::new()),
-                mode,
-            )),
+
+            // --- Group B: Optimized Operators (Uses dispatch macro) ---
+            FormulaDefinition::And(l, r) => {
+                let left = self.build_incremental_operator(*l, mode);
+                let right = self.build_incremental_operator(*r, mode);
+                dispatch_operator!(And, left, right, None, None)
+            }
+
+            FormulaDefinition::Or(l, r) => {
+                let left = self.build_incremental_operator(*l, mode);
+                let right = self.build_incremental_operator(*r, mode);
+                dispatch_operator!(Or, left, right, None, None)
+            }
+
+            FormulaDefinition::Implies(l, r) => {
+                let not_left = Box::new(Not::new(self.build_incremental_operator(*l, mode)));
+                let right = self.build_incremental_operator(*r, mode);
+                dispatch_operator!(Or, not_left, right, None, None)
+            }
+
+            FormulaDefinition::Eventually(i, op) => {
+                let child = self.build_incremental_operator(*op, mode);
+                dispatch_operator!(Eventually, i, child, None, None)
+            }
+
+            FormulaDefinition::Globally(i, op) => {
+                let child = self.build_incremental_operator(*op, mode);
+                dispatch_operator!(Globally, i, child, None, None)
+            }
+
+            FormulaDefinition::Until(i, l, r) => {
+                let left = self.build_incremental_operator(*l, mode);
+                let right = self.build_incremental_operator(*r, mode);
+                dispatch_operator!(Until, i, left, right, None, None)
+            }
         }
     }
 }
