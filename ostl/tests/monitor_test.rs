@@ -686,21 +686,29 @@ mod tests {
             let rosi_outputs = monitor.update(&s);
             let strict_outputs = strict_monitor.update(&s);
 
-            for (rosi_step, strict_step) in rosi_outputs.iter().zip(strict_outputs.iter()) {
-                if let Some(rosi_iv) = rosi_step.value {
-                    if let Some(strict_val) = strict_step.value {
-                        // The strict value must be equal to both bounds of the robustness interval
-                        assert!(
-                            rosi_iv.0 == strict_val && strict_val == rosi_iv.1,
-                            "Final strict value {:?} not equal to robustness interval {:?} at timestamp {:?}",
-                            strict_val,
-                            rosi_iv,
-                            rosi_step.timestamp
-                        );
-                        println!(
-                            "Final strict value: {:?}, RoSI: {:?} at timestamp {:?} (for step at timestamp {:?})",
-                            strict_val, rosi_iv, rosi_step.timestamp, s.timestamp
-                        );
+            if let Some(strict_step) = strict_outputs.first() {
+                if let Some(strict_val) = strict_step.value {
+                    if let Some(rosi_step) = rosi_outputs
+                        .iter()
+                        .find(|step| step.timestamp == strict_step.timestamp)
+                    {
+                        if let Some(rosi_iv) = rosi_step.value {
+                            assert!(
+                                (strict_val == rosi_iv.0) && (strict_val == rosi_iv.1),
+                                "Final strict value {:?} not equal to RoSI {:?} for step at timestamp {:?}",
+                                strict_val,
+                                rosi_iv,
+                                s.timestamp
+                            );
+                            println!(
+                                "Final strict value: {:?} (at t={:?},  RoSI: {:?} (at t={:?}) (for step at timestamp {:?})",
+                                strict_val,
+                                strict_step.timestamp,
+                                rosi_iv,
+                                rosi_step.timestamp,
+                                s.timestamp
+                            );
+                        }
                     }
                 }
             }
