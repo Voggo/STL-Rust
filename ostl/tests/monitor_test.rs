@@ -4,7 +4,7 @@ mod tests {
     use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
-    use pretty_assertions::{assert_eq};
+    use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
     use std::fmt::Debug;
     use std::time::Duration;
@@ -527,7 +527,7 @@ mod tests {
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula_3())
+            .formula(formula_2())
             .strategy(MonitoringStrategy::Incremental)
             .evaluation_mode(EvaluationMode::Strict)
             .build()
@@ -536,10 +536,11 @@ mod tests {
         println!("Testing formula: {} \n", monitor.specification_to_string());
         // pass step to monitor to ensure it works
         let step = vec![
-            Step::new("x", 4.0, Duration::from_secs(0)),
-            Step::new("x", -4.0, Duration::from_secs(1)),
-            Step::new("x", 6.0, Duration::from_secs(7)),
-            Step::new("x", 2.0, Duration::from_secs(8)),
+            Step::new("x", 2.0, Duration::from_secs(0)),
+            Step::new("x", 2.0, Duration::from_secs(1)),
+            Step::new("x", -2.0, Duration::from_secs(6)),
+            Step::new("x", 2.0, Duration::from_secs(7)),
+            Step::new("x", 5.0, Duration::from_secs(8)),
         ];
 
         for s in step {
@@ -595,26 +596,24 @@ mod tests {
 
             if let Some(strict_step) = strict_outputs.first() {
                 if let Some(strict_val) = strict_step.value {
-                    if let Some(rosi_step) = rosi_outputs
+                    let rosi_step = rosi_outputs
                         .iter()
                         .find(|step| step.timestamp == strict_step.timestamp)
-                    {
-                        if let Some(rosi_iv) = rosi_step.value {
-                            assert_eq!(
-                                strict_val, rosi_iv.0,
-                                "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
-                                strict_val,
-                                rosi_iv.0,
-                                s.timestamp
-                            );
-                            assert_eq!(
-                                strict_val, rosi_iv.1,
-                                "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
-                                strict_val,
-                                rosi_iv.1,
-                                s.timestamp
-                            );
-                        }
+                        .expect(&format!(
+                            "No RoSI step found for timestamp {:?}",
+                            strict_step.timestamp
+                        ));
+                    if let Some(rosi_iv) = rosi_step.value {
+                        assert_eq!(
+                            strict_val, rosi_iv.0,
+                            "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
+                            strict_val, rosi_iv.0, s.timestamp
+                        );
+                        assert_eq!(
+                            strict_val, rosi_iv.1,
+                            "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
+                            strict_val, rosi_iv.1, s.timestamp
+                        );
                     }
                 }
             }
