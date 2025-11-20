@@ -1063,8 +1063,12 @@ where
                 remove_task = true;
             } else if IS_ROSI {
                 // Case 3: Intermediate ROSI. Window is still open, no short-circuit.
-                // let intermediate_value = Y::or(max_robustness, Y::unknown());
-                final_value = Some(max_robustness);
+                // We must account for unknown future contributions. For Until, the
+                // outer sup (max_robustness) should be widened with unknown() so
+                // that subsequent negations or compositions see the correct
+                // refinable bounds (mirrors behavior in Eventually/Globally).
+                let intermediate_value = Y::or(max_robustness, Y::unknown());
+                final_value = Some(intermediate_value);
                 // DO NOT remove task, it's not finished
             } else {
                 // Case 4: Cannot evaluate yet (e.g., Strict/Eager bool/f64 and window is still open)

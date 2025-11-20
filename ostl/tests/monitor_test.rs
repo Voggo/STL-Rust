@@ -58,6 +58,24 @@ mod tests {
 
     #[fixture]
     #[once]
+    fn formula_1_alt() -> FormulaDefinition {
+        // G[a,b](phi) is equivalent to !(F[a,b]( ! (phi)))
+        stl! {
+            !(F[0,2] (x <= 3))
+        }
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_1_alt_2() -> FormulaDefinition {
+        // F[a,b](phi) is equivalent to (true) U[a,b] (phi), so G[a,b](phi) is also equivalent to !( (true) U[a,b] ( ! (phi)))
+        stl! {
+            !( (true) U[0,2] (x <= 3))
+        }
+    }
+
+    #[fixture]
+    #[once]
     fn formula_2() -> FormulaDefinition {
         stl! {(G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))}
     }
@@ -66,6 +84,13 @@ mod tests {
     #[once]
     fn formula_3() -> FormulaDefinition {
         stl! {(F[0,2] (x > 5)) && (G[0, 2] (x > 0))}
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_3_alt() -> FormulaDefinition {
+        // G[a,b](phi) is equivalent to !(F[a,b]( ! (phi)))
+        stl! {((true) U[0,2] (x > 5)) && (!(F[0,2] (x <= 0)))}
     }
 
     #[fixture]
@@ -82,8 +107,24 @@ mod tests {
 
     #[fixture]
     #[once]
+    fn formula_5_alt() -> FormulaDefinition {
+        // F[a,b](phi) is equivalent to (true) U[a,b] (phi)
+        stl! {(true) U[0, 2] (x > 5)}
+    }
+
+    #[fixture]
+    #[once]
     fn formula_6() -> FormulaDefinition {
         stl! {(G[0, 5] (x > 0)) -> (F[0, 2] (x > 3))}
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_6_alt() -> FormulaDefinition {
+        // using rules for globally (in terms of eventually) and eventually (in terms of until)
+        stl! {
+            (!(F[0,5](x <= 0))) -> ((true) U[0,2](x > 3))
+        }
     }
 
     #[fixture]
@@ -96,6 +137,12 @@ mod tests {
     #[once]
     fn formula_8() -> FormulaDefinition {
         stl! {(G[0,2](x>0)) && (y<5)}
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_8_alt() -> FormulaDefinition {
+        stl! {(!(F[0,2](x<=0))) && (y<5)}
     }
 
     // ---
@@ -459,11 +506,11 @@ mod tests {
     // --- f64 Strict Cases ---
     // These run with EvaluationMode::Strict and are tested against
     // both Naive and Incremental strategies.
-    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_f64_strict())]
+    #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_f64_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_strict())]
-    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_f64_strict())]
-    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_f64_strict())]
-    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_f64_strict())]
+    #[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_f64_strict())]
+    #[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_f64_strict())]
+    #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_f64_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_strict())]
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_f64_strict())]
     fn test_f64_strict<Y>(
@@ -482,11 +529,11 @@ mod tests {
     // --- bool Strict Cases ---
     // These run with EvaluationMode::Strict and are tested against
     // both Naive and Incremental strategies.
-    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_bool_strict())]
+    #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_strict())]
-    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_bool_strict())]
-    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_strict())]
-    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_strict())]
+    #[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_bool_strict())]
+    #[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_bool_strict())]
+    #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_strict())]
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_strict())]
     fn test_bool_strict<Y>(
@@ -505,11 +552,11 @@ mod tests {
     // --- bool Eager Cases ---
     // These run with EvaluationMode::Eager and are tested *only*
     // against the Incremental strategy (Naive+Eager is invalid).
-    #[case::f1_s1(vec![formula_1()], signal_1(), exp_f1_s1_bool_eager())]
+    #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_eager())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_eager())]
-    #[case::f3_s3(vec![formula_3()], signal_3(), exp_f3_s3_bool_eager())]
-    #[case::f6_s2(vec![formula_6()], signal_2(), exp_f6_s2_bool_eager())]
-    #[case::f4_s3(vec![formula_4(), formula_5()], signal_3(), exp_f4_s3_bool_eager())]
+    #[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_bool_eager())]
+    #[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_bool_eager())]
+    #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_eager())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_eager())]
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())] // TODO: Add eager expected for f8_s4
     fn test_bool_eager<Y>(
@@ -550,95 +597,115 @@ mod tests {
                 &s.timestamp, s.value, output
             );
         }
-
-        // println!("Monitor output: {:?}", output);
     }
 
     #[rstest]
-    #[case(formula_1())]
-    #[case(formula_2())]
-    #[case(formula_3())]
-    #[case(formula_4())]
-    #[case(formula_5())]
-    #[case(formula_6())]
-    #[case(formula_7())]
-    fn test_final_rosi_verdicts(#[case] formula: FormulaDefinition) {
-        // Build an incremental, eager monitor that emits RobustnessInterval outputs
-        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Eager)
-            .build()
-            .unwrap();
-
-        // build a strict monitor for comparison
-        let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Strict)
-            .build()
-            .unwrap();
+    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+    #[case(vec![formula_2()])]
+    #[case(vec![formula_3(), formula_3_alt()])]
+    #[case(vec![formula_4()])]
+    #[case(vec![formula_5(), formula_5_alt()])]
+    #[case(vec![formula_6(), formula_6_alt()])]
+    #[case(vec![formula_7()])]
+    fn test_final_rosi_verdicts(#[case] formulas: Vec<FormulaDefinition>) {
+        let formula_count = formulas.len();
 
         let input_steps: Vec<Step<f64>> = (0..20)
             .map(|i| {
                 let timestamp = Duration::from_secs(i);
-                let value = (i as f64 % 21.0) - 10.0; // values cycling from -10.0 to 10.0
-                // let value = rand::random::<f64>() * 20.0 - 10.0; // random values in range [-10.0, 10.0]
+                // let value = (i as f64 % 21.0) - 10.0; // values cycling from -10.0 to 10.0
+                let value = rand::random::<f64>() * 20.0 - 10.0; // random values in range [-10.0, 10.0]
                 Step::new("x", value, timestamp)
             })
             .collect();
 
-        println!("Testing formula: {} \n", monitor.specification_to_string());
+        // Build all RoSI outputs by mapping each formula to its output vector.
+        // We create monitors inside the closure and run the same input stream
+        // for each formula, preserving the strict-vs-rosi assertions.
+        let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
+            .into_iter()
+            .map(|formula| {
+                // Build an incremental, eager monitor that emits RobustnessInterval outputs
+                let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+                    .formula(formula.clone())
+                    .strategy(MonitoringStrategy::Incremental)
+                    .evaluation_mode(EvaluationMode::Eager)
+                    .build()
+                    .unwrap();
 
-        for s in input_steps.clone() {
-            let rosi_outputs = monitor.update(&s);
-            let strict_outputs = strict_monitor.update(&s);
+                // build a strict monitor for comparison
+                let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                    .formula(formula)
+                    .strategy(MonitoringStrategy::Incremental)
+                    .evaluation_mode(EvaluationMode::Strict)
+                    .build()
+                    .unwrap();
 
-            if let Some(strict_step) = strict_outputs.first() {
-                if let Some(strict_val) = strict_step.value {
-                    let rosi_step = rosi_outputs
-                        .iter()
-                        .find(|step| step.timestamp == strict_step.timestamp)
-                        .expect(&format!(
-                            "No RoSI step found for timestamp {:?}",
-                            strict_step.timestamp
-                        ));
-                    if let Some(rosi_iv) = rosi_step.value {
-                        assert_eq!(
-                            strict_val, rosi_iv.0,
-                            "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
-                            strict_val, rosi_iv.0, s.timestamp
-                        );
-                        assert_eq!(
-                            strict_val, rosi_iv.1,
-                            "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
-                            strict_val, rosi_iv.1, s.timestamp
-                        );
-                    }
-                }
+                println!("Testing formula: {} \n", monitor.specification_to_string());
+
+                input_steps
+                    .iter()
+                    .flat_map(|s| {
+                        let rosi_outputs = monitor.update(&s);
+                        let strict_outputs = strict_monitor.update(&s);
+
+                        // Validate strict vs RoSI for the first (final) strict step, if present
+                        if let Some(strict_step) = strict_outputs.first() {
+                            if let Some(strict_val) = strict_step.value {
+                                let rosi_step = rosi_outputs
+                                    .iter()
+                                    .find(|step| step.timestamp == strict_step.timestamp)
+                                    .expect(&format!(
+                                        "No RoSI step found for timestamp {:?}",
+                                        strict_step.timestamp
+                                    ));
+                                if let Some(rosi_iv) = rosi_step.value {
+                                    assert_eq!(
+                                        strict_val, rosi_iv.0,
+                                        "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
+                                        strict_val, rosi_iv.0, s.timestamp
+                                    );
+                                    assert_eq!(
+                                        strict_val, rosi_iv.1,
+                                        "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
+                                        strict_val, rosi_iv.1, s.timestamp
+                                    );
+                                }
+                            }
+                        }
+
+                        rosi_outputs.into_iter()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Ensure we have one output vector per formula
+        assert_eq!(all_rosi_outputs.len(), formula_count, "Number of RoSI output vectors does not match number of formulas");
+
+        // Idiomatic equality check: compare every other vector against the first
+        if let Some(first_out) = all_rosi_outputs.first() {
+            for (i, rosi_vec) in all_rosi_outputs.iter().enumerate().skip(1) {
+                assert_eq!(
+                    first_out, rosi_vec,
+                    "RoSI outputs differ between formulas at index 0 and {}",
+                    i
+                );
             }
         }
     }
 
     #[rstest]
-    #[case(formula_1())]
-    #[case(formula_2())]
-    #[case(formula_3())]
-    #[case(formula_4())]
-    #[case(formula_5())]
-    #[case(formula_6())]
-    #[case(formula_7())]
-    #[case(formula_8())]
-    fn test_rosi_interval_bounds(#[case] formula: FormulaDefinition) {
+    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+    #[case(vec![formula_2()])]
+    #[case(vec![formula_3(), formula_3_alt()])]
+    #[case(vec![formula_4()])]
+    #[case(vec![formula_5(), formula_5_alt()])]
+    #[case(vec![formula_6(), formula_6_alt()])]
+    #[case(vec![formula_7()])]
+    #[case(vec![formula_8()])]
+    fn test_rosi_interval_bounds(#[case] formulas: Vec<FormulaDefinition>) {
         use std::collections::HashMap;
-
-        // Build an incremental, eager monitor that emits RobustnessInterval outputs
-        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula)
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Eager)
-            .build()
-            .unwrap();
 
         // A sequence of input steps that will cause refinement of interval robustness
         let input_steps: Vec<Step<f64>> = (0..100)
@@ -648,42 +715,77 @@ mod tests {
                 Step::new("x", value, timestamp)
             })
             .collect();
-        // Track the last seen interval for each timestamp. As the monitor refines
-        // partial/unknown intervals, the lower bound should never decrease and the
-        // upper bound should never increase for a given timestamp.
-        let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> = HashMap::new();
 
-        for s in input_steps {
-            let outputs = monitor.update(&s);
+        // Map each formula to its RoSI output vector while checking per-timestamp
+        // monotonic refinement. Using iterator/map makes monitor creation and
+        // execution more idiomatic and isolates work per formula.
+        let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
+            .into_iter()
+            .map(|formula| {
+                // Build an incremental, eager monitor that emits RobustnessInterval outputs
+                let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+                    .formula(formula)
+                    .strategy(MonitoringStrategy::Incremental)
+                    .evaluation_mode(EvaluationMode::Eager)
+                    .build()
+                    .unwrap();
 
-            for out_step in outputs {
-                if let Some(iv) = out_step.value {
-                    if let Some(prev) = last_intervals.get(&out_step.timestamp) {
-                        // New lower bound must be >= previous lower bound
-                        assert!(
-                            iv.0 >= prev.0,
-                            "Lower bound for timestamp {:?} decreased: previous={:?}, new={:?}",
-                            out_step.timestamp,
-                            prev,
-                            iv
-                        );
+                // Track the last seen interval for each timestamp. As the monitor refines
+                // partial/unknown intervals, the lower bound should never decrease and the
+                // upper bound should never increase for a given timestamp.
+                let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> = HashMap::new();
 
-                        // New upper bound must be <= previous upper bound
-                        assert!(
-                            iv.1 <= prev.1,
-                            "Upper bound for timestamp {:?} increased: previous={:?}, new={:?}",
-                            out_step.timestamp,
-                            prev,
-                            iv
-                        );
+                let mut rosi_output: Vec<Step<Option<RobustnessInterval>>> = Vec::new();
+
+                for s in input_steps.clone() {
+                    let outputs = monitor.update(&s);
+
+                    for out_step in outputs.iter() {
+                        if let Some(iv) = out_step.value {
+                            if let Some(prev) = last_intervals.get(&out_step.timestamp) {
+                                // New lower bound must be >= previous lower bound
+                                assert!(
+                                    iv.0 >= prev.0,
+                                    "Lower bound for timestamp {:?} decreased: previous={:?}, new={:?}",
+                                    out_step.timestamp,
+                                    prev,
+                                    iv
+                                );
+
+                                // New upper bound must be <= previous upper bound
+                                assert!(
+                                    iv.1 <= prev.1,
+                                    "Upper bound for timestamp {:?} increased: previous={:?}, new={:?}",
+                                    out_step.timestamp,
+                                    prev,
+                                    iv
+                                );
+                            }
+
+                            // Record the observed interval for this timestamp (replace with the
+                            // most recent observation). This allows future observations to be
+                            // compared against the last-known bounds.
+                            last_intervals.insert(out_step.timestamp, iv);
+                        }
                     }
 
-                    // Record the observed interval for this timestamp (replace with the
-                    // most recent observation). This allows future observations to be
-                    // compared against the last-known bounds.
-                    last_intervals.insert(out_step.timestamp, iv);
+                    // Extend the per-formula RoSI output vector with clones of the outputs
+                    rosi_output.extend(outputs.clone());
                 }
-            }
+
+                rosi_output
+            })
+            .collect();
+
+        // Now assert that all equivalent formulas produced identical RoSI outputs.
+        assert!(!all_rosi_outputs.is_empty(), "No RoSI outputs collected");
+        let first_out = &all_rosi_outputs[0];
+        for (i, rosi_vec) in all_rosi_outputs.iter().enumerate().skip(1) {
+            assert_eq!(
+                first_out, rosi_vec,
+                "RoSI outputs differ between formulas at index 0 and {}",
+                i
+            );
         }
     }
 
