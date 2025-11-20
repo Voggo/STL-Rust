@@ -6,6 +6,8 @@ mod tests {
     use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
+    use std::collections::HashMap;
+    use std::f64::consts::PI;
     use std::fmt::Debug;
     use std::time::Duration;
     use std::vec;
@@ -191,6 +193,46 @@ mod tests {
 
         // Combine and sort the steps chronologically
         combine_and_sort_steps(vec![x_steps, y_steps])
+    }
+
+    #[fixture]
+    #[once]
+    fn monotonic_increasing() -> Vec<Step<f64>> {
+        const N: usize = 51;
+        (0..N)
+            .map(|i| {
+                let timestamp = Duration::from_secs(i as u64);
+                let t = i as f64 / (N as f64 - 1.0);
+                let value = -10.0 + 20.0 * t; // from -10 to 10
+                Step::new("x", value, timestamp)
+            })
+            .collect()
+    }
+    #[fixture]
+    #[once]
+    fn monotonic_decreasing() -> Vec<Step<f64>> {
+        const N: usize = 51;
+        (0..N)
+            .map(|i| {
+                let timestamp = Duration::from_secs(i as u64);
+                let t = i as f64 / (N as f64 - 1.0);
+                let value = 10.0 - 20.0 * t; // from 10 to -10
+                Step::new("x", value, timestamp)
+            })
+            .collect()
+    }
+    #[fixture]
+    #[once]
+    fn sinusoid() -> Vec<Step<f64>> {
+        const N: usize = 51;
+        (0..N)
+            .map(|i| {
+                let timestamp = Duration::from_secs(i as u64);
+                let t = i as f64 / (N as f64 - 1.0);
+                let value = 10.0 * (2.0 * PI * t).sin();
+                Step::new("x", value, timestamp)
+            })
+            .collect()
     }
 
     // ---
@@ -607,21 +649,12 @@ mod tests {
     #[case(vec![formula_5(), formula_5_alt()])]
     #[case(vec![formula_6(), formula_6_alt()])]
     #[case(vec![formula_7()])]
-    fn test_final_rosi_verdicts(#[case] formulas: Vec<FormulaDefinition>) {
-        let formula_count = formulas.len();
-
-        let input_steps: Vec<Step<f64>> = (0..20)
-            .map(|i| {
-                let timestamp = Duration::from_secs(i);
-                // let value = (i as f64 % 21.0) - 10.0; // values cycling from -10.0 to 10.0
-                let value = rand::random::<f64>() * 20.0 - 10.0; // random values in range [-10.0, 10.0]
-                Step::new("x", value, timestamp)
-            })
-            .collect();
-
-        // Build all RoSI outputs by mapping each formula to its output vector.
-        // We create monitors inside the closure and run the same input stream
-        // for each formula, preserving the strict-vs-rosi assertions.
+    fn test_final_rosi_verdicts(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
+            Step<f64>,
+        >,
+    ) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
@@ -643,7 +676,7 @@ mod tests {
 
                 println!("Testing formula: {} \n", monitor.specification_to_string());
 
-                input_steps
+                signal
                     .iter()
                     .flat_map(|s| {
                         let rosi_outputs = monitor.update(&s);
@@ -680,10 +713,7 @@ mod tests {
             })
             .collect();
 
-        // Ensure we have one output vector per formula
-        assert_eq!(all_rosi_outputs.len(), formula_count, "Number of RoSI output vectors does not match number of formulas");
-
-        // Idiomatic equality check: compare every other vector against the first
+        // equality check: compare every other vector against the first (equal is transitive)
         if let Some(first_out) = all_rosi_outputs.first() {
             for (i, rosi_vec) in all_rosi_outputs.iter().enumerate().skip(1) {
                 assert_eq!(
@@ -704,25 +734,15 @@ mod tests {
     #[case(vec![formula_6(), formula_6_alt()])]
     #[case(vec![formula_7()])]
     #[case(vec![formula_8()])]
-    fn test_rosi_interval_bounds(#[case] formulas: Vec<FormulaDefinition>) {
-        use std::collections::HashMap;
-
-        // A sequence of input steps that will cause refinement of interval robustness
-        let input_steps: Vec<Step<f64>> = (0..100)
-            .map(|i| {
-                let timestamp = Duration::from_millis(i * 200); // every 0.2 seconds
-                let value = (i as f64 % 21.0) - 10.0; // values cycling from -10.0 to 10.0
-                Step::new("x", value, timestamp)
-            })
-            .collect();
-
-        // Map each formula to its RoSI output vector while checking per-timestamp
-        // monotonic refinement. Using iterator/map makes monitor creation and
-        // execution more idiomatic and isolates work per formula.
+    fn test_rosi_interval_bounds(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
+            Step<f64>,
+        >,
+    ) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
-                // Build an incremental, eager monitor that emits RobustnessInterval outputs
                 let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
                     .formula(formula)
                     .strategy(MonitoringStrategy::Incremental)
@@ -737,7 +757,7 @@ mod tests {
 
                 let mut rosi_output: Vec<Step<Option<RobustnessInterval>>> = Vec::new();
 
-                for s in input_steps.clone() {
+                for s in signal.clone() {
                     let outputs = monitor.update(&s);
 
                     for out_step in outputs.iter() {
@@ -761,15 +781,10 @@ mod tests {
                                     iv
                                 );
                             }
-
-                            // Record the observed interval for this timestamp (replace with the
-                            // most recent observation). This allows future observations to be
-                            // compared against the last-known bounds.
                             last_intervals.insert(out_step.timestamp, iv);
                         }
                     }
 
-                    // Extend the per-formula RoSI output vector with clones of the outputs
                     rosi_output.extend(outputs.clone());
                 }
 
@@ -777,7 +792,6 @@ mod tests {
             })
             .collect();
 
-        // Now assert that all equivalent formulas produced identical RoSI outputs.
         assert!(!all_rosi_outputs.is_empty(), "No RoSI outputs collected");
         let first_out = &all_rosi_outputs[0];
         for (i, rosi_vec) in all_rosi_outputs.iter().enumerate().skip(1) {
@@ -792,7 +806,6 @@ mod tests {
     // ---
     // Test Runner for Build Failures
     // ---
-
     #[rstest]
     #[should_panic]
     fn test_monitor_build_fails_f64_eager(
