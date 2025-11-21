@@ -175,6 +175,7 @@ pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     right_last_known: Step<Option<Y>>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
+    max_lookahead: Duration,
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, IS_ROSI> {
@@ -189,6 +190,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, 
         C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
         And {
             left,
             right,
@@ -199,6 +201,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, 
             right_last_known: Step::new("", None, Duration::ZERO),
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
+            max_lookahead,
         }
     }
 }
@@ -213,9 +216,7 @@ where
     type Output = Y;
 
     fn get_max_lookahead(&self) -> Duration {
-        let left_lookahead = self.left.get_max_lookahead();
-        let right_lookahead = self.right.get_max_lookahead();
-        left_lookahead.max(right_lookahead)
+        self.max_lookahead
     }
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -313,6 +314,7 @@ pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     right_last_known: Step<Option<Y>>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
+    max_lookahead: Duration,
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, IS_ROSI> {
@@ -327,6 +329,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, I
         C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
+        let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
         Or {
             left,
             right,
@@ -345,6 +348,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, I
             },
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
+            max_lookahead,
         }
     }
 }
@@ -359,9 +363,7 @@ where
     type Output = Y;
 
     fn get_max_lookahead(&self) -> Duration {
-        let left_lookahead = self.left.get_max_lookahead();
-        let right_lookahead = self.right.get_max_lookahead();
-        left_lookahead.max(right_lookahead)
+        self.max_lookahead
     }
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -451,6 +453,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 #[derive(Clone)]
 pub struct Not<T, Y> {
     pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    max_lookahead: Duration,
 }
 
 impl<T, Y> Not<T, Y> {
@@ -459,7 +462,11 @@ impl<T, Y> Not<T, Y> {
         T: Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
-        Not { operand }
+        let max_lookahead = operand.get_max_lookahead();
+        Not {
+            operand,
+            max_lookahead,
+        }
     }
 }
 
@@ -471,7 +478,7 @@ where
     type Output = Y;
 
     fn get_max_lookahead(&self) -> Duration {
-        self.operand.get_max_lookahead()
+        self.max_lookahead
     }
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
@@ -1054,11 +1061,11 @@ where
                 final_value = Some(max_robustness);
                 remove_task = true;
             } else if IS_EAGER && max_robustness == Y::atomic_true() {
-                // Case 2: Eager short-circuit (Satisfaction). Found "true" before window closed.
+                // Case 2a: Eager short-circuit (Satisfaction). Found "true" before window closed.
                 final_value = Some(max_robustness); // which is Y::atomic_true()
                 remove_task = true;
             } else if IS_EAGER && falsified {
-                // **FIX 2: Add Eager short-circuit (Falsification).**
+                // Case 2b: Eager short-circuit (Falsification). Found "false" before window closed.
                 final_value = Some(max_robustness); // which is Y::atomic_false()
                 remove_task = true;
             } else if IS_ROSI {
