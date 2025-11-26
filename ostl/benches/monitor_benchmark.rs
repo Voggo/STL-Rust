@@ -2,6 +2,7 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "dhat-heap")]
 use dhat;
+use ostl::stl;
 use ostl::ring_buffer::Step;
 use ostl::stl::core::{TimeInterval, RobustnessInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
@@ -16,41 +17,44 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
 fn _formula_1() -> FormulaDefinition {
+    stl! {
+        G[30, 100] ((((x < 30) && (x > -30)) && ((x < 0.5) && (x > -0.5))) -> (F[0, 50](G[0, 20]((x < 0.5) && (x > -0.5)))))
+    }
     //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
-    FormulaDefinition::Globally(
-        TimeInterval {
-            start: Duration::from_secs(30),
-            end: Duration::from_secs(100),
-        },
-        Box::new(FormulaDefinition::Implies(
-            Box::new(FormulaDefinition::And(
-                Box::new(FormulaDefinition::And(
-                    Box::new(FormulaDefinition::LessThan("x", 30.0)),
-                    Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
-                )),
-                Box::new(FormulaDefinition::Or(
-                    Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
-                    Box::new(FormulaDefinition::LessThan("x", -0.5)),
-                )),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(50),
-                },
-                Box::new(FormulaDefinition::Globally(
-                    TimeInterval {
-                        start: Duration::from_secs(0),
-                        end: Duration::from_secs(20),
-                    },
-                    Box::new(FormulaDefinition::And(
-                        Box::new(FormulaDefinition::LessThan("x", 0.5)),
-                        Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
-                    )),
-                )),
-            )),
-        )),
-    )
+    // FormulaDefinition::Globally(
+    //     TimeInterval {
+    //         start: Duration::from_secs(30),
+    //         end: Duration::from_secs(100),
+    //     },
+    //     Box::new(FormulaDefinition::Implies(
+    //         Box::new(FormulaDefinition::And(
+    //             Box::new(FormulaDefinition::And(
+    //                 Box::new(FormulaDefinition::LessThan("x", 30.0)),
+    //                 Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
+    //             )),
+    //             Box::new(FormulaDefinition::Or(
+    //                 Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
+    //                 Box::new(FormulaDefinition::LessThan("x", -0.5)),
+    //             )),
+    //         )),
+    //         Box::new(FormulaDefinition::Eventually(
+    //             TimeInterval {
+    //                 start: Duration::from_secs(0),
+    //                 end: Duration::from_secs(50),
+    //             },
+    //             Box::new(FormulaDefinition::Globally(
+    //                 TimeInterval {
+    //                     start: Duration::from_secs(0),
+    //                     end: Duration::from_secs(20),
+    //                 },
+    //                 Box::new(FormulaDefinition::And(
+    //                     Box::new(FormulaDefinition::LessThan("x", 0.5)),
+    //                     Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
+    //                 )),
+    //             )),
+    //         )),
+    //     )),
+    // )
 }
 
 fn _formula_2() -> FormulaDefinition {
