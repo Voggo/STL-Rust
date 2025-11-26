@@ -741,57 +741,6 @@ where
             }
         }
 
-        // let mut tasks_to_remove = Vec::new();
-        // let current_time = step.timestamp;
-
-        // // 2. Process the evaluation buffer
-        // for &t_eval in self.eval_buffer.iter() {
-        //     let window_start = t_eval + self.interval.start;
-        //     let window_end = t_eval + self.interval.end;
-
-        //     // Use `skip_while` and `take_while` to iterate only over
-        //     // the relevant part of the cache, not the whole thing.
-        //     let windowed_min_value = self
-        //         .cache
-        //         .iter()
-        //         .skip_while(|entry| entry.timestamp < window_start)
-        //         .take_while(|entry| entry.timestamp <= window_end)
-        //         .filter_map(|entry| entry.value.clone())
-        //         .fold(Y::globally_identity(), Y::and); // Use the identity from your code
-
-        //     let final_value: Option<Y>;
-        //     let mut remove_task = false;
-
-        //     // state-based logic
-        //     if current_time >= t_eval + self.max_lookahead {
-        //         // Case 1: Full window has passed. This is a final, "closed" value.
-        //         final_value = Some(windowed_min_value);
-        //         remove_task = true;
-        //     } else if IS_EAGER && windowed_min_value == Y::atomic_false() {
-        //         // Case 2: Eager short-circuit. Found "false" before window closed.
-        //         final_value = Some(windowed_min_value);
-        //         remove_task = true;
-        //     } else if IS_ROSI {
-        //         // Case 3: Intermediate ROSI. Window is still open.
-        //         // We must 'and' with the unknown future.
-        //         let intermediate_value = Y::and(windowed_min_value, Y::unknown());
-        //         final_value = Some(intermediate_value);
-        //         // DO NOT remove task, it's not finished
-        //     } else {
-        //         // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
-        //         // Since the buffer is time-ordered, we stop.
-        //         break;
-        //     }
-
-        //     if let Some(val) = final_value {
-        //         output_robustness.push(Step::new("output", Some(val), t_eval));
-        //     }
-
-        //     if remove_task {
-        //         tasks_to_remove.push(t_eval);
-        //     }
-        // }
-
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
         let lookahead = self.max_lookahead;
@@ -1115,8 +1064,6 @@ where
             let mut left_idx = 0;
 
             // Fast-forward left_idx to t_eval (start of the Until integration)
-            // Using the `get` optimization from the previous answer is best,
-            // but here is the logic using standard iterators:
             while left_idx < self.left_cache.len() {
                 if let Some(s) = self.left_cache.get(left_idx) {
                     if s.timestamp < t_eval {
@@ -1191,9 +1138,7 @@ where
                 let robustness_t_prime = Y::and(psi_val, current_phi_val);
                 max_robustness_vec.push(robustness_t_prime);
             }
-
-            // ... [Rest of aggregation and cleanup logic remains the same] ...
-
+            
             let max_robustness = if max_robustness_vec.is_empty() {
                 break; // No data to evaluate yet
             } else {
