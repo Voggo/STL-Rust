@@ -303,4 +303,10 @@ mod tests {
         let signal: RingBuffer<bool> = RingBuffer::new();
         assert!(signal.is_empty());
     }
+
+    #[test]
+    fn default_ring_buffer() {
+        let signal: RingBuffer<i32> = RingBuffer::default();
+        assert!(signal.is_empty());
+    }
 }

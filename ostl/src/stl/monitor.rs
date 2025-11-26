@@ -106,17 +106,14 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         T: Into<f64> + Copy + 'static, // Add required bounds
         Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug, // Add required bounds
     {
-        let is_bool = TypeId::of::<Y>() == TypeId::of::<bool>();
-        let is_f64 = TypeId::of::<Y>() == TypeId::of::<f64>();
-        let is_robustness_interval = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
-        let identifier = if is_bool {
+        // The RobustnessSemantics bound guarantees Y is one of the supported types.
+        let identifier: &'static str = if TypeId::of::<Y>() == TypeId::of::<bool>() {
             "bool"
-        } else if is_f64 {
+        } else if TypeId::of::<Y>() == TypeId::of::<f64>() {
             "f64"
-        } else if is_robustness_interval {
-            "RobustnessInterval"
         } else {
-            return Err("Unsupported output type for robustness semantics");
+            // At this point, only RobustnessInterval remains (guaranteed by the trait bound).
+            "RobustnessInterval"
         };
 
         let formula_def = self
