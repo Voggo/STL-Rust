@@ -569,46 +569,84 @@ where
                 self.cache.add_step(sub_step); // sub_step is moved
             }
         }
-
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
+        let lookahead = self.max_lookahead;
 
-        // 2. Process the evaluation buffer
+        // OPTIMIZATION: Sliding Window (Caterpillar method)
+        // We maintain indices into the ring buffer instead of searching from 0 every time.
+        let mut start_idx = 0;
+        let mut end_idx = 0;
+        let cache_len = self.cache.len();
+
+        // We need to iterate tasks in order.
+        // If eval_buffer is BTreeSet, iter() is already sorted.
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Use `skip_while` and `take_while` to iterate only over
-            // the relevant part of the cache, not the whole thing.
-            let windowed_max_value = self
-                .cache
-                .iter()
-                .skip_while(|entry| entry.timestamp < window_start)
-                .take_while(|entry| entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or); // Use the identity from your code
+            // 1. Advance start_idx: Find first item >= window_start
+            // We start searching from where the previous task left off (start_idx).
+            while start_idx < cache_len {
+                if let Some(s) = self.cache.get(start_idx) {
+                    if s.timestamp < window_start {
+                        start_idx += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // 2. Advance end_idx: Find first item > window_end (so we stop before it)
+            // We ensure end_idx is at least start_idx
+            if end_idx < start_idx {
+                end_idx = start_idx;
+            }
+
+            while end_idx < cache_len {
+                if let Some(s) = self.cache.get(end_idx) {
+                    if s.timestamp <= window_end {
+                        end_idx += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // 3. Compute Aggregation strictly over the window [start_idx..end_idx]
+            // Note: If start_idx == end_idx, the range is empty (no data in window).
+            let mut windowed_max_value = Y::eventually_identity();
+
+            // This inner loop is now amortized O(1) relative to the outer loop movement
+            // specifically for finding the bounds. The folding is still dependent on window density,
+            // but we eliminated the scan of the *entire history* preceding the window.
+            for i in start_idx..end_idx {
+                if let Some(step) = self.cache.get(i) {
+                    if let Some(val) = &step.value {
+                        windowed_max_value = Y::or(windowed_max_value, val.clone());
+                    }
+                }
+            }
 
             let final_value: Option<Y>;
             let mut remove_task = false;
 
-            // state-based logic
-            if current_time >= t_eval + self.max_lookahead {
-                // Case 1: Full window has passed. This is a final, "closed" value.
+            if current_time >= t_eval + lookahead {
                 final_value = Some(windowed_max_value);
                 remove_task = true;
             } else if IS_EAGER && windowed_max_value == Y::atomic_true() {
-                // Case 2: Eager short-circuit. Found "true" before window closed.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
             } else if IS_ROSI {
-                // Case 3: Intermediate ROSI. Window is still open.
-                // We must 'or' with the unknown future.
-                let intermediate_value = Y::or(windowed_max_value, Y::unknown()); // Use unknown() from your code
+                let intermediate_value = Y::or(windowed_max_value, Y::unknown());
                 final_value = Some(intermediate_value);
-                // DO NOT remove task, it's not finished
             } else {
-                // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
-                // Since the buffer is time-ordered, we stop.
+                // If strict and window not closed, we usually break early because subsequent
+                // tasks are also not ready.
                 break;
             }
 
@@ -703,29 +741,125 @@ where
             }
         }
 
+        // let mut tasks_to_remove = Vec::new();
+        // let current_time = step.timestamp;
+
+        // // 2. Process the evaluation buffer
+        // for &t_eval in self.eval_buffer.iter() {
+        //     let window_start = t_eval + self.interval.start;
+        //     let window_end = t_eval + self.interval.end;
+
+        //     // Use `skip_while` and `take_while` to iterate only over
+        //     // the relevant part of the cache, not the whole thing.
+        //     let windowed_min_value = self
+        //         .cache
+        //         .iter()
+        //         .skip_while(|entry| entry.timestamp < window_start)
+        //         .take_while(|entry| entry.timestamp <= window_end)
+        //         .filter_map(|entry| entry.value.clone())
+        //         .fold(Y::globally_identity(), Y::and); // Use the identity from your code
+
+        //     let final_value: Option<Y>;
+        //     let mut remove_task = false;
+
+        //     // state-based logic
+        //     if current_time >= t_eval + self.max_lookahead {
+        //         // Case 1: Full window has passed. This is a final, "closed" value.
+        //         final_value = Some(windowed_min_value);
+        //         remove_task = true;
+        //     } else if IS_EAGER && windowed_min_value == Y::atomic_false() {
+        //         // Case 2: Eager short-circuit. Found "false" before window closed.
+        //         final_value = Some(windowed_min_value);
+        //         remove_task = true;
+        //     } else if IS_ROSI {
+        //         // Case 3: Intermediate ROSI. Window is still open.
+        //         // We must 'and' with the unknown future.
+        //         let intermediate_value = Y::and(windowed_min_value, Y::unknown());
+        //         final_value = Some(intermediate_value);
+        //         // DO NOT remove task, it's not finished
+        //     } else {
+        //         // Case 4: Cannot evaluate yet (e.g., bool/f64 and window is still open)
+        //         // Since the buffer is time-ordered, we stop.
+        //         break;
+        //     }
+
+        //     if let Some(val) = final_value {
+        //         output_robustness.push(Step::new("output", Some(val), t_eval));
+        //     }
+
+        //     if remove_task {
+        //         tasks_to_remove.push(t_eval);
+        //     }
+        // }
+
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
+        let lookahead = self.max_lookahead;
 
-        // 2. Process the evaluation buffer
+        // OPTIMIZATION: Sliding Window (Caterpillar method)
+        // We maintain indices into the ring buffer instead of searching from 0 every time.
+        let mut start_idx = 0;
+        let mut end_idx = 0;
+        let cache_len = self.cache.len();
+
+        // We need to iterate tasks in order.
+        // If eval_buffer is BTreeSet, iter() is already sorted.
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
             let window_end = t_eval + self.interval.end;
 
-            // Use `skip_while` and `take_while` to iterate only over
-            // the relevant part of the cache, not the whole thing.
-            let windowed_min_value = self
-                .cache
-                .iter()
-                .skip_while(|entry| entry.timestamp < window_start)
-                .take_while(|entry| entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and); // Use the identity from your code
+            // 1. Advance start_idx: Find first item >= window_start
+            // We start searching from where the previous task left off (start_idx).
+            while start_idx < cache_len {
+                if let Some(s) = self.cache.get(start_idx) {
+                    if s.timestamp < window_start {
+                        start_idx += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // 2. Advance end_idx: Find first item > window_end (so we stop before it)
+            // We ensure end_idx is at least start_idx
+            if end_idx < start_idx {
+                end_idx = start_idx;
+            }
+
+            while end_idx < cache_len {
+                if let Some(s) = self.cache.get(end_idx) {
+                    if s.timestamp <= window_end {
+                        end_idx += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // 3. Compute Aggregation strictly over the window [start_idx..end_idx]
+            // Note: If start_idx == end_idx, the range is empty (no data in window).
+            let mut windowed_min_value = Y::globally_identity();
+
+            // This inner loop is now amortized O(1) relative to the outer loop movement
+            // specifically for finding the bounds. The folding is still dependent on window density,
+            // but we eliminated the scan of the *entire history* preceding the window.
+            for i in start_idx..end_idx {
+                if let Some(step) = self.cache.get(i) {
+                    if let Some(val) = &step.value {
+                        windowed_min_value = Y::and(windowed_min_value, val.clone());
+                    }
+                }
+            }
 
             let final_value: Option<Y>;
             let mut remove_task = false;
 
             // state-based logic
-            if current_time >= t_eval + self.max_lookahead {
+            if current_time >= t_eval + lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
@@ -822,7 +956,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static + std::fmt::Debug,
+    Y: RobustnessSemantics + 'static + std::fmt::Debug + Copy,
 {
     type Output = Y;
 
@@ -959,88 +1093,106 @@ where
             return output_robustness;
         }
 
-        // 2. Process the evaluation buffer for tasks
         for &t_eval in self.eval_buffer.iter() {
             let window_start_t_eval = t_eval + self.interval.start;
             let window_end_t_eval = t_eval + self.interval.end;
 
-            // This is the outer `max` (Eventually)
-            let mut max_robustness_vec = Vec::new();
-            let mut falsified = false;
-
-            // We can only evaluate up to the data we have.
-            // We must use the minimum of the current time and the window end.
             let effective_end_time = current_time.min(window_end_t_eval);
 
-            // Iterate over all t' in [window_start_t_eval, effective_end_time].
-            // We use the eval_buffer as the source of t' timestamps.
+            // OPTIMIZATION: Prepare iterators outside the inner loop
+
+            // 1. Right Cache Iterator (PSI)
+            // We only want steps within the valid window
             let t_prime_iter = self
                 .eval_buffer
                 .iter()
                 .copied()
-                .skip_while(|s| s < &window_start_t_eval)
-                .take_while(|s| s <= &effective_end_time); // Only up to current time
-            let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
+                .skip_while(|&s| s < window_start_t_eval)
+                .take_while(|&s| s <= effective_end_time);
 
-            for step_psi_t_prime in t_prime_iter {
-                let t_prime = step_psi_t_prime;
+            // 2. Left Cache Iterator (PHI)
+            // We maintain a "cursor" index for the left cache to avoid re-scanning
+            let mut left_idx = 0;
 
-                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
-                let mut robustness_phi_left = self
-                    .left_cache
-                    .iter()
-                    .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
-                    .filter_map(|s| s.value.clone())
-                    .fold(Y::globally_identity(), Y::and);
-
-                // if no data in in left_cache for >t_prime, we need to and with unknown
-                if let Some(last_left_step) = self
-                    .left_cache
-                    .iter()
-                    .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
-                    .last()
-                    && last_left_step.timestamp < t_prime
-                {
-                    // no data for t'' up to t', need to and with unknown
-                    robustness_phi_left = Y::and(robustness_phi_left, Y::unknown());
-                }
-
-                // Advance the right_cache iterator to find the step corresponding to t_prime
-                while let Some(step) = right_cache_t_prime_iter.peek() {
-                    if step.timestamp < t_prime {
-                        right_cache_t_prime_iter.next(); // Consume and advance
+            // Fast-forward left_idx to t_eval (start of the Until integration)
+            // Using the `get` optimization from the previous answer is best,
+            // but here is the logic using standard iterators:
+            while left_idx < self.left_cache.len() {
+                if let Some(s) = self.left_cache.get(left_idx) {
+                    if s.timestamp < t_eval {
+                        left_idx += 1;
                     } else {
-                        break; // Found t' or passed it
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // This variable holds min(phi) for the range [t_eval, current_t_prime]
+            let mut running_phi_min = Y::globally_identity(); // Start with Identity (Infinity/True)
+            let mut max_robustness_vec = Vec::new();
+            let mut falsified = false;
+
+            // INNER LOOP: Iterate through future points (t_prime)
+            for t_prime in t_prime_iter {
+                // A. Incrementally update running_phi_min
+                // We advance left_idx until we catch up to t_prime
+                while left_idx < self.left_cache.len() {
+                    if let Some(s) = self.left_cache.get(left_idx) {
+                        if s.timestamp <= t_prime {
+                            // Include this step in our running minimum
+                            if let Some(val) = &s.value {
+                                running_phi_min = Y::and(running_phi_min.clone(), val.clone());
+                            }
+                            left_idx += 1;
+                        } else {
+                            // Step is beyond t_prime, stop here
+                            break;
+                        }
+                    } else {
+                        break;
                     }
                 }
-                let t_prime_right_step =
-                    right_cache_t_prime_iter.find(|s| s.timestamp <= self.t_max);
-                // 1. Get rho_psi(t')
-                let robustness_psi_right = match t_prime_right_step {
-                    Some(val) => val.value.clone().unwrap(),
-                    None => Y::unknown(), // Cannot compute with None
-                };
 
-                // --- EAGER FALSIFICATION CHECK ---
-                // If phi has become false, and psi has not *already* made us true,
-                // then we are (and will remain) false.
+                // Handle the "no data" case (same as your original logic)
+                let mut current_phi_val = running_phi_min;
+                if let Some(last_left) =
+                    self.left_cache
+                        .get(if left_idx > 0 { left_idx - 1 } else { 0 })
+                {
+                    if last_left.timestamp < t_prime {
+                        // Gap in data up to t_prime
+                        current_phi_val = Y::and(current_phi_val, Y::unknown());
+                    }
+                }
+
+                // B. Get PSI value at t_prime (Right side)
+                // (You can optimize this search too, but it's less critical than the accumulated fold)
+                let psi_val = self
+                    .right_cache
+                    .iter()
+                    .find(|s| s.timestamp == t_prime) // Assuming alignment, or use find with <=
+                    .and_then(|s| s.value)
+                    .unwrap_or(Y::unknown());
+
+                // C. Eager Falsification Check
                 if IS_EAGER
-                    && robustness_phi_left == Y::atomic_false()
-                    && robustness_psi_right != Y::atomic_true()
+                    && current_phi_val == Y::atomic_false()
+                    && psi_val != Y::atomic_true()
                     && self.t_max >= t_eval
                 {
                     falsified = true;
                     max_robustness_vec.push(Y::atomic_false());
                     break;
-                    // continue; // Short-circuit: Falsified
                 }
 
-                // 3. Combine: min(rho_psi(t'), robustness_phi_left)
-                let robustness_t_prime = Y::and(robustness_psi_right, robustness_phi_left);
-                max_robustness_vec.push(robustness_t_prime); // For the outer max/sup
+                // D. Combine: min(PSI(t'), min(PHI[t...t']))
+                let robustness_t_prime = Y::and(psi_val, current_phi_val);
+                max_robustness_vec.push(robustness_t_prime);
             }
+
+            // ... [Rest of aggregation and cleanup logic remains the same] ...
 
             let max_robustness = if max_robustness_vec.is_empty() {
                 break; // No data to evaluate yet

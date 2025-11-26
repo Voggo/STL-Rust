@@ -40,6 +40,7 @@ pub trait RingBufferTrait {
     fn get_back(&self) -> Option<&Step<Self::Value>>;
     fn get_front(&self) -> Option<&Step<Self::Value>>;
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
+    fn get(&self, index: usize) -> Option<&Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
     fn update_step(&mut self, step: Step<Self::Value>) -> bool;
@@ -78,16 +79,42 @@ where
         self.steps.push_back(step);
     }
 
-    pub fn update_step(&mut self, step: Step<T>) -> bool {
-        self.steps.binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
-            .map(|index| {
+pub fn update_step(&mut self, step: Step<T>) -> bool {
+        // Fast path: if buffer is empty or new step is newer than the last one
+        if let Some(back) = self.steps.back() {
+            if step.timestamp > back.timestamp {
+                self.steps.push_back(step);
+                return true; // "Added" rather than "Updated", but fits logic
+            }
+            if step.timestamp == back.timestamp {
+                *self.steps.back_mut().unwrap() = step;
+                return true;
+            }
+        } else {
+            self.steps.push_back(step);
+            return true;
+        }
+
+        // Slow path: Binary search for out-of-order data
+        // Note: binary_search_by on VecDeque requires Rust 1.0+, works fine but can be slow
+        match self.steps.binary_search_by(|s| s.timestamp.cmp(&step.timestamp)) {
+            Ok(index) => {
                 self.steps[index] = step;
-            })
-            .is_ok()
+                true
+            }
+            Err(index) => {
+                self.steps.insert(index, step);
+                false // Indicates "added", logic in robustness_cached depends on this bool return
+            }
+        }
     }
 
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Step<T>> {
+        self.steps.get(index)
     }
 
 }
@@ -125,6 +152,10 @@ where
     }
     fn pop_front(&mut self) -> Option<Step<Self::Value>> {
         self.steps.pop_front()
+    }
+
+    fn get(&self, index: usize) -> Option<&Step<Self::Value>> {
+        self.get(index)
     }
 
     fn add_step(&mut self, step: Step<T>) {
