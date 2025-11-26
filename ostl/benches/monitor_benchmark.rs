@@ -2,9 +2,9 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "dhat-heap")]
 use dhat;
-use ostl::stl;
 use ostl::ring_buffer::Step;
-use ostl::stl::core::{TimeInterval, RobustnessInterval};
+use ostl::stl;
+use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ fn _formula_1() -> FormulaDefinition {
     stl! {
         G[30, 100] ((((x < 30) && (x > -30)) && ((x < 0.5) && (x > -0.5))) -> (F[0, 50](G[0, 20]((x < 0.5) && (x > -0.5)))))
     }
-    //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
+    //G[30, 100](x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
     // FormulaDefinition::Globally(
     //     TimeInterval {
     //         start: Duration::from_secs(30),
@@ -90,10 +90,10 @@ fn _formula_3() -> FormulaDefinition {
 }
 
 // IMPORTANT: Create a *long* signal for meaningful benchmarks
-fn get_long_signal(size: usize) -> Vec<Step<f64>> {
+fn get_long_signal(size: usize, freq: u64) -> Vec<Step<f64>> {
     (0..size)
         .map(|i| {
-            let t = Duration::from_secs(i as u64);
+            let t = Duration::from_secs_f64(i as f64 / freq as f64);
             let val = (i % 10) as f64; // Simple predictable signal
             Step::new("x", val, t)
         })
@@ -104,9 +104,10 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = _formula_2();
+    let formula = _formula_1();
     let signal_size = 1000; // 1,000 steps
-    let signal = get_long_signal(signal_size);
+    let freq = 1000; // 1 kHz signal
+    let signal = get_long_signal(signal_size, freq);
 
     #[cfg(feature = "dhat-heap")]
     run_memory_profiling(&formula, &signal);
@@ -121,38 +122,45 @@ fn run_performance_benchmark(
     signal: Vec<Step<f64>>,
 ) {
     // Create a benchmark group to compare implementations
-    let temp:StlMonitor<f64, bool> = StlMonitor::builder().formula(formula.clone()).build().unwrap();
-    let group_name = format!("STL Monitor Performance, Formula: {:?}, Signal Size: {}", temp.specification_to_string(), signal_size);
+    let temp: StlMonitor<f64, bool> = StlMonitor::builder()
+        .formula(formula.clone())
+        .build()
+        .unwrap();
+    let group_name = format!(
+        "STL Monitor Performance, Formula: {:?}, Signal Size: {}",
+        temp.specification_to_string(),
+        signal_size
+    );
     let mut group = c.benchmark_group(group_name);
     group.throughput(Throughput::Elements(signal_size as u64));
 
     // --- Benchmark Naive (f64, Strict) ---
-    group.bench_function("Naive_f64_Strict", |b| {
-        // `iter_batched` is essential for stateful objects.
-        // `setup` creates a fresh monitor for *each* iteration.
-        // `routine` runs the code to be measured.
-        b.iter_batched(
-            || {
-                // SETUP: Clone the inputs
-                let (f_clone, s_clone) = (formula.clone(), signal.clone());
-                // SETUP: Build the monitor
-                let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-                    .formula(f_clone)
-                    .strategy(MonitoringStrategy::Naive)
-                    .evaluation_mode(EvaluationMode::Strict)
-                    .build()
-                    .unwrap();
-                (monitor, s_clone)
-            },
-            |(mut monitor, signal)| {
-                // ROUTINE: This is the part being timed
-                for step in signal {
-                    monitor.update(&step);
-                }
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
+    // group.bench_function("Naive_f64_Strict", |b| {
+    //     // `iter_batched` is essential for stateful objects.
+    //     // `setup` creates a fresh monitor for *each* iteration.
+    //     // `routine` runs the code to be measured.
+    //     b.iter_batched(
+    //         || {
+    //             // SETUP: Clone the inputs
+    //             let (f_clone, s_clone) = (formula.clone(), signal.clone());
+    //             // SETUP: Build the monitor
+    //             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+    //                 .formula(f_clone)
+    //                 .strategy(MonitoringStrategy::Naive)
+    //                 .evaluation_mode(EvaluationMode::Strict)
+    //                 .build()
+    //                 .unwrap();
+    //             (monitor, s_clone)
+    //         },
+    //         |(mut monitor, signal)| {
+    //             // ROUTINE: This is the part being timed
+    //             for step in signal {
+    //                 monitor.update(&step);
+    //             }
+    //         },
+    //         criterion::BatchSize::SmallInput,
+    //     );
+    // });
     // --- Benchmark Incremental (bool, Strict) ---
     group.bench_function("Incremental_bool_Strict", |b| {
         b.iter_batched(
