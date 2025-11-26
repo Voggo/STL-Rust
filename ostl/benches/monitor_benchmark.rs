@@ -3,7 +3,8 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "dhat-heap")]
 use dhat;
 use ostl::ring_buffer::Step;
-use ostl::stl::core::{TimeInterval, RobustnessInterval};
+use ostl::stl;
+use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
 
@@ -16,41 +17,44 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 // (Fixtures from `tests/` aren't visible to `benches/`)
 // ---
 fn _formula_1() -> FormulaDefinition {
-    //0x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
-    FormulaDefinition::Globally(
-        TimeInterval {
-            start: Duration::from_secs(30),
-            end: Duration::from_secs(100),
-        },
-        Box::new(FormulaDefinition::Implies(
-            Box::new(FormulaDefinition::And(
-                Box::new(FormulaDefinition::And(
-                    Box::new(FormulaDefinition::LessThan("x", 30.0)),
-                    Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
-                )),
-                Box::new(FormulaDefinition::Or(
-                    Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
-                    Box::new(FormulaDefinition::LessThan("x", -0.5)),
-                )),
-            )),
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(0),
-                    end: Duration::from_secs(50),
-                },
-                Box::new(FormulaDefinition::Globally(
-                    TimeInterval {
-                        start: Duration::from_secs(0),
-                        end: Duration::from_secs(20),
-                    },
-                    Box::new(FormulaDefinition::And(
-                        Box::new(FormulaDefinition::LessThan("x", 0.5)),
-                        Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
-                    )),
-                )),
-            )),
-        )),
-    )
+    stl! {
+        G[30, 100] ((((x < 30) && (x > -30)) && ((x < 0.5) && (x > -0.5))) -> (F[0, 50](G[0, 20]((x < 0.5) && (x > -0.5)))))
+    }
+    //G[30, 100](x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
+    // FormulaDefinition::Globally(
+    //     TimeInterval {
+    //         start: Duration::from_secs(30),
+    //         end: Duration::from_secs(100),
+    //     },
+    //     Box::new(FormulaDefinition::Implies(
+    //         Box::new(FormulaDefinition::And(
+    //             Box::new(FormulaDefinition::And(
+    //                 Box::new(FormulaDefinition::LessThan("x", 30.0)),
+    //                 Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
+    //             )),
+    //             Box::new(FormulaDefinition::Or(
+    //                 Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
+    //                 Box::new(FormulaDefinition::LessThan("x", -0.5)),
+    //             )),
+    //         )),
+    //         Box::new(FormulaDefinition::Eventually(
+    //             TimeInterval {
+    //                 start: Duration::from_secs(0),
+    //                 end: Duration::from_secs(50),
+    //             },
+    //             Box::new(FormulaDefinition::Globally(
+    //                 TimeInterval {
+    //                     start: Duration::from_secs(0),
+    //                     end: Duration::from_secs(20),
+    //                 },
+    //                 Box::new(FormulaDefinition::And(
+    //                     Box::new(FormulaDefinition::LessThan("x", 0.5)),
+    //                     Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
+    //                 )),
+    //             )),
+    //         )),
+    //     )),
+    // )
 }
 
 fn _formula_2() -> FormulaDefinition {
@@ -100,7 +104,7 @@ fn get_long_signal(size: usize) -> Vec<Step<f64>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = _formula_2();
+    let formula = _formula_1();
     let signal_size = 1000; // 1,000 steps
     let signal = get_long_signal(signal_size);
 
@@ -117,8 +121,15 @@ fn run_performance_benchmark(
     signal: Vec<Step<f64>>,
 ) {
     // Create a benchmark group to compare implementations
-    let temp:StlMonitor<f64, bool> = StlMonitor::builder().formula(formula.clone()).build().unwrap();
-    let group_name = format!("STL Monitor Performance, Formula: {:?}, Signal Size: {}", temp.specification_to_string(), signal_size);
+    let temp: StlMonitor<f64, bool> = StlMonitor::builder()
+        .formula(formula.clone())
+        .build()
+        .unwrap();
+    let group_name = format!(
+        "STL Monitor Performance, Formula: {:?}, Signal Size: {}",
+        temp.specification_to_string(),
+        signal_size
+    );
     let mut group = c.benchmark_group(group_name);
     group.throughput(Throughput::Elements(signal_size as u64));
 
