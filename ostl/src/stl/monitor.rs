@@ -159,12 +159,10 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     {
         let formula_enum = build_naive_formula(formula);
 
-        Box::new(StlFormula::<T, RingBuffer<T>, Y> {
-            formula: formula_enum,
-            signal: RingBuffer::new(),
-            last_eval_time: None,
-            _phantom: std::marker::PhantomData,
-        })
+        Box::new(StlFormula::<T, RingBuffer<T>, Y>::new(
+            formula_enum,
+            RingBuffer::new(),
+        ))
     }
 }
 

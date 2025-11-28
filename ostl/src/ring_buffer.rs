@@ -52,7 +52,7 @@ pub trait RingBufferTrait {
 
 #[derive(Clone, Debug)]
 pub struct RingBuffer<T> {
-    pub steps: VecDeque<Step<T>>,
+    steps: VecDeque<Step<T>>,
 }
 
 impl<T> Default for RingBuffer<T>

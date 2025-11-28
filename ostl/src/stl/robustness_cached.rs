@@ -166,10 +166,10 @@ where
 
 #[derive(Clone)]
 pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub left_cache: C,
-    pub right_cache: C,
+    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    left_cache: C,
+    right_cache: C,
     last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
@@ -305,10 +305,10 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 
 #[derive(Clone)]
 pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub left_cache: C,
-    pub right_cache: C,
+    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    left_cache: C,
+    right_cache: C,
     last_eval_time: Option<Duration>,
     left_last_known: Step<Option<Y>>,
     right_last_known: Step<Option<Y>>,
@@ -452,7 +452,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 
 #[derive(Clone)]
 pub struct Not<T, Y> {
-    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     max_lookahead: Duration,
 }
 
@@ -508,10 +508,10 @@ impl<T, Y> SignalIdentifier for Not<T, Y> {
 
 #[derive(Clone)]
 pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    pub cache: C,
-    pub eval_buffer: BTreeSet<Duration>,
+    interval: TimeInterval,
+    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    cache: C,
+    eval_buffer: BTreeSet<Duration>,
     max_lookahead: Duration,
 }
 
@@ -641,10 +641,10 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 
 #[derive(Clone)]
 pub struct Globally<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    pub interval: TimeInterval,
-    pub operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    pub cache: C,
-    pub eval_buffer: BTreeSet<Duration>,
+    interval: TimeInterval,
+    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    cache: C,
+    eval_buffer: BTreeSet<Duration>,
     max_lookahead: Duration,
 }
 
@@ -774,16 +774,16 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 
 #[derive(Clone)]
 pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    pub interval: TimeInterval,
-    pub left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    pub right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    pub left_cache: C,
-    pub right_cache: C,
-    pub t_max: Duration,
-    pub last_eval_time: Option<Duration>,
-    pub eval_buffer: BTreeSet<Duration>,
-    pub left_signals_set: HashSet<&'static str>,
-    pub right_signals_set: HashSet<&'static str>,
+    interval: TimeInterval,
+    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    left_cache: C,
+    right_cache: C,
+    t_max: Duration,
+    last_eval_time: Option<Duration>,
+    eval_buffer: BTreeSet<Duration>,
+    left_signals_set: HashSet<&'static str>,
+    right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
 }
 

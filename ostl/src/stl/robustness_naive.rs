@@ -34,10 +34,10 @@ where
     C: RingBufferTrait<Value = T> + 'static,
     Y: RobustnessSemantics + 'static,
 {
-    pub formula: StlOperator,
-    pub signal: C,
-    pub last_eval_time: Option<Duration>,
-    pub _phantom: std::marker::PhantomData<Y>,
+     formula: StlOperator,
+     signal: C,
+     last_eval_time: Option<Duration>,
+     _phantom: std::marker::PhantomData<Y>,
 }
 
 impl<T, C, Y> StlFormula<T, C, Y>
@@ -116,7 +116,7 @@ where
 impl StlOperator {
     /// Computes the robustness of the formula at a specific time `t_eval`.
     /// This function assumes all necessary signal data (up to `t_eval + max_lookahead`) is present.
-    pub fn robustness_naive<T, C, Y>(
+    fn robustness_naive<T, C, Y>(
         &self,
         // FIX: Remove signal_name
         signal: &C,
@@ -152,7 +152,7 @@ impl StlOperator {
         }
     }
     /// Recursively computes the maximum lookahead time required for the formula.
-    pub fn get_max_lookahead(&self) -> Duration {
+    fn get_max_lookahead(&self) -> Duration {
         match self {
             StlOperator::Globally(interval, f) | StlOperator::Eventually(interval, f) => {
                 interval.end + f.get_max_lookahead()
