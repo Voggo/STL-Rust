@@ -16,14 +16,8 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 rumqttc = "0.25.0"
 criterion = "0.7.0"
-dhat = "0.3.3"
 
 [[bench]]
 name = "monitor_benchmark"
 harness = false
 
-[profile.release]
-debug = true
-
-[features]
-dhat-heap = []

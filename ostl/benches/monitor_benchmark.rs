@@ -1,16 +1,10 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-#[cfg(feature = "dhat-heap")]
-use dhat;
 use ostl::ring_buffer::Step;
 use ostl::stl;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
-
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
 // ---
 // Copy-paste your formula/signal fixtures here
@@ -108,9 +102,6 @@ fn benchmark_monitors(c: &mut Criterion) {
     let signal_size = 1000; // 1,000 steps
     let freq = 1000; // 1 kHz signal
     let signal = get_long_signal(signal_size, freq);
-
-    #[cfg(feature = "dhat-heap")]
-    run_memory_profiling(&formula, &signal);
 
     run_performance_benchmark(c, formula, signal_size, signal);
 }
@@ -247,79 +238,6 @@ fn run_performance_benchmark(
         );
     });
     group.finish();
-}
-
-#[cfg(feature = "dhat-heap")]
-fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
-    // Start memory profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-    // SETUP: Build the monitor for naive and strict evaluation
-    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Naive)
-        .evaluation_mode(EvaluationMode::Strict)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Naive Strict f64");
-    drop(_profiler); // Stop profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-
-    // SETUP: Build the monitor for incremental and strict evaluation
-    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Strict)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Incremental Strict f64");
-    drop(_profiler); // Stop profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-    // SETUP: Build the monitor for incremental and eager evaluation for bool
-    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Eager)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Incremental Eager bool");
-}
-
-#[cfg(feature = "dhat-heap")]
-fn print_heap_stats(test_name: &'static str) {
-    // use serde_json to write dhat profile to file
-    let heap_stats = dhat::HeapStats::get();
-    let measures = serde_json::json!({
-        "Final Blocks": {
-            "value": heap_stats.curr_blocks,
-        },
-        "Final Bytes": {
-            "value": heap_stats.curr_bytes,
-        },
-        "Max Blocks": {
-            "value": heap_stats.max_blocks,
-        },
-        "Max Bytes": {
-            "value": heap_stats.max_bytes,
-        },
-        "Total Blocks": {
-            "value": heap_stats.total_blocks,
-        },
-        "Total Bytes": {
-            "value": heap_stats.total_bytes,
-        },
-    });
-    let pretty_measures =
-        serde_json::to_string_pretty(&measures).expect("serialize heap statistics");
-    println!("Dhat heap profile for {}:\n{}", test_name, pretty_measures);
 }
 
 criterion_group!(benches, benchmark_monitors);
