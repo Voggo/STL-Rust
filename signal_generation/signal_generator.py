@@ -23,17 +23,22 @@ def generate_chirp_signal(duration, sampling_rate, start_frequency, end_frequenc
     # Generate chirp signal
     signal_values = chirp(t, f0=start_frequency, f1=end_frequency, t1=duration, method='linear')
     
-    # Plot the signal before saving
-    print("Displaying plot. Close the plot window to save the file.")
-    plt.figure(figsize=(12, 6))
-    plt.plot(t, signal_values)
-    plt.title("Generated Chirp Signal")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Value")
-    plt.grid(True)
-    plt.show()
+    # # Plot the signal before saving
+    # print("Displaying plot. Close the plot window to save the file.")
+    # plt.figure(figsize=(12, 6))
+    # plt.plot(t, signal_values)
+    # plt.title("Generated Chirp Signal")
+    # plt.xlabel("Time (s)")
+    # plt.ylabel("Value")
+    # plt.grid(True)
+    # plt.show()
 
     # Write the signal to a CSV file
+    
+    # if the directory does not exist, create it
+    import os
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
     with open(filename, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['timestep', 'value'])
@@ -42,11 +47,11 @@ def generate_chirp_signal(duration, sampling_rate, start_frequency, end_frequenc
 
 if __name__ == '__main__':
     # --- Configuration ---
-    DURATION = 10000         # seconds
+    DURATION = 1000         # seconds
     SAMPLING_RATE = 1  # Hz
     START_FREQUENCY = 0.1   # Hz
     END_FREQUENCY = 0.0001   # Hz
-    OUTPUT_FILENAME = 'signal.csv'
+    OUTPUT_FILENAME = f'signal_{DURATION}.csv'
     # ---------------------
 
     generate_chirp_signal(DURATION, SAMPLING_RATE, START_FREQUENCY, END_FREQUENCY, OUTPUT_FILENAME)
