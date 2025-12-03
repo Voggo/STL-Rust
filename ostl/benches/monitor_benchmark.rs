@@ -5,6 +5,9 @@ use ostl::stl;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
 
 /// Returns the vector of Signal Temporal Logic formulas specified in formula.csv
@@ -106,15 +109,47 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     formulas
 }
 
-// IMPORTANT: Create a *long* signal for meaningful benchmarks
-fn get_long_signal(size: usize, freq: u64) -> Vec<Step<f64>> {
-    (0..size)
-        .map(|i| {
-            let t = Duration::from_secs_f64(i as f64 / freq as f64);
-            let val = (i % 10) as f64; // Simple predictable signal
-            Step::new("x", val, t)
-        })
-        .collect()
+// Helper to read a single signal CSV into a Vec<Step<f64>>
+fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename).expect("failed to read file: {filename}");
+    let reader = io::BufReader::new(file);
+    let mut signal = Vec::new();
+    // we skip the first line which is the header
+    for (i, line) in reader.lines().skip(1).enumerate() {
+        if let Ok(value_str) = line {
+            // we split the line by the comma and take the second element
+            let columns: Vec<&str> = value_str.split(',').collect();
+            if columns.len() == 2 {
+                if let Ok(val) = columns[1].trim().parse::<f64>() {
+                    let t = Duration::from_secs_f64(i as f64);
+                    signal.push(Step::new("x", val, t));
+                }
+            }
+        }
+    }
+    Ok(signal)
+}
+
+/// Reads signals from the specified CSV files.
+pub fn get_signals_from_csv() -> Vec<Vec<Step<f64>>> {
+    let filenames = [
+        "benches/signal_10000.csv",
+        "benches/signal_5000.csv",
+        "benches/signal_20000.csv",
+    ];
+    let mut signals = Vec::new();
+
+    for filename in &filenames {
+        match read_signal_from_csv(filename) {
+            Ok(signal) => signals.push(signal),
+            Err(e) => panic!("Failed to read signal from {}: {}", filename, e),
+        }
+    }
+
+    signals
 }
 
 // ---
@@ -122,12 +157,12 @@ fn get_long_signal(size: usize, freq: u64) -> Vec<Step<f64>> {
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
     let formulas = get_formulas();
-    let signal_size = 1000; // 1,000 steps
-    let freq = 1000; // 1 kHz signal
-    let signal = get_long_signal(signal_size, freq);
-
-    for formula in formulas[9..] {
-        run_performance_benchmark(c, formula, signal_size, &signal);
+    let signals = get_signals_from_csv();
+    for signal in signals {
+        println!("Benchmarking signal of size: {}", signal.len());
+        for formula in formulas.clone() {
+            run_performance_benchmark(c, formula, &signal);
+        }
     }
 }
 
@@ -161,9 +196,9 @@ macro_rules! create_benchmarks {
 fn run_performance_benchmark(
     c: &mut Criterion,
     formula: FormulaDefinition,
-    signal_size: usize,
     signal: &Vec<Step<f64>>,
 ) {
+    let signal_size = signal.len();
     // Create a benchmark group to compare implementations
     let temp: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula.clone())
@@ -181,6 +216,8 @@ fn run_performance_benchmark(
     // To add the naive benchmark back, uncomment the following line in the array
     // ("Naive_f64_Strict", f64, MonitoringStrategy::Naive, EvaluationMode::Strict),
     group.sample_size(10);
+    group.measurement_time(Duration::from_secs(1));
+    group.warm_up_time(Duration::from_millis(500));
 
     create_benchmarks!(group, &formula, &signal, [
         ("Incremental_bool_Strict", bool, MonitoringStrategy::Incremental, EvaluationMode::Strict),
