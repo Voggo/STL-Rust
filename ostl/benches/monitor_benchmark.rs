@@ -1,126 +1,204 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-#[cfg(feature = "dhat-heap")]
-use dhat;
 use ostl::ring_buffer::Step;
 use ostl::stl;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
 use std::time::Duration;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
-// ---
-// Copy-paste your formula/signal fixtures here
-// (Fixtures from `tests/` aren't visible to `benches/`)
-// ---
-fn _formula_1() -> FormulaDefinition {
-    stl! {
-        G[30, 100] ((((x < 30) && (x > -30)) && ((x < 0.5) && (x > -0.5))) -> (F[0, 50](G[0, 20]((x < 0.5) && (x > -0.5)))))
+/// Returns the vector of Signal Temporal Logic formulas specified in formula.csv
+pub fn get_formulas() -> Vec<FormulaDefinition> {
+    let mut formulas = Vec::new();
+
+    // --- Basic Formulas (Lines 1-12) ---
+    // Using the stl! macro directly as intended for standard expressions.
+    // Note: 'x[t]' in CSV is mapped to signal 'x'.
+
+    formulas.push(stl!((x < 0.5) and (x > -0.5)));
+
+    // 2. Or 
+    formulas.push(stl!((x < 0.5) or (x > -0.5)));
+
+    // 3. Not 
+    formulas.push(stl!(not (x < 0.5)));
+
+    // 4-6. Globally (Always) 
+    formulas.push(stl!(alw[0, 10] (x < 0.5)));
+    formulas.push(stl!(alw[0, 100] (x < 0.5)));
+    formulas.push(stl!(alw[0, 1000] (x < 0.5)));
+
+    // 7-9. Eventually 
+    formulas.push(stl!(ev[0, 10] (x < 0.5)));
+    formulas.push(stl!(ev[0, 100] (x < 0.5)));
+    formulas.push(stl!(ev[0, 1000] (x < 0.5)));
+
+    // 10-12. Until 
+    formulas.push(stl!((x < 0.5) until[0, 10] (x > -0.5)));
+    formulas.push(stl!((x < 0.5) until[0, 100] (x > -0.5)));
+    formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
+
+
+    // --- Complex Nested Formulas (Lines 13-21) ---
+    // These patterns (Depth 10, 20, 30) are too deep for clean single-line macros.
+    // We construct them recursively, using stl! for the atomic leaves.
+
+    // helper to create Interval [0, 10]
+    let zero_ten = TimeInterval { start: Duration::from_secs(0), end: Duration::from_secs(10) };
+
+    // Pattern A: ((x < 0.5)) and (ev_[0,10] ( ... ))
+    // Ends with ((x > 0.0))
+    let make_and_ev_chain = |depth: usize| -> FormulaDefinition {
+        let mut curr = stl!(x > 0.0); // Base case
+        for _ in 0..depth {
+            // Replicates: (x < 0.5) and ev[0,10](curr)
+            curr = FormulaDefinition::And(
+                Box::new(stl!(x < 0.5)),
+                Box::new(FormulaDefinition::Eventually(zero_ten.clone(), Box::new(curr)))
+            );
+        }
+        curr
+    };
+
+    formulas.push(make_and_ev_chain(10)); 
+    formulas.push(make_and_ev_chain(20)); 
+    formulas.push(make_and_ev_chain(30)); 
+
+    // Pattern B: ev_[0,10] (alw_[0,10] ( ... ))
+    // Alternates Ev/Alw. Ends with ((x > 0.0))
+    let make_ev_alw_chain = |depth: usize| -> FormulaDefinition {
+        let mut curr = stl!(x > 0.0); // Base case
+        // The CSV shows sequences like ev(alw(...)). 
+        // We assume 'depth' represents the number of Ev/Alw pairs or layers.
+        // Based on the pattern, we add layers inside out.
+        for _ in 0..depth {
+            // Inner: alw[0,10](curr)
+            let alw_layer = FormulaDefinition::Globally(zero_ten.clone(), Box::new(curr));
+            // Outer: ev[0,10](alw_layer)
+            curr = FormulaDefinition::Eventually(zero_ten.clone(), Box::new(alw_layer));
+        }
+        curr
+    };
+
+    formulas.push(make_ev_alw_chain(10)); 
+    formulas.push(make_ev_alw_chain(20)); 
+    formulas.push(make_ev_alw_chain(30)); 
+
+    // Pattern C: ((x < 0.5)) until_[0,10] ( ... )
+    // Chained Until. Ends with ((x > 0.0))
+    let make_until_chain = |depth: usize| -> FormulaDefinition {
+        let mut curr = stl!(x > 0.0); // Base case (Right side of last until)
+        for _ in 0..depth {
+            // Replicates: (x < 0.5) until[0,10] (curr)
+            curr = FormulaDefinition::Until(
+                zero_ten.clone(),
+                Box::new(stl!(x < 0.5)),
+                Box::new(curr)
+            );
+        }
+        curr
+    };
+
+    formulas.push(make_until_chain(10));
+    formulas.push(make_until_chain(20)); 
+    formulas.push(make_until_chain(30)); 
+
+    formulas
+}
+
+// Helper to read a single signal CSV into a Vec<Step<f64>>
+fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename).expect("failed to read file: {filename}");
+    let reader = io::BufReader::new(file);
+    let mut signal = Vec::new();
+    // we skip the first line which is the header
+    for (i, line) in reader.lines().skip(1).enumerate() {
+        if let Ok(value_str) = line {
+            // we split the line by the comma and take the second element
+            let columns: Vec<&str> = value_str.split(',').collect();
+            if columns.len() == 2 {
+                if let Ok(val) = columns[1].trim().parse::<f64>() {
+                    let t = Duration::from_secs_f64(i as f64);
+                    signal.push(Step::new("x", val, t));
+                }
+            }
+        }
     }
-    //G[30, 100](x < 30 && x > -30) && (x < 0.5 && x > -0.5) -> F[0, 50]G[0, 20](x<0.5 && x>-0.5))
-    // FormulaDefinition::Globally(
-    //     TimeInterval {
-    //         start: Duration::from_secs(30),
-    //         end: Duration::from_secs(100),
-    //     },
-    //     Box::new(FormulaDefinition::Implies(
-    //         Box::new(FormulaDefinition::And(
-    //             Box::new(FormulaDefinition::And(
-    //                 Box::new(FormulaDefinition::LessThan("x", 30.0)),
-    //                 Box::new(FormulaDefinition::GreaterThan("x", -30.0)),
-    //             )),
-    //             Box::new(FormulaDefinition::Or(
-    //                 Box::new(FormulaDefinition::GreaterThan("x", 0.5)),
-    //                 Box::new(FormulaDefinition::LessThan("x", -0.5)),
-    //             )),
-    //         )),
-    //         Box::new(FormulaDefinition::Eventually(
-    //             TimeInterval {
-    //                 start: Duration::from_secs(0),
-    //                 end: Duration::from_secs(50),
-    //             },
-    //             Box::new(FormulaDefinition::Globally(
-    //                 TimeInterval {
-    //                     start: Duration::from_secs(0),
-    //                     end: Duration::from_secs(20),
-    //                 },
-    //                 Box::new(FormulaDefinition::And(
-    //                     Box::new(FormulaDefinition::LessThan("x", 0.5)),
-    //                     Box::new(FormulaDefinition::GreaterThan("x", -0.5)),
-    //                 )),
-    //             )),
-    //         )),
-    //     )),
-    // )
+    Ok(signal)
 }
 
-fn _formula_2() -> FormulaDefinition {
-    // (G[0,2] (x > 0)) U[0,6] (F[0,2] (x > 3))
-    FormulaDefinition::Until(
-        TimeInterval {
-            start: Duration::from_secs(0),
-            end: Duration::from_secs(6),
-        },
-        Box::new(FormulaDefinition::Globally(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 0.0)),
-        )),
-        Box::new(FormulaDefinition::Eventually(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(2),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-        )),
-    )
-}
+/// Reads signals from the specified CSV files.
+pub fn get_signals_from_csv() -> Vec<Vec<Step<f64>>> {
+    let filenames = [
+        "benches/signal_10000.csv",
+        "benches/signal_5000.csv",
+        "benches/signal_20000.csv",
+    ];
+    let mut signals = Vec::new();
 
-fn _formula_3() -> FormulaDefinition {
-    // (x > 5) /\ (x < 10)
-    FormulaDefinition::And(
-        Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
-        Box::new(FormulaDefinition::LessThan("x", 10.0)),
-    )
-}
+    for filename in &filenames {
+        match read_signal_from_csv(filename) {
+            Ok(signal) => signals.push(signal),
+            Err(e) => panic!("Failed to read signal from {}: {}", filename, e),
+        }
+    }
 
-// IMPORTANT: Create a *long* signal for meaningful benchmarks
-fn get_long_signal(size: usize, freq: u64) -> Vec<Step<f64>> {
-    (0..size)
-        .map(|i| {
-            let t = Duration::from_secs_f64(i as f64 / freq as f64);
-            let val = (i % 10) as f64; // Simple predictable signal
-            Step::new("x", val, t)
-        })
-        .collect()
+    signals
 }
 
 // ---
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formula = _formula_1();
-    let signal_size = 1000; // 1,000 steps
-    let freq = 1000; // 1 kHz signal
-    let signal = get_long_signal(signal_size, freq);
+    let formulas = get_formulas();
+    let signals = get_signals_from_csv();
+    for signal in signals {
+        println!("Benchmarking signal of size: {}", signal.len());
+        for formula in formulas.clone() {
+            run_performance_benchmark(c, formula, &signal);
+        }
+    }
+}
 
-    #[cfg(feature = "dhat-heap")]
-    run_memory_profiling(&formula, &signal);
-
-    run_performance_benchmark(c, formula, signal_size, signal);
+macro_rules! create_benchmarks {
+    ($group:expr, $formula:expr, $signal:expr, [$(($name:expr, $output_ty:ty, $strategy:expr, $eval_mode:expr)),*]) => {
+        $(
+            $group.bench_function($name, |b| {
+                b.iter_batched(
+                    || {
+                        let (f_clone, s_clone) = ($formula.clone(), $signal.clone());
+                        let monitor: StlMonitor<f64, $output_ty> = StlMonitor::builder()
+                            .formula(f_clone)
+                            .strategy($strategy)
+                            .evaluation_mode($eval_mode)
+                            .build()
+                            .unwrap();
+                        (monitor, s_clone)
+                    },
+                    |(mut monitor, signal)| {
+                        for step in signal {
+                            monitor.update(&step);
+                        }
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            });
+        )*
+    };
 }
 
 fn run_performance_benchmark(
     c: &mut Criterion,
     formula: FormulaDefinition,
-    signal_size: usize,
-    signal: Vec<Step<f64>>,
+    signal: &Vec<Step<f64>>,
 ) {
+    let signal_size = signal.len();
     // Create a benchmark group to compare implementations
     let temp: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula.clone())
@@ -135,191 +213,20 @@ fn run_performance_benchmark(
     group.throughput(Throughput::Elements(signal_size as u64));
 
     // --- Benchmark Naive (f64, Strict) ---
-    // group.bench_function("Naive_f64_Strict", |b| {
-    //     // `iter_batched` is essential for stateful objects.
-    //     // `setup` creates a fresh monitor for *each* iteration.
-    //     // `routine` runs the code to be measured.
-    //     b.iter_batched(
-    //         || {
-    //             // SETUP: Clone the inputs
-    //             let (f_clone, s_clone) = (formula.clone(), signal.clone());
-    //             // SETUP: Build the monitor
-    //             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-    //                 .formula(f_clone)
-    //                 .strategy(MonitoringStrategy::Naive)
-    //                 .evaluation_mode(EvaluationMode::Strict)
-    //                 .build()
-    //                 .unwrap();
-    //             (monitor, s_clone)
-    //         },
-    //         |(mut monitor, signal)| {
-    //             // ROUTINE: This is the part being timed
-    //             for step in signal {
-    //                 monitor.update(&step);
-    //             }
-    //         },
-    //         criterion::BatchSize::SmallInput,
-    //     );
-    // });
-    // --- Benchmark Incremental (bool, Strict) ---
-    group.bench_function("Incremental_bool_Strict", |b| {
-        b.iter_batched(
-            || {
-                let (f_clone, s_clone) = (formula.clone(), signal.clone());
-                let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                    .formula(f_clone)
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Strict)
-                    .build()
-                    .unwrap();
-                (monitor, s_clone)
-            },
-            |(mut monitor, signal)| {
-                for step in signal {
-                    monitor.update(&step);
-                }
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
-    // --- Benchmark Incremental (f64, Strict) ---
-    group.bench_function("Incremental_f64_Strict", |b| {
-        b.iter_batched(
-            || {
-                let (f_clone, s_clone) = (formula.clone(), signal.clone());
-                let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-                    .formula(f_clone)
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Strict)
-                    .build()
-                    .unwrap();
-                (monitor, s_clone)
-            },
-            |(mut monitor, signal)| {
-                for step in signal {
-                    monitor.update(&step);
-                }
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
+    // To add the naive benchmark back, uncomment the following line in the array
+    // ("Naive_f64_Strict", f64, MonitoringStrategy::Naive, EvaluationMode::Strict),
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(1));
+    group.warm_up_time(Duration::from_millis(500));
 
-    // --- Benchmark Eager Incremental (bool, eager) ---
-    group.bench_function("Incremental_bool_eager", |b| {
-        b.iter_batched(
-            || {
-                let (f_clone, s_clone) = (formula.clone(), signal.clone());
-                let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                    .formula(f_clone)
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Eager)
-                    .build()
-                    .unwrap();
-                (monitor, s_clone)
-            },
-            |(mut monitor, signal)| {
-                for step in signal {
-                    monitor.update(&step);
-                }
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
-    // --- Benchmark Eager Incremental (f64, eager) ---
-    group.bench_function("Incremental_RobustnessInterval_eager", |b| {
-        b.iter_batched(
-            || {
-                let (f_clone, s_clone) = (formula.clone(), signal.clone());
-                let monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-                    .formula(f_clone)
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Eager)
-                    .build()
-                    .unwrap();
-                (monitor, s_clone)
-            },
-            |(mut monitor, signal)| {
-                for step in signal {
-                    monitor.update(&step);
-                }
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
+    create_benchmarks!(group, &formula, &signal, [
+        ("Incremental_bool_Strict", bool, MonitoringStrategy::Incremental, EvaluationMode::Strict),
+        ("Incremental_f64_Strict", f64, MonitoringStrategy::Incremental, EvaluationMode::Strict),
+        ("Incremental_bool_eager", bool, MonitoringStrategy::Incremental, EvaluationMode::Eager),
+        ("Incremental_RobustnessInterval_eager", RobustnessInterval, MonitoringStrategy::Incremental, EvaluationMode::Eager)
+    ]);
+
     group.finish();
-}
-
-#[cfg(feature = "dhat-heap")]
-fn run_memory_profiling(formula: &FormulaDefinition, signal: &Vec<Step<f64>>) {
-    // Start memory profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-    // SETUP: Build the monitor for naive and strict evaluation
-    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Naive)
-        .evaluation_mode(EvaluationMode::Strict)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Naive Strict f64");
-    drop(_profiler); // Stop profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-
-    // SETUP: Build the monitor for incremental and strict evaluation
-    let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Strict)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Incremental Strict f64");
-    drop(_profiler); // Stop profiling
-    let _profiler = dhat::Profiler::builder().testing().build();
-    // SETUP: Build the monitor for incremental and eager evaluation for bool
-    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-        .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Eager)
-        .build()
-        .unwrap();
-    for step in signal {
-        monitor.update(step);
-    }
-    print_heap_stats("Incremental Eager bool");
-}
-
-#[cfg(feature = "dhat-heap")]
-fn print_heap_stats(test_name: &'static str) {
-    // use serde_json to write dhat profile to file
-    let heap_stats = dhat::HeapStats::get();
-    let measures = serde_json::json!({
-        "Final Blocks": {
-            "value": heap_stats.curr_blocks,
-        },
-        "Final Bytes": {
-            "value": heap_stats.curr_bytes,
-        },
-        "Max Blocks": {
-            "value": heap_stats.max_blocks,
-        },
-        "Max Bytes": {
-            "value": heap_stats.max_bytes,
-        },
-        "Total Blocks": {
-            "value": heap_stats.total_blocks,
-        },
-        "Total Bytes": {
-            "value": heap_stats.total_bytes,
-        },
-    });
-    let pretty_measures =
-        serde_json::to_string_pretty(&measures).expect("serialize heap statistics");
-    println!("Dhat heap profile for {}:\n{}", test_name, pretty_measures);
 }
 
 criterion_group!(benches, benchmark_monitors);
