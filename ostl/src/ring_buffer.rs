@@ -40,6 +40,7 @@ pub trait RingBufferTrait {
     fn get_back(&self) -> Option<&Step<Self::Value>>;
     fn get_front(&self) -> Option<&Step<Self::Value>>;
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
+    fn pop_back(&mut self) -> Option<Step<Self::Value>>;
 
     fn add_step(&mut self, step: Step<Self::Value>);
     fn update_step(&mut self, step: Step<Self::Value>) -> bool;
@@ -125,6 +126,9 @@ where
     }
     fn pop_front(&mut self) -> Option<Step<Self::Value>> {
         self.steps.pop_front()
+    }
+    fn pop_back(&mut self) -> Option<Step<Self::Value>> {
+        self.steps.pop_back()
     }
 
     fn add_step(&mut self, step: Step<T>) {

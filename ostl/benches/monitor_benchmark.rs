@@ -18,13 +18,13 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     // Using the stl! macro directly as intended for standard expressions.
     // Note: 'x[t]' in CSV is mapped to signal 'x'.
 
-    formulas.push(stl!((x < 0.5) and (x > -0.5)));
+    // formulas.push(stl!((x < 0.5) and (x > -0.5)));
 
-    // 2. Or 
-    formulas.push(stl!((x < 0.5) or (x > -0.5)));
+    // // 2. Or 
+    // formulas.push(stl!((x < 0.5) or (x > -0.5)));
 
-    // 3. Not 
-    formulas.push(stl!(not (x < 0.5)));
+    // // 3. Not 
+    // formulas.push(stl!(not (x < 0.5)));
 
     // 4-6. Globally (Always) 
     formulas.push(stl!(alw[0, 10] (x < 0.5)));
