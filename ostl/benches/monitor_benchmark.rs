@@ -18,13 +18,13 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     // Using the stl! macro directly as intended for standard expressions.
     // Note: 'x[t]' in CSV is mapped to signal 'x'.
 
-    formulas.push(stl!((x < 0.5) and (x > -0.5)));
+    // formulas.push(stl!((x < 0.5) and (x > -0.5)));
 
-    // 2. Or 
-    formulas.push(stl!((x < 0.5) or (x > -0.5)));
+    // // 2. Or 
+    // formulas.push(stl!((x < 0.5) or (x > -0.5)));
 
-    // 3. Not 
-    formulas.push(stl!(not (x < 0.5)));
+    // // 3. Not 
+    // formulas.push(stl!(not (x < 0.5)));
 
     // 4-6. Globally (Always) 
     formulas.push(stl!(alw[0, 10] (x < 0.5)));
@@ -39,7 +39,7 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     // 10-12. Until 
     formulas.push(stl!((x < 0.5) until[0, 10] (x > -0.5)));
     formulas.push(stl!((x < 0.5) until[0, 100] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
+    // formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
 
 
     // --- Complex Nested Formulas (Lines 13-21) ---
@@ -102,9 +102,9 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
         curr
     };
 
-    formulas.push(make_until_chain(10));
-    formulas.push(make_until_chain(20)); 
-    formulas.push(make_until_chain(30)); 
+    // formulas.push(make_until_chain(10));
+    // formulas.push(make_until_chain(20)); 
+    // formulas.push(make_until_chain(30)); 
 
     formulas
 }

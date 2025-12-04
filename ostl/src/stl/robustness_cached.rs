@@ -506,6 +506,23 @@ impl<T, Y> SignalIdentifier for Not<T, Y> {
     }
 }
 
+fn pop_dominated_values<C, Y, F>(cache: &mut C, sub_step: &Step<Option<Y>>, combine_op: F)
+where
+    C: RingBufferTrait<Value = Option<Y>>,
+    Y: RobustnessSemantics,
+    F: Fn(Y, Y) -> Y,
+{
+    // lemires sliding min/max optimization
+    while let Some(back) = cache.get_back()
+        && sub_step.value.is_some()
+        && back.value.is_some()
+        && combine_op(sub_step.clone().value.unwrap(), back.clone().value.unwrap()) == sub_step.clone().value.unwrap() // this really needs to not use clone()
+    {
+        // Short-circuit: new value dominates the back of the cache.
+        cache.pop_back();
+    }
+}
+
 #[derive(Clone)]
 pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
@@ -543,7 +560,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + Debug + 'static,
 {
     type Output = Y;
 
@@ -560,13 +577,15 @@ where
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
                 if !self.cache.update_step(sub_step.clone()) {
+                    pop_dominated_values(&mut self.cache, &sub_step, Y::or);
                     self.cache.add_step(sub_step);
                 }
             }
         } else {
-            for sub_step in sub_robustness_vec {
+            for sub_step in &sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                self.cache.add_step(sub_step); // sub_step is moved
+                pop_dominated_values(&mut self.cache, &sub_step, Y::or);
+                self.cache.add_step(sub_step.clone());
             }
         }
 
@@ -576,17 +595,17 @@ where
         // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
-            let window_end = t_eval + self.interval.end;
 
-            // Use `skip_while` and `take_while` to iterate only over
-            // the relevant part of the cache, not the whole thing.
-            let windowed_max_value = self
+            // The first step in this window is always the max as a result of how the cache is built
+            let windowed_max_step = self
                 .cache
                 .iter()
-                .skip_while(|entry| entry.timestamp < window_start)
-                .take_while(|entry| entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::eventually_identity(), Y::or); // Use the identity from your code
+                .find(|entry| entry.timestamp >= window_start);
+            let windowed_max_value = if let Some(entry) = windowed_max_step {
+                entry.value.clone().unwrap() // clone is acceptable as i need to keep the old value
+            } else {
+                Y::eventually_identity()
+            };
 
             let final_value: Option<Y>;
             let mut remove_task = false;
@@ -693,13 +712,15 @@ where
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
                 if !self.cache.update_step(sub_step.clone()) {
+                    pop_dominated_values(&mut self.cache, &sub_step, Y::and);
                     self.cache.add_step(sub_step);
                 }
             }
         } else {
-            for sub_step in sub_robustness_vec {
+            for sub_step in &sub_robustness_vec {
+                pop_dominated_values(&mut self.cache, &sub_step, Y::and);
                 self.eval_buffer.insert(sub_step.timestamp);
-                self.cache.add_step(sub_step);
+                self.cache.add_step(sub_step.clone());
             }
         }
 
@@ -709,17 +730,17 @@ where
         // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
-            let window_end = t_eval + self.interval.end;
 
-            // Use `skip_while` and `take_while` to iterate only over
-            // the relevant part of the cache, not the whole thing.
-            let windowed_min_value = self
+            // The first step in this window is always the max as a result of how the cache is built
+            let windowed_min_step = self
                 .cache
                 .iter()
-                .skip_while(|entry| entry.timestamp < window_start)
-                .take_while(|entry| entry.timestamp <= window_end)
-                .filter_map(|entry| entry.value.clone())
-                .fold(Y::globally_identity(), Y::and); // Use the identity from your code
+                .find(|entry| entry.timestamp >= window_start);
+            let windowed_min_value = if let Some(entry) = windowed_min_step {
+                entry.value.clone().unwrap() // clone is acceptable as i need to keep the old value
+            } else {
+                Y::globally_identity()
+            };
 
             let final_value: Option<Y>;
             let mut remove_task = false;
@@ -990,7 +1011,7 @@ where
                     .left_cache
                     .iter()
                     .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
+                    .take_while(|s| s.timestamp <= t_prime)
                     .filter_map(|s| s.value.clone())
                     .fold(Y::globally_identity(), Y::and);
 
@@ -998,9 +1019,7 @@ where
                 if let Some(last_left_step) = self
                     .left_cache
                     .iter()
-                    .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
-                    .take_while(|s| s.timestamp <= t_prime) // t'' < t' : strong until - t'' <= t' weak until
-                    .last()
+                    .find(|s| s.timestamp > t_prime)
                     && last_left_step.timestamp < t_prime
                 {
                     // no data for t'' up to t', need to and with unknown
