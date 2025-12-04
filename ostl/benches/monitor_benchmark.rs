@@ -39,7 +39,7 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     // 10-12. Until 
     formulas.push(stl!((x < 0.5) until[0, 10] (x > -0.5)));
     formulas.push(stl!((x < 0.5) until[0, 100] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
+    // formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
 
 
     // --- Complex Nested Formulas (Lines 13-21) ---
@@ -102,9 +102,9 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
         curr
     };
 
-    formulas.push(make_until_chain(10));
-    formulas.push(make_until_chain(20)); 
-    formulas.push(make_until_chain(30)); 
+    // formulas.push(make_until_chain(10));
+    // formulas.push(make_until_chain(20)); 
+    // formulas.push(make_until_chain(30)); 
 
     formulas
 }
