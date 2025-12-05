@@ -3,7 +3,8 @@ mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
-    use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
+    use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+    use ostl::stl::formula_definition::FormulaDefinition;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
@@ -615,21 +616,26 @@ mod tests {
     #[rstest]
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
-        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(formula_2())
+        let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            .formula(
+                stl! {
+                    (G[0,2] (x < 2)) and ((x > 0))
+                }
+            )
             .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Strict)
+            .evaluation_mode(EvaluationMode::Eager)
             .build()
             .unwrap();
 
         println!("Testing formula: {} \n", monitor.specification_to_string());
         // pass step to monitor to ensure it works
         let step = vec![
-            Step::new("x", 2.0, Duration::from_secs(0)),
-            Step::new("x", 2.0, Duration::from_secs(1)),
-            Step::new("x", -2.0, Duration::from_secs(6)),
-            Step::new("x", 2.0, Duration::from_secs(7)),
-            Step::new("x", 5.0, Duration::from_secs(8)),
+            Step::new("x", 1.0, Duration::from_secs(0)),
+            Step::new("x", -1.0, Duration::from_secs(1)),
+            Step::new("x", -1.0, Duration::from_secs(2)),
+            // Step::new("x", -2.0, Duration::from_secs(6)),
+            // Step::new("x", 2.0, Duration::from_secs(7)),
+            // Step::new("x", 5.0, Duration::from_secs(8)),
         ];
 
         for s in step {

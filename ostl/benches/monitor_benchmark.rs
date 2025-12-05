@@ -2,8 +2,9 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main, PlotConfiguration, AxisScale};
 use ostl::ring_buffer::Step;
 use ostl::stl;
-use ostl::stl::core::{RobustnessInterval, TimeInterval, RobustnessSemantics};
-use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
+use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+use ostl::stl::formula_definition::FormulaDefinition;
 use std::time::Duration;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -46,11 +47,17 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     let make_and_ev_chain = |depth: usize| -> FormulaDefinition {
         let mut curr = stl!(x > 0.0); // Base case
         for _ in 0..depth {
-            curr = FormulaDefinition::And(
-                Box::new(stl!(x < 0.5)),
-                Box::new(FormulaDefinition::Eventually(zero_ten.clone(), Box::new(curr)))
-            );
-        }
+                curr = FormulaDefinition::And(
+                    Box::new(FormulaDefinition::Eventually(
+                        zero_ten.clone(),
+                        Box::new(curr.clone()),
+                    )),
+                    Box::new(FormulaDefinition::Eventually(
+                        zero_ten.clone(),
+                        Box::new(curr.clone()),
+                    )),
+                );
+            }
         curr
     };
 
@@ -76,11 +83,11 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     let make_until_chain = |depth: usize| -> FormulaDefinition {
         let mut curr = stl!(x > 0.0); // Base case
         for _ in 0..depth {
-            curr = FormulaDefinition::Until(
-                zero_ten.clone(),
-                Box::new(stl!(x < 0.5)),
-                Box::new(curr)
-            );
+                curr = FormulaDefinition::Until(
+                    zero_ten.clone(),
+                    Box::new(curr.clone()),
+                    Box::new(curr),
+                );
         }
         curr
     };
@@ -149,6 +156,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             .build()
             .unwrap();
         let formula_name = temp.specification_to_string();
+        
 
         let mut group = c.benchmark_group(&formula_name);
         group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));

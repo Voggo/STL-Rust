@@ -2,18 +2,18 @@
     macro_rules! stl {
         // --- ATOMICS ---
         (true) => {
-            $crate::stl::monitor::FormulaDefinition::True
+            $crate::stl::formula_definition::FormulaDefinition::True
         };
         (false) => {
-            $crate::stl::monitor::FormulaDefinition::False
+            $crate::stl::formula_definition::FormulaDefinition::False
         };
     
         // --- PREDICATES (Atomics) ---
         ($signal:ident > $val:expr) => {
-            $crate::stl::monitor::FormulaDefinition::GreaterThan(stringify!($signal), $val as f64)
+            $crate::stl::formula_definition::FormulaDefinition::GreaterThan(stringify!($signal), $val as f64)
         };
         ($signal:ident < $val:expr) => {
-            $crate::stl::monitor::FormulaDefinition::LessThan(stringify!($signal), $val as f64)
+            $crate::stl::formula_definition::FormulaDefinition::LessThan(stringify!($signal), $val as f64)
         };
         // Syntactic sugar for >=, <=, ==
         ($signal:ident >= $val:expr) => {
@@ -31,7 +31,7 @@
     
         // --- UNARY OPERATORS ---
         (! ($($sub:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Not(
+            $crate::stl::formula_definition::FormulaDefinition::Not(
                 Box::new($crate::stl!($($sub)+))
             )
         };
@@ -41,7 +41,7 @@
         };
 
         (G [$start:expr, $end:expr] ($($sub:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Globally(
+            $crate::stl::formula_definition::FormulaDefinition::Globally(
                 $crate::stl::core::TimeInterval {
                     start: std::time::Duration::from_secs($start as u64),
                     end: std::time::Duration::from_secs($end as u64),
@@ -55,7 +55,7 @@
         };
 
         (F [$start:expr, $end:expr] ($($sub:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Eventually(
+            $crate::stl::formula_definition::FormulaDefinition::Eventually(
                 $crate::stl::core::TimeInterval {
                     start: std::time::Duration::from_secs($start as u64),
                     end: std::time::Duration::from_secs($end as u64),
@@ -70,7 +70,7 @@
     
         // --- BINARY OPERATORS (Infix) ---
         ( ($($left:tt)+) && ($($right:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::And(
+            $crate::stl::formula_definition::FormulaDefinition::And(
                 Box::new($crate::stl!($($left)+)),
                 Box::new($crate::stl!($($right)+))
             )
@@ -81,7 +81,7 @@
         };
 
         ( ($($left:tt)+) || ($($right:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Or(
+            $crate::stl::formula_definition::FormulaDefinition::Or(
                 Box::new($crate::stl!($($left)+)),
                 Box::new($crate::stl!($($right)+))
             )
@@ -92,7 +92,7 @@
         };
 
         ( ($($left:tt)+) -> ($($right:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Implies(
+            $crate::stl::formula_definition::FormulaDefinition::Implies(
                 Box::new($crate::stl!($($left)+)),
                 Box::new($crate::stl!($($right)+))
             )
@@ -103,7 +103,7 @@
         };
 
         ( ($($left:tt)+) U [$start:expr, $end:expr] ($($right:tt)+) ) => {
-            $crate::stl::monitor::FormulaDefinition::Until(
+            $crate::stl::formula_definition::FormulaDefinition::Until(
                 $crate::stl::core::TimeInterval {
                     start: std::time::Duration::from_secs($start as u64),
                     end: std::time::Duration::from_secs($end as u64),
@@ -125,7 +125,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::stl::monitor::FormulaDefinition;
+    use crate::stl::formula_definition::FormulaDefinition;
     #[test]
     fn test_stl_macro() {
         let _: FormulaDefinition = stl! {

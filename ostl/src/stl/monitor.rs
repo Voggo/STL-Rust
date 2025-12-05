@@ -1,26 +1,12 @@
 use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{
     RobustnessInterval, RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait,
-    TimeInterval,
 };
 use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Not, Or, Until};
 use crate::stl::robustness_naive::{StlFormula, StlOperator};
+use crate::stl::formula_definition::FormulaDefinition;
 use std::any::TypeId;
 
-#[derive(Clone, Debug)]
-pub enum FormulaDefinition {
-    GreaterThan(&'static str, f64),
-    LessThan(&'static str, f64),
-    True,
-    False,
-    And(Box<FormulaDefinition>, Box<FormulaDefinition>),
-    Or(Box<FormulaDefinition>, Box<FormulaDefinition>),
-    Not(Box<FormulaDefinition>),
-    Implies(Box<FormulaDefinition>, Box<FormulaDefinition>),
-    Eventually(TimeInterval, Box<FormulaDefinition>),
-    Globally(TimeInterval, Box<FormulaDefinition>),
-    Until(TimeInterval, Box<FormulaDefinition>, Box<FormulaDefinition>),
-}
 
 /// Defines the monitoring strategy.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -277,7 +263,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stl::monitor::{FormulaDefinition, MonitoringStrategy, StlMonitor};
+    use crate::stl::monitor::{MonitoringStrategy, StlMonitor};
+    use crate::stl::core::TimeInterval;
     use std::time::Duration;
 
     #[test]

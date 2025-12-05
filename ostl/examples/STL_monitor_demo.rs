@@ -2,7 +2,8 @@ use ostl::ring_buffer::Step;
 
 use ostl::stl::core::{TimeInterval};
 
-use ostl::stl::monitor::{EvaluationMode, FormulaDefinition, MonitoringStrategy, StlMonitor};
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+use ostl::stl::formula_definition::FormulaDefinition;
 
 use rand::rng;
 use rand::rngs::ThreadRng;
