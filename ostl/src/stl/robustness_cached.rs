@@ -982,7 +982,7 @@ where
 
         // 2. Process the evaluation buffer for tasks
         for &t_eval in self.eval_buffer.iter() {
-            let window_start_t_eval = t_eval + self.interval.start;
+            let window_start_t_eval = t_eval;
             let window_end_t_eval = t_eval + self.interval.end;
 
             // This is the outer `max` (Eventually)
