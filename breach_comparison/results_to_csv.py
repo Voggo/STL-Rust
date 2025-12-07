@@ -4,9 +4,9 @@ import os
 
 
 def convert_merged_json_to_csv(
-    input_file="merged_results.json",
-    formulas_file="formulas_own.csv",
-    output_file="benchmark_results_own.csv",
+    input_file="results/own/merged_results.json",
+    formulas_file="results/own/formulas_own.csv",
+    output_file="results/own/benchmark_results_own.csv",
 ):
     # 1. Load Formula Mapping
     formulas_map = {}
@@ -123,7 +123,7 @@ def convert_merged_json_to_csv(
             mean_ub = record["mean"]["upper_bound"]
 
             # Format statistics into a single string column
-            stats_str = f"mean={mean_est:.2f}, lb={mean_lb:.2f}, ub={mean_ub:.2f}"
+            stats_str = f"mean={mean_est:.2f}; lb={mean_lb:.2f}; ub={mean_ub:.2f}"
 
             # Calculate Throughput (elements/second)
             # throughput = items_per_iter / (mean_time_seconds)

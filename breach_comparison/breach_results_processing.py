@@ -59,7 +59,12 @@ def update_formulas_in_csv(input_csv_path, output_csv_path="updated_results.csv"
 
         # Count changes
         original_formulas = df_data["formula"].tolist()
-        df_data["formula"] = df_data["formula"].apply(map_formula)
+        # df_data["formula"] = df_data["formula"].apply(map_formula)
+        for row in range(len(df_data)):
+            original = df_data.at[row, "formula"]
+            mapped = formula_map.get(str(original).strip(), original)
+            print(f"Row {row}: '{original}' -> '{mapped}'")
+            df_data.at[row, "formula"] = mapped
 
         # Check how many were updated
         changed_count = sum(
