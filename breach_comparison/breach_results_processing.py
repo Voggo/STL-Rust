@@ -9,8 +9,8 @@ def update_formulas_in_csv(input_csv_path, output_csv_path="updated_results.csv"
     # Load Breach formulas (source)
     # Assuming no header, or if the first line is data. Based on inspection, it has no header.
     try:
-        df_breach = pd.read_csv("results/breach/formulas_breach.csv", header=None)
-        breach_formulas = df_breach[0].tolist()
+        df_breach = pd.read_csv("results/breach/formulas_breach.csv")
+        breach_formulas = df_breach["formula"].tolist()
     except Exception as e:
         print(f"Error loading formulas_breach.csv: {e}")
         return
