@@ -516,7 +516,9 @@ where
     while let Some(back) = cache.get_back()
         && sub_step.value.is_some()
         && back.value.is_some()
-        && combine_op(sub_step.clone().value.unwrap(), back.clone().value.unwrap()) == sub_step.clone().value.unwrap() // this really needs to not use clone()
+        && combine_op(sub_step.clone().value.unwrap(), back.clone().value.unwrap())
+            == sub_step.clone().value.unwrap()
+    // this really needs to not use clone()
     {
         // Short-circuit: new value dominates the back of the cache.
         cache.pop_back();
@@ -577,7 +579,7 @@ where
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
                 if !self.cache.update_step(sub_step.clone()) {
-                    pop_dominated_values(&mut self.cache, &sub_step, Y::or);
+                    // pop_dominated_values(&mut self.cache, &sub_step, Y::or);
                     self.cache.add_step(sub_step);
                 }
             }
@@ -597,14 +599,26 @@ where
             let window_start = t_eval + self.interval.start;
 
             // The first step in this window is always the max as a result of how the cache is built
-            let windowed_max_step = self
-                .cache
-                .iter()
-                .find(|entry| entry.timestamp >= window_start);
-            let windowed_max_value = if let Some(entry) = windowed_max_step {
-                entry.value.clone().unwrap() // clone is acceptable as i need to keep the old value
+            let windowed_max_value = if IS_ROSI {
+                let window_end = t_eval + self.interval.end;
+                self.cache
+                    .iter()
+                    .skip_while(|entry| entry.timestamp < window_start)
+                    .take_while(|entry| entry.timestamp <= window_end)
+                    .map(|entry| entry.value.clone().unwrap())
+                    .fold(Y::eventually_identity(), Y::or)
             } else {
-                Y::eventually_identity()
+                // Standard optimization (valid for f64/bool with append-only data)
+                let windowed_max_step = self
+                    .cache
+                    .iter()
+                    .find(|entry| entry.timestamp >= window_start);
+
+                if let Some(entry) = windowed_max_step {
+                    entry.value.clone().unwrap()
+                } else {
+                    Y::eventually_identity()
+                }
             };
 
             let final_value: Option<Y>;
@@ -641,7 +655,7 @@ where
         }
 
         // 3. Prune the cache and buffer
-        self.cache.prune(self.interval.end);
+        self.cache.prune(self.get_max_lookahead());
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
@@ -712,7 +726,7 @@ where
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
                 if !self.cache.update_step(sub_step.clone()) {
-                    pop_dominated_values(&mut self.cache, &sub_step, Y::and);
+                    // pop_dominated_values(&mut self.cache, &sub_step, Y::and);
                     self.cache.add_step(sub_step);
                 }
             }
@@ -732,14 +746,26 @@ where
             let window_start = t_eval + self.interval.start;
 
             // The first step in this window is always the max as a result of how the cache is built
-            let windowed_min_step = self
-                .cache
-                .iter()
-                .find(|entry| entry.timestamp >= window_start);
-            let windowed_min_value = if let Some(entry) = windowed_min_step {
-                entry.value.clone().unwrap() // clone is acceptable as i need to keep the old value
+            let windowed_min_value = if IS_ROSI {
+                let window_end = t_eval + self.interval.end;
+                self.cache
+                    .iter()
+                    .skip_while(|entry| entry.timestamp < window_start)
+                    .take_while(|entry| entry.timestamp <= window_end)
+                    .map(|entry| entry.value.clone().unwrap())
+                    .fold(Y::globally_identity(), Y::and)
             } else {
-                Y::globally_identity()
+                // Standard optimization (valid for f64/bool with append-only data)
+                let windowed_min_step = self
+                    .cache
+                    .iter()
+                    .find(|entry| entry.timestamp >= window_start);
+
+                if let Some(entry) = windowed_min_step {
+                    entry.value.clone().unwrap()
+                } else {
+                    Y::globally_identity()
+                }
             };
 
             let final_value: Option<Y>;
@@ -776,7 +802,7 @@ where
         }
 
         // 3. Prune the cache and buffer
-        self.cache.prune(self.interval.end);
+        self.cache.prune(self.get_max_lookahead());
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
@@ -1016,10 +1042,7 @@ where
                     .fold(Y::globally_identity(), Y::and);
 
                 // if no data in in left_cache for >t_prime, we need to and with unknown
-                if let Some(last_left_step) = self
-                    .left_cache
-                    .iter()
-                    .find(|s| s.timestamp > t_prime)
+                if let Some(last_left_step) = self.left_cache.iter().find(|s| s.timestamp > t_prime)
                     && last_left_step.timestamp < t_prime
                 {
                     // no data for t'' up to t', need to and with unknown

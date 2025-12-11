@@ -148,6 +148,11 @@ mod tests {
         stl! {(!(F[0,2](x<=0))) && (y<5)}
     }
 
+    #[fixture]
+    #[once]
+    fn formula_9() -> FormulaDefinition {
+        stl! {F[0, 10](G[0, 10](F[0, 10](G[0, 10](x > 0))))}
+    }
     // ---
     // Signal Fixtures
     // ---
@@ -616,7 +621,7 @@ mod tests {
     #[rstest]
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
-        let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
             .formula(
                 stl! {
                     (G[0,2] (x < 2)) and ((x > 0))
@@ -655,6 +660,8 @@ mod tests {
     #[case(vec![formula_5(), formula_5_alt()])]
     #[case(vec![formula_6(), formula_6_alt()])]
     #[case(vec![formula_7()])]
+    #[case(vec![formula_8()])]
+    #[case(vec![formula_9()])]
     fn test_final_rosi_verdicts(
         #[case] formulas: Vec<FormulaDefinition>,
         #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
@@ -740,6 +747,7 @@ mod tests {
     #[case(vec![formula_6(), formula_6_alt()])]
     #[case(vec![formula_7()])]
     #[case(vec![formula_8()])]
+    #[case(vec![formula_9()])]
     fn test_rosi_interval_bounds(
         #[case] formulas: Vec<FormulaDefinition>,
         #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
