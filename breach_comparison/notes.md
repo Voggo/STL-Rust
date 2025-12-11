@@ -1,5 +1,10 @@
 # NOTES from Breach implementation
 
+- [NOTES from Breach implementation](#notes-from-breach-implementation)
+  - [Setting up Breach](#setting-up-breach)
+  - [Online Monitoring Approaches in Breach](#online-monitoring-approaches-in-breach)
+
+
 ## Setting up Breach
 
 I did the following:
