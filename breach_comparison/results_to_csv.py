@@ -4,9 +4,9 @@ import os
 
 
 def convert_merged_json_to_csv(
-    input_file="results/own/merged_results.json",
+    input_file="results/own/merged_results_new.json",
     formulas_file="results/own/formulas_own.csv",
-    output_file="results/own/benchmark_results_own.csv",
+    output_file="results/own/benchmark_results_new_own.csv",
 ):
     # 1. Load Formula Mapping
     formulas_map = {}

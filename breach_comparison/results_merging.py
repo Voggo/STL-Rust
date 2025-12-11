@@ -1,6 +1,4 @@
 import json
-import os
-
 
 def merge_benchmark_results(input_files, output_file):
     # Dictionary to store merged results, keyed by the benchmark 'id' to detect duplicates
@@ -72,11 +70,13 @@ def merge_benchmark_results(input_files, output_file):
 if __name__ == "__main__":
     # Define the files to merge
     files_to_merge = [
-        "results/own/results_1-12.json",
-        "results/own/results_12.json",
-        "results/own/results_13-21.json",
+        "results/own/results_new_rosi.json",
+        "results/own/merged_results.json",
+        # "results/own/results_1-12.json",
+        # "results/own/results_12.json",
+        # "results/own/results_13-21.json",
     ]
 
-    output_filename = "merged_results.json"
+    output_filename = "merged_results_new_rosi.json"
 
     merge_benchmark_results(files_to_merge, output_filename)
