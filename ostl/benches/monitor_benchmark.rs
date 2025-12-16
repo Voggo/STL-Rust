@@ -1,10 +1,8 @@
 // In benches/monitor_benchmark.rs
 use criterion::{Criterion, Throughput, criterion_group, criterion_main, PlotConfiguration, AxisScale};
 use ostl::ring_buffer::Step;
-use ostl::stl;
-use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::core::RobustnessInterval;
 use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
-use ostl::stl::formula_definition::FormulaDefinition;
 use std::time::Duration;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -15,89 +13,7 @@ use std::path::Path;
 // Run: cargo criterion --message-format=json > results.json
 
 
-/// Returns the vector of Signal Temporal Logic formulas specified in formula.csv
-pub fn get_formulas() -> Vec<FormulaDefinition> {
-    let mut formulas = Vec::new();
 
-    // --- Basic Formulas (Lines 1-12) ---
-    formulas.push(stl!((x < 0.5) and (x > -0.5)));
-    formulas.push(stl!((x < 0.5) or (x > -0.5)));
-    formulas.push(stl!(not (x < 0.5)));
-
-    // 4-6. Globally (Always) 
-    formulas.push(stl!(alw[0, 10] (x < 0.5)));
-    formulas.push(stl!(alw[0, 100] (x < 0.5)));
-    formulas.push(stl!(alw[0, 1000] (x < 0.5)));
-
-    // 7-9. Eventually 
-    formulas.push(stl!(ev[0, 10] (x < 0.5)));
-    formulas.push(stl!(ev[0, 100] (x < 0.5)));
-    formulas.push(stl!(ev[0, 1000] (x < 0.5)));
-
-    // 10-12. Until 
-    formulas.push(stl!((x < 0.5) until[0, 10] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 100] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
-
-
-    // --- Complex Nested Formulas (Lines 13-21) ---
-    let zero_ten = TimeInterval { start: Duration::from_secs(0), end: Duration::from_secs(10) };
-
-    // Pattern A
-    let make_and_ev_chain = |depth: usize| -> FormulaDefinition {
-        let mut curr = stl!(x > 0.0); // Base case
-        for _ in 0..depth {
-                curr = FormulaDefinition::And(
-                    Box::new(FormulaDefinition::Eventually(
-                        zero_ten.clone(),
-                        Box::new(curr.clone()),
-                    )),
-                    Box::new(FormulaDefinition::Eventually(
-                        zero_ten.clone(),
-                        Box::new(curr.clone()),
-                    )),
-                );
-            }
-        curr
-    };
-
-    formulas.push(make_and_ev_chain(10)); 
-    formulas.push(make_and_ev_chain(20)); 
-    formulas.push(make_and_ev_chain(30)); 
-
-    // Pattern B
-    let make_ev_alw_chain = |depth: usize| -> FormulaDefinition {
-        let mut curr = stl!(x > 0.0); // Base case
-        for _ in 0..depth {
-            let alw_layer = FormulaDefinition::Globally(zero_ten.clone(), Box::new(curr));
-            curr = FormulaDefinition::Eventually(zero_ten.clone(), Box::new(alw_layer));
-        }
-        curr
-    };
-
-    formulas.push(make_ev_alw_chain(10)); 
-    formulas.push(make_ev_alw_chain(20)); 
-    formulas.push(make_ev_alw_chain(30)); 
-
-    // Pattern C
-    let make_until_chain = |depth: usize| -> FormulaDefinition {
-        let mut curr = stl!(x > 0.0); // Base case
-        for _ in 0..depth {
-                curr = FormulaDefinition::Until(
-                    zero_ten.clone(),
-                    Box::new(curr.clone()),
-                    Box::new(curr),
-                );
-        }
-        curr
-    };
-
-    formulas.push(make_until_chain(10));
-    formulas.push(make_until_chain(20)); 
-    formulas.push(make_until_chain(30)); 
-
-    formulas
-}
 
 // Helper to read a single signal CSV into a Vec<Step<f64>>
 fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
@@ -146,16 +62,17 @@ pub fn get_signals_from_csv() -> Vec<Vec<Step<f64>>> {
 // The Benchmark Function
 // ---
 fn benchmark_monitors(c: &mut Criterion) {
-    let formulas = get_formulas();
+    let formulas = ostl::stl::formulas::get_formulas(&[12]);
     let signals = get_signals_from_csv();
 
-    for formula in formulas {
+    for (id, formula) in formulas {
         // Create a temp monitor to get the specification string for the group name
         let temp: StlMonitor<f64, bool> = StlMonitor::builder()
             .formula(formula.clone())
             .build()
             .unwrap();
-        let formula_name = temp.specification_to_string();
+        let spec_str = temp.specification_to_string();
+        let formula_name = format!("{}: {}", id, spec_str);
         
 
         let mut group = c.benchmark_group(&formula_name);
@@ -171,84 +88,137 @@ fn benchmark_monitors(c: &mut Criterion) {
             group.throughput(Throughput::Elements(signal_size as u64));
 
             // 1. Incremental bool Strict
-            group.bench_with_input(
-                criterion::BenchmarkId::new("Incremental_bool_Strict", signal_size),
-                signal,
-                |b, signal| {
-                    b.iter_batched(
-                        || {
-                            let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                                .formula(formula.clone())
-                                .strategy(MonitoringStrategy::Incremental)
-                                .evaluation_mode(EvaluationMode::Strict)
-                                .build()
-                                .unwrap();
-                            (monitor, signal.clone())
-                        },
-                        |(mut monitor, signal)| {
-                            for step in signal {
-                                monitor.update(&step);
-                            }
-                        },
-                        // Use LargeInput to exclude the significant drop/clone time of the signal
-                        criterion::BatchSize::LargeInput,
-                    );
-                },
-            );
+            // group.bench_with_input(
+            //     criterion::BenchmarkId::new("Incremental_bool_Strict", signal_size),
+            //     signal,
+            //     |b, signal| {
+            //         b.iter_batched(
+            //             || {
+            //                 let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            //                     .formula(formula.clone())
+            //                     .strategy(MonitoringStrategy::Incremental)
+            //                     .evaluation_mode(EvaluationMode::Strict)
+            //                     .build()
+            //                     .unwrap();
+            //                 (monitor, signal.clone())
+            //             },
+            //             |(mut monitor, signal)| {
+            //                 for step in signal {
+            //                     monitor.update(&step);
+            //                 }
+            //             },
+            //             // Use LargeInput to exclude the significant drop/clone time of the signal
+            //             criterion::BatchSize::LargeInput,
+            //         );
+            //     },
+            // );
 
-            // 2. Incremental f64 Strict
-            group.bench_with_input(
-                criterion::BenchmarkId::new("Incremental_f64_Strict", signal_size),
-                signal,
-                |b, signal| {
-                    b.iter_batched(
-                        || {
-                             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-                                .formula(formula.clone())
-                                .strategy(MonitoringStrategy::Incremental)
-                                .evaluation_mode(EvaluationMode::Strict)
-                                .build()
-                                .unwrap();
-                            (monitor, signal.clone())
-                        },
-                        |(mut monitor, signal)| {
-                            for step in signal {
-                                monitor.update(&step);
-                            }
-                        },
-                        criterion::BatchSize::LargeInput,
-                    );
-                },
-            );
+            // // 2. Incremental f64 Strict
+            // group.bench_with_input(
+            //     criterion::BenchmarkId::new("Incremental_f64_Strict", signal_size),
+            //     signal,
+            //     |b, signal| {
+            //         b.iter_batched(
+            //             || {
+            //                  let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+            //                     .formula(formula.clone())
+            //                     .strategy(MonitoringStrategy::Incremental)
+            //                     .evaluation_mode(EvaluationMode::Strict)
+            //                     .build()
+            //                     .unwrap();
+            //                 (monitor, signal.clone())
+            //             },
+            //             |(mut monitor, signal)| {
+            //                 for step in signal {
+            //                     monitor.update(&step);
+            //                 }
+            //             },
+            //             criterion::BatchSize::LargeInput,
+            //         );
+            //     },
+            // );
 
-             // 3. Incremental bool Eager
-            group.bench_with_input(
-                criterion::BenchmarkId::new("Incremental_bool_Eager", signal_size),
-                signal,
-                |b, signal| {
-                    b.iter_batched(
-                        || {
-                            let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                                .formula(formula.clone())
-                                .strategy(MonitoringStrategy::Incremental)
-                                .evaluation_mode(EvaluationMode::Eager)
-                                .build()
-                                .unwrap();
-                            (monitor, signal.clone())
-                        },
-                        |(mut monitor, signal)| {
-                            for step in signal {
-                                monitor.update(&step);
-                            }
-                        },
-                        criterion::BatchSize::LargeInput,
-                    );
-                },
-            );
+            // // If this formula is among the first 12, also run Naive strategy (strict) benchmarks
+            // if id <= 11 {
+            //     // Naive bool Strict
+            //     group.bench_with_input(
+            //         criterion::BenchmarkId::new("Naive_bool_Strict", signal_size),
+            //         signal,
+            //         |b, signal| {
+            //             b.iter_batched(
+            //                 || {
+            //                     let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            //                         .formula(formula.clone())
+            //                         .strategy(MonitoringStrategy::Naive)
+            //                         .evaluation_mode(EvaluationMode::Strict)
+            //                         .build()
+            //                         .unwrap();
+            //                     (monitor, signal.clone())
+            //                 },
+            //                 |(mut monitor, signal)| {
+            //                     for step in signal {
+            //                         monitor.update(&step);
+            //                     }
+            //                 },
+            //                 criterion::BatchSize::LargeInput,
+            //             );
+            //         },
+            //     );
+
+            //     // Naive f64 Strict
+            //     group.bench_with_input(
+            //         criterion::BenchmarkId::new("Naive_f64_Strict", signal_size),
+            //         signal,
+            //         |b, signal| {
+            //             b.iter_batched(
+            //                 || {
+            //                     let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+            //                         .formula(formula.clone())
+            //                         .strategy(MonitoringStrategy::Naive)
+            //                         .evaluation_mode(EvaluationMode::Strict)
+            //                         .build()
+            //                         .unwrap();
+            //                     (monitor, signal.clone())
+            //                 },
+            //                 |(mut monitor, signal)| {
+            //                     for step in signal {
+            //                         monitor.update(&step);
+            //                     }
+            //                 },
+            //                 criterion::BatchSize::LargeInput,
+            //             );
+            //         },
+            //     );
+            // }
+
+            //  // 3. Incremental bool Eager
+            // group.bench_with_input(
+            //     criterion::BenchmarkId::new("Incremental_bool_Eager", signal_size),
+            //     signal,
+            //     |b, signal| {
+            //         b.iter_batched(
+            //             || {
+            //                 let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            //                     .formula(formula.clone())
+            //                     .strategy(MonitoringStrategy::Incremental)
+            //                     .evaluation_mode(EvaluationMode::Eager)
+            //                     .build()
+            //                     .unwrap();
+            //                 (monitor, signal.clone())
+            //             },
+            //             |(mut monitor, signal)| {
+            //                 for step in signal {
+            //                     monitor.update(&step);
+            //                 }
+            //             },
+            //             criterion::BatchSize::LargeInput,
+            //         );
+            //     },
+            // );
 
             // 4. Incremental RobustnessInterval Eager
             group.bench_with_input(
-                criterion::BenchmarkId::new("Incremental_RobustnessInterval_Eager", signal_size),
+                criterion::BenchmarkId::new("Incremental_RoSI_Eager", signal_size),
                 signal,
                 |b, signal| {
                     b.iter_batched(

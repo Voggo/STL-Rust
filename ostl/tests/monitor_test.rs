@@ -652,21 +652,9 @@ mod tests {
         }
     }
 
-    #[rstest]
-    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
-    #[case(vec![formula_2()])]
-    #[case(vec![formula_3(), formula_3_alt()])]
-    #[case(vec![formula_4()])]
-    #[case(vec![formula_5(), formula_5_alt()])]
-    #[case(vec![formula_6(), formula_6_alt()])]
-    #[case(vec![formula_7()])]
-    #[case(vec![formula_8()])]
-    #[case(vec![formula_9()])]
-    fn test_final_rosi_verdicts(
-        #[case] formulas: Vec<FormulaDefinition>,
-        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
-            Step<f64>,
-        >,
+    fn run_final_rosi_verdicts_check(
+        formulas: Vec<FormulaDefinition>,
+        signal: Vec<Step<f64>>,
     ) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
@@ -738,21 +726,9 @@ mod tests {
         }
     }
 
-    #[rstest]
-    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
-    #[case(vec![formula_2()])]
-    #[case(vec![formula_3(), formula_3_alt()])]
-    #[case(vec![formula_4()])]
-    #[case(vec![formula_5(), formula_5_alt()])]
-    #[case(vec![formula_6(), formula_6_alt()])]
-    #[case(vec![formula_7()])]
-    #[case(vec![formula_8()])]
-    #[case(vec![formula_9()])]
-    fn test_rosi_interval_bounds(
-        #[case] formulas: Vec<FormulaDefinition>,
-        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
-            Step<f64>,
-        >,
+    fn run_rosi_interval_bounds_check(
+        formulas: Vec<FormulaDefinition>,
+        signal: Vec<Step<f64>>,
     ) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
@@ -816,6 +792,57 @@ mod tests {
             );
         }
     }
+
+    #[rstest]
+    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+    #[case(vec![formula_2()])]
+    #[case(vec![formula_3(), formula_3_alt()])]
+    #[case(vec![formula_4()])]
+    #[case(vec![formula_5(), formula_5_alt()])]
+    #[case(vec![formula_6(), formula_6_alt()])]
+    #[case(vec![formula_7()])]
+    #[case(vec![formula_8()])]
+    #[case(vec![formula_9()])]
+    fn test_final_rosi_verdicts(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
+            Step<f64>,
+        >,
+    ) {
+        run_final_rosi_verdicts_check(formulas, signal);
+    }
+
+    #[rstest]
+    #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+    #[case(vec![formula_2()])]
+    #[case(vec![formula_3(), formula_3_alt()])]
+    #[case(vec![formula_4()])]
+    #[case(vec![formula_5(), formula_5_alt()])]
+    #[case(vec![formula_6(), formula_6_alt()])]
+    #[case(vec![formula_7()])]
+    #[case(vec![formula_8()])]
+    #[case(vec![formula_9()])]
+    fn test_rosi_interval_bounds(
+        #[case] formulas: Vec<FormulaDefinition>,
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
+            Step<f64>,
+        >,
+    ) {
+        run_rosi_interval_bounds_check(formulas, signal);
+    }
+
+    #[rstest]
+    fn test_library_formulas_rosi(
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<Step<f64>>,
+    ) {
+        let lib_formulas = ostl::stl::formulas::get_formulas(&[]);
+        for (id, formula) in lib_formulas {
+            println!("Testing library formula id: {}", id);
+            run_final_rosi_verdicts_check(vec![formula.clone()], signal.clone());
+            run_rosi_interval_bounds_check(vec![formula], signal.clone());
+        }
+    }
+
 
     // ---
     // Test Runner for Build Failures
