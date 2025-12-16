@@ -14,14 +14,14 @@ pub fn get_formulas(ids: &[usize]) -> Vec<(usize, FormulaDefinition)> {
     formulas.push((3, stl!(not (x < 0.5))));
 
     // // 4-6. Globally (Always) 
-    formulas.push((4, stl!(alw[0, 10] (x < 0.5))));
-    formulas.push((5, stl!(alw[0, 100] (x < 0.5))));
-    formulas.push((6, stl!(alw[0, 1000] (x < 0.5))));
+    formulas.push((4, stl!(G[0, 10] (x < 0.5))));
+    formulas.push((5, stl!(G[0, 100] (x < 0.5))));
+    formulas.push((6, stl!(G[0, 1000] (x < 0.5))));
 
     // 7-9. Eventually 
-    formulas.push((7, stl!(ev[0, 10] (x < 0.5))));
-    formulas.push((8, stl!(ev[0, 100] (x < 0.5))));
-    formulas.push((9, stl!(ev[0, 1000] (x < 0.5))));
+    formulas.push((7, stl!(F[0, 10] (x < 0.5))));
+    formulas.push((8, stl!(F[0, 100] (x < 0.5))));
+    formulas.push((9, stl!(F[0, 1000] (x < 0.5))));
 
     // 10-12. Until 
     formulas.push((10, stl!((x < 0.5) until[0, 10] (x > -0.5))));
