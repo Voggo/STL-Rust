@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 
-def update_formulas_in_csv(input_csv_path, output_csv_path="updated_results.csv"):
+def update_formulas_in_csv(input_csv_path, output_csv_path="results/breach/updated_results.csv"):
     # 1. Load the Formula Definitions
     print("Loading formula definitions...")
 
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     # Replace 'your_input_file.csv' with the actual name of your data file
     # Example usage:
     input_filename = (
-        "results/breach/breach_results_all.csv"  # Change this to your actual filename
+        "results/breach/mex_breach.csv"  # Change this to your actual filename
     )
 
     # Check if a file was provided via command line or just run default

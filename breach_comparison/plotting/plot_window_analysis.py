@@ -11,6 +11,9 @@ from plotting_utils import (
     ensure_output_folder,
     extract_window_size,
     extract_operator_type,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -94,19 +97,27 @@ def generate_window_analysis(
                         alpha=0.8,
                     )
 
+                # operators = ["G (Global)", "F (Eventually)", "U (Until)"]
+
+                if op == "G (Global)":
+                    op_label = "\u25A1 (Globally)"  # Unicode white square
+                elif op == "F (Eventually)":
+                    op_label = "\u25C7 (Eventually)"  # Unicode white diamond
+                else:
+                    op_label = "U (Until)"
                 ax.set_title(
-                    f"{op} - Window Size Effect\n(Signal Size: {size})",
-                    fontsize=12,
+                    f"{op_label} - Window Size Effect\n(Signal Size: {size})",
+                    fontsize=FONT_SIZE_TITLE,
                     fontweight="bold",
                 )
-                ax.set_xlabel("Window Size", fontsize=11)
-                ax.set_ylabel("Execution Time (s)", fontsize=11)
+                ax.set_xlabel("Window Size", fontsize=FONT_SIZE_LABEL)
+                ax.set_ylabel("Execution Time (s)", fontsize=FONT_SIZE_LABEL)
                 ax.set_xscale("log")
                 ax.set_yscale("log")
                 ax.set_xticks(pivot_data.index)
                 ax.get_xaxis().set_major_formatter(ScalarFormatter())
                 ax.grid(True, which="both", linestyle="--", alpha=0.4)
-                ax.legend(fontsize=9, loc="best")
+                ax.legend(fontsize=FONT_SIZE_LEGEND, loc="best")
             else:
                 ax.text(0.5, 0.5, "No Data", ha="center", transform=ax.transAxes)
 

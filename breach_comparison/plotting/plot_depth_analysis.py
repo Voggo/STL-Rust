@@ -11,6 +11,9 @@ from plotting_utils import (
     create_config_label,
     ensure_output_folder,
     extract_depth_from_short_name,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -90,6 +93,7 @@ def generate_depth_analysis(
         ]
 
         for df_group, group_title, ax in data_groups:
+            
             df_size = df_group[df_group["sizeN"] == size]
 
             if not df_size.empty:
@@ -116,16 +120,17 @@ def generate_depth_analysis(
 
                 ax.set_title(
                     f"{group_title}\n(Signal Size: {size})",
-                    fontsize=12,
+                    fontsize=FONT_SIZE_TITLE,
                     fontweight="bold",
                 )
-                ax.set_xlabel("Depth", fontsize=11)
-                ax.set_ylabel("Execution Time (s)", fontsize=11)
+                ax.set_xlabel("Depth", fontsize=FONT_SIZE_LABEL)
+                ax.set_ylabel("Execution Time (s)", fontsize=FONT_SIZE_LABEL)
                 ax.set_yscale("log")
+                # ax.set_xscale("log")
                 ax.set_xticks(pivot_data.index)
                 ax.get_xaxis().set_major_formatter(ScalarFormatter())
                 ax.grid(True, which="both", linestyle="--", alpha=0.4)
-                ax.legend(fontsize=9, loc="best")
+                ax.legend(fontsize=FONT_SIZE_LEGEND, loc="best")
             else:
                 ax.text(0.5, 0.5, "No Data", ha="center", transform=ax.transAxes)
 

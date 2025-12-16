@@ -4,6 +4,11 @@ import os
 import re
 import pandas as pd
 
+# Font size constants for consistent styling across all plots
+FONT_SIZE_TITLE = 16
+FONT_SIZE_LEGEND = 12
+FONT_SIZE_LABEL = 12
+
 
 def extract_time_from_stats(stats_str):
     """Parse execution time in seconds from statistics string.

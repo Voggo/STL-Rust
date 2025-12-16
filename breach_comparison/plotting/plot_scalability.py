@@ -8,6 +8,9 @@ from plotting_utils import (
     load_benchmark_data,
     create_config_label,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -36,7 +39,8 @@ def generate_scalability(
     # 1a. Scalability plot for Incremental-only configurations
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    markers = ["o", "s", "^", "D", "v", "p"]
+    markers = ["o", "s", "^", "p", "D", "v"]
+    linestyles = ["-", "-", "-", "-", "dashdot"]
     colors = plt.cm.tab10(np.linspace(0, 1, len(unique_configs)))
 
     incremental_configs = [c for c in unique_configs if c.startswith("Incremental")]
@@ -76,16 +80,16 @@ def generate_scalability(
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("Signal Size (N)", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Signal Size (N)", fontsize=FONT_SIZE_LABEL, fontweight="bold")
     ax.set_ylabel(
-        "Mean Execution Time (seconds, log scale)", fontsize=12, fontweight="bold"
+        "Mean Execution Time (seconds, log scale)", fontsize=FONT_SIZE_LABEL, fontweight="bold"
     )
     ax.set_title(
         f"Scalability Analysis - Incremental Configurations\n(Averaged across {len(formulas_all_incremental)} formulas with complete data)",
-        fontsize=13,
+        fontsize=FONT_SIZE_TITLE,
         fontweight="bold",
     )
-    ax.legend(fontsize=10, loc="upper left")
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
 
     out_path = os.path.join(output_folder, "scalability_incremental_only.png")
@@ -131,6 +135,7 @@ def generate_scalability(
                 config_data.index,
                 config_data.values,
                 marker=markers[i % len(markers)],
+                linestyle=linestyles[i % len(linestyles)],
                 label=config,
                 color=colors[i],
                 linewidth=2,
@@ -140,16 +145,16 @@ def generate_scalability(
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("Signal Size (N)", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Signal Size (N)", fontsize=FONT_SIZE_LABEL, fontweight="bold")
     ax.set_ylabel(
-        "Mean Execution Time (seconds, log scale)", fontsize=12, fontweight="bold"
+        "Mean Execution Time (seconds, log scale)", fontsize=FONT_SIZE_LABEL, fontweight="bold"
     )
     ax.set_title(
         f"Scalability Analysis - All Configurations\n(Averaged across {n_common} formulas tested by both approaches)",
-        fontsize=13,
+        fontsize=FONT_SIZE_TITLE,
         fontweight="bold",
     )
-    ax.legend(fontsize=10, loc="upper left")
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
 
     out_path = os.path.join(output_folder, "scalability_all_configs.png")

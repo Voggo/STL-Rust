@@ -9,14 +9,18 @@ from plotting_utils import (
     load_benchmark_data,
     load_formulas,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
 def generate_comparison_charts(
     own_csv_path="results/own/benchmark_results_own.csv",
-    breach_csv_path="results/breach/breach_results_all_updated.csv",
+    breach_csv_path="results/breach/updated_results.csv",
     formulas_csv_path="results/own/formulas_own.csv",
     output_folder="plots",
+    signal_sizes=None,
 ):
     """Generate comparison bar charts between Breach and our approaches.
 
@@ -44,7 +48,7 @@ def generate_comparison_charts(
     unique_formulas = sorted(
         df_own["formula"].unique(), key=lambda x: formula_order.get(x, 999)
     )
-    unique_sizes = sorted(df_own["sizeN"].unique())
+    unique_sizes = sorted(df_own["sizeN"].unique() if signal_sizes is None else signal_sizes)
 
     print(
         f"Found {len(unique_formulas)} unique formulas and {len(unique_sizes)} signal sizes"
@@ -53,12 +57,12 @@ def generate_comparison_charts(
     # Define comparison groups
     comparisons = [
         {
-            "name": "online_vs_rosi",
-            "title": "Breach Online vs Ours (Rosi)",
+            "name": "rosi",
+            "title": "Breach vs Ours (RoSI Evaluation)",
             "configurations": [
-                ("Breach (online)", lambda df: df[df["approach"] == "online"]),
+                ("Breach (RoSI)", lambda df: df[df["approach"] == "rosi"]),
                 (
-                    "Ours (Rosi)",
+                    "Ours (Incremental/Eager/RoSI)",
                     lambda df: df[
                         (df["approach"] == "Incremental")
                         & (df["eval_mode"] == "Eager")
@@ -69,13 +73,12 @@ def generate_comparison_charts(
             "colors": ["#d62728", "#1f77b4"],
         },
         {
-            "name": "thom_classic_vs_incremental",
-            "title": "Breach (Thom+Classic) vs Ours (Incremental Configurations)",
+            "name": "strict",
+            "title": "Breach vs Ours (Strict Evaluation)",
             "configurations": [
-                ("Breach (thom)", lambda df: df[df["approach"] == "thom"]),
-                ("Breach (classic)", lambda df: df[df["approach"] == "classic"]),
+                ("Breach (Quantitative)", lambda df: df[df["approach"] == "strict"]),
                 (
-                    "Ours (Inc Strict F64)",
+                    "Ours (Incremental/Strict/f64)",
                     lambda df: df[
                         (df["approach"] == "Incremental")
                         & (df["eval_mode"] == "Strict")
@@ -83,7 +86,7 @@ def generate_comparison_charts(
                     ],
                 ),
                 (
-                    "Ours (Inc Strict Bool)",
+                    "Ours (Incremental/Strict/bool)",
                     lambda df: df[
                         (df["approach"] == "Incremental")
                         & (df["eval_mode"] == "Strict")
@@ -91,7 +94,7 @@ def generate_comparison_charts(
                     ],
                 ),
             ],
-            "colors": ["#d62728", "#ff6b6b", "#1f77b4", "#ff7f0e"],
+            "colors": ["#d62728", "#1f77b4", "#ff7f0e"],
         },
     ]
 
@@ -179,23 +182,23 @@ def generate_comparison_charts(
             ax.set_yscale("log")
 
             # Labels and title
-            ax.set_xlabel("Formula", fontsize=13, fontweight="bold")
+            ax.set_xlabel("Formula", fontsize=FONT_SIZE_TITLE, fontweight="bold")
             ax.set_ylabel(
                 "Mean Execution Time (seconds, log scale)",
-                fontsize=13,
+                fontsize=FONT_SIZE_TITLE,
                 fontweight="bold",
             )
             ax.set_title(
                 f"{comp['title']} - Signal Size: {size}\n(Per-formula performance)",
-                fontsize=14,
+                fontsize=FONT_SIZE_TITLE,
                 fontweight="bold",
             )
 
             ax.set_xticks(x)
-            ax.set_xticklabels(formula_labels, rotation=45, ha="right", fontsize=9)
+            ax.set_xticklabels(formula_labels, rotation=45, ha="right", fontsize=FONT_SIZE_LABEL)
 
-            ax.legend(fontsize=11, loc="upper left")
-            ax.grid(True, axis="y", linestyle="--", alpha=0.3)
+            ax.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left")
+            ax.grid(True, which="both", linestyle="--", alpha=0.3, axis="y")
 
             # Save
             out_path = os.path.join(
@@ -210,4 +213,5 @@ def generate_comparison_charts(
 
 
 if __name__ == "__main__":
-    generate_comparison_charts()
+    signal_sizes = [5000]
+    generate_comparison_charts(signal_sizes=signal_sizes)

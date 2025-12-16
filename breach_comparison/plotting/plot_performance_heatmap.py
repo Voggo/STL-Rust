@@ -11,6 +11,9 @@ from plotting_utils import (
     load_formulas,
     create_config_label,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -18,6 +21,7 @@ def generate_heatmap(
     own_csv_path="results/own/benchmark_results_own.csv",
     formulas_csv_path="results/own/formulas_own.csv",
     output_folder="plots",
+    signal_sizes=None,
 ):
     """Generate heatmap plots showing configuration performance across formulas.
 
@@ -47,7 +51,8 @@ def generate_heatmap(
         df_own["formula"].unique(), key=lambda x: formula_order.get(x, 999)
     )
 
-    for size in sorted(df_own["sizeN"].unique()):
+    unique_sizes = sorted(df_own["sizeN"].unique() if signal_sizes is None else signal_sizes)
+    for size in unique_sizes:
         size_data = df_own[df_own["sizeN"] == size]
 
         # Create matrix: rows=formulas, cols=configurations
@@ -100,8 +105,8 @@ def generate_heatmap(
 
         ax.set_xticks(np.arange(len(unique_configs)))
         ax.set_yticks(np.arange(len(formula_labels)))
-        ax.set_xticklabels(unique_configs, rotation=45, ha="right", fontsize=9)
-        ax.set_yticklabels(formula_labels, fontsize=9)
+        ax.set_xticklabels(unique_configs, rotation=45, ha="right", fontsize=FONT_SIZE_LABEL)
+        ax.set_yticklabels(formula_labels, fontsize=FONT_SIZE_LABEL)
 
         # Add 'X' markers for missing data
         for f_idx in range(len(formula_labels)):
@@ -118,11 +123,11 @@ def generate_heatmap(
                         fontweight="bold",
                     )
 
-        ax.set_xlabel("Configuration", fontsize=11, fontweight="bold")
-        ax.set_ylabel("Formula", fontsize=11, fontweight="bold")
+        ax.set_xlabel("Configuration", fontsize=FONT_SIZE_LABEL, fontweight="bold")
+        ax.set_ylabel("Formula", fontsize=FONT_SIZE_LABEL, fontweight="bold")
         ax.set_title(
             f"Configuration Performance Heatmap (log scale) - Size {size}\n✗ indicates missing data (too slow to run)",
-            fontsize=12,
+            fontsize=FONT_SIZE_TITLE,
             fontweight="bold",
         )
 
@@ -144,4 +149,5 @@ def generate_heatmap(
 
 
 if __name__ == "__main__":
-    generate_heatmap()
+    signal_sizes = [20000]
+    generate_heatmap(signal_sizes=signal_sizes)

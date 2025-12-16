@@ -7,6 +7,9 @@ from plotting_utils import (
     load_benchmark_data,
     create_config_label,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -82,16 +85,16 @@ def generate_approach_comparison(
             kind="bar", ax=ax, color=colors_eval, alpha=0.8, edgecolor="black"
         )
         ax.set_yscale("log")
-        ax.set_xlabel("Approach", fontsize=11, fontweight="bold")
+        ax.set_xlabel("Approach", fontsize=FONT_SIZE_LABEL, fontweight="bold")
         ax.set_ylabel(
-            "Mean Execution Time (seconds, log scale)", fontsize=11, fontweight="bold"
+            "Mean Execution Time (seconds, log scale)", fontsize=FONT_SIZE_LABEL, fontweight="bold"
         )
         ax.set_title(
             f"Approach & Eval Mode - Size {size}\n(Averaged across {n_common} formulas with both approaches)",
-            fontsize=12,
+            fontsize=FONT_SIZE_TITLE,
             fontweight="bold",
         )
-        ax.legend(title="Eval Mode", fontsize=10)
+        ax.legend(title="Eval Mode", fontsize=FONT_SIZE_LEGEND)
         ax.grid(True, which="both", axis="y", linestyle="--", alpha=0.4)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
         eval_ylim = ax.get_ylim()
@@ -116,16 +119,16 @@ def generate_approach_comparison(
             kind="bar", ax=ax, color=colors_out, alpha=0.8, edgecolor="black"
         )
         ax.set_yscale("log")
-        ax.set_xlabel("Approach", fontsize=11, fontweight="bold")
+        ax.set_xlabel("Approach", fontsize=FONT_SIZE_LABEL, fontweight="bold")
         ax.set_ylabel(
-            "Mean Execution Time (seconds, log scale)", fontsize=11, fontweight="bold"
+            "Mean Execution Time (seconds, log scale)", fontsize=FONT_SIZE_LABEL, fontweight="bold"
         )
         ax.set_title(
             f"Approach & Output Type - Size {size}\n(Averaged across {n_common} formulas with both approaches)",
-            fontsize=12,
+            fontsize=FONT_SIZE_TITLE,
             fontweight="bold",
         )
-        ax.legend(title="Output Type", fontsize=10)
+        ax.legend(title="Output Type", fontsize=FONT_SIZE_LEGEND)
         ax.grid(True, which="both", axis="y", linestyle="--", alpha=0.4)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
 

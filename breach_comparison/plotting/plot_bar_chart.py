@@ -10,6 +10,9 @@ from plotting_utils import (
     load_formulas,
     create_config_label,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -110,20 +113,20 @@ def generate_bar_charts(
         ax.set_yscale("log")
 
         # Labels and title
-        ax.set_xlabel("Formula", fontsize=13, fontweight="bold")
+        ax.set_xlabel("Formula", fontsize=FONT_SIZE_TITLE, fontweight="bold")
         ax.set_ylabel(
-            "Mean Execution Time (seconds, log scale)", fontsize=13, fontweight="bold"
+            "Mean Execution Time (seconds, log scale)", fontsize=FONT_SIZE_TITLE, fontweight="bold"
         )
         ax.set_title(
             f"All Configurations - Signal Size: {size}\n(Per-formula performance)",
-            fontsize=14,
+            fontsize=FONT_SIZE_TITLE,
             fontweight="bold",
         )
 
         ax.set_xticks(x)
-        ax.set_xticklabels(formula_labels, rotation=45, ha="right", fontsize=9)
+        ax.set_xticklabels(formula_labels, rotation=45, ha="right", fontsize=FONT_SIZE_LABEL)
 
-        ax.legend(fontsize=9, loc="upper left", ncol=2)
+        ax.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left", ncol=2)
         ax.grid(True, which="both", linestyle="--", alpha=0.3)
 
         # Save

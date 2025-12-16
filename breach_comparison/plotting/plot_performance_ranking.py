@@ -10,6 +10,9 @@ from plotting_utils import (
     load_formulas,
     create_config_label,
     ensure_output_folder,
+    FONT_SIZE_TITLE,
+    FONT_SIZE_LEGEND,
+    FONT_SIZE_LABEL,
 )
 
 
@@ -91,10 +94,10 @@ def generate_ranking(
         linewidth=1.5,
     )
 
-    ax.set_xlabel("Number of Formulas Where Fastest", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Number of Formulas Where Fastest", fontsize=FONT_SIZE_LABEL, fontweight="bold")
     ax.set_title(
         "Performance Ranking - Fastest Configuration per Formula\n(Across all 21 formulas × 3 signal sizes = 63 tests)",
-        fontsize=13,
+        fontsize=FONT_SIZE_TITLE,
         fontweight="bold",
     )
     ax.grid(True, axis="x", linestyle="--", alpha=0.3)
