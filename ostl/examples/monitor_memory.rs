@@ -5,6 +5,9 @@ use ostl::stl::formula_definition::FormulaDefinition;
 use std::time::Duration;
 use std::env;
 
+// WARNING: UNUSED FILE
+
+
 // This file is a simple binary used in combination with heaptrack to monitor memory usage
 // of different monitoring strategies and evaluation modes.
 // The output is hard to use so there is also a more integrated benchmarking in benches/monitor_benchmark.rs

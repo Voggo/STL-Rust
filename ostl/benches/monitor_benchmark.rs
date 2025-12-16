@@ -25,19 +25,19 @@ pub fn get_formulas() -> Vec<FormulaDefinition> {
     formulas.push(stl!(not (x < 0.5)));
 
     // 4-6. Globally (Always) 
-    formulas.push(stl!(alw[0, 10] (x < 0.5)));
-    formulas.push(stl!(alw[0, 100] (x < 0.5)));
-    formulas.push(stl!(alw[0, 1000] (x < 0.5)));
+    formulas.push(stl!(G[0, 10] (x < 0.5)));
+    formulas.push(stl!(G[0, 100] (x < 0.5)));
+    formulas.push(stl!(G[0, 1000] (x < 0.5)));
 
     // 7-9. Eventually 
-    formulas.push(stl!(ev[0, 10] (x < 0.5)));
-    formulas.push(stl!(ev[0, 100] (x < 0.5)));
-    formulas.push(stl!(ev[0, 1000] (x < 0.5)));
+    formulas.push(stl!(F[0, 10] (x < 0.5)));
+    formulas.push(stl!(F[0, 100] (x < 0.5)));
+    formulas.push(stl!(F[0, 1000] (x < 0.5)));
 
     // 10-12. Until 
-    formulas.push(stl!((x < 0.5) until[0, 10] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 100] (x > -0.5)));
-    formulas.push(stl!((x < 0.5) until[0, 1000] (x > -0.5)));
+    formulas.push(stl!((x < 0.5) U[0, 10] (x > -0.5)));
+    formulas.push(stl!((x < 0.5) U[0, 100] (x > -0.5)));
+    formulas.push(stl!((x < 0.5) U[0, 1000] (x > -0.5)));
 
 
     // --- Complex Nested Formulas (Lines 13-21) ---

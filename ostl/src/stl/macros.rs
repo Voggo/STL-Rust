@@ -1,5 +1,5 @@
-    #[macro_export]
-    macro_rules! stl {
+#[macro_export]
+macro_rules! stl {
         // --- ATOMICS ---
         (true) => {
             $crate::stl::formula_definition::FormulaDefinition::True
@@ -7,7 +7,7 @@
         (false) => {
             $crate::stl::formula_definition::FormulaDefinition::False
         };
-    
+
         // --- PREDICATES (Atomics) ---
         ($signal:ident > $val:expr) => {
             $crate::stl::formula_definition::FormulaDefinition::GreaterThan(stringify!($signal), $val as f64)
@@ -28,7 +28,7 @@
             // (signal >= val) && (signal <= val)
             $crate::stl!(($signal >= $val) && ($signal <= $val))
         };
-    
+
         // --- UNARY OPERATORS ---
         (! ($($sub:tt)+) ) => {
             $crate::stl::formula_definition::FormulaDefinition::Not(
@@ -50,7 +50,7 @@
             )
         };
         // Alias for G
-        (alw [$start:expr, $end:expr] ($($sub:tt)+) ) => {
+        (globally [$start:expr, $end:expr] ($($sub:tt)+) ) => {
             $crate::stl!(G [$start, $end] ($($sub)+))
         };
 
@@ -64,10 +64,10 @@
             )
         };
         // Alias for F
-        (ev [$start:expr, $end:expr] ($($sub:tt)+) ) => {
+        (eventually [$start:expr, $end:expr] ($($sub:tt)+) ) => {
             $crate::stl!(F [$start, $end] ($($sub)+))
         };
-    
+
         // --- BINARY OPERATORS (Infix) ---
         ( ($($left:tt)+) && ($($right:tt)+) ) => {
             $crate::stl::formula_definition::FormulaDefinition::And(
@@ -116,10 +116,17 @@
         ( ($($left:tt)+) until [$start:expr, $end:expr] ($($right:tt)+) ) => {
             $crate::stl!(($($left)+) U [$start, $end] ($($right)+))
         };
-    
+
         // --- PARENTHESES ---
         ( ( $($sub:tt)+ ) ) => {
             $crate::stl!($($sub)+)
+        };
+
+        // --- INTERPOLATION / FALLBACK ---
+        // This catches variables, function calls, or blocks that return a FormulaDefinition.
+        // IMPORTANT: This must be the LAST rule to avoid shadowing the DSL syntax.
+        ($e:expr) => {
+            $e
         };
     }
 
@@ -128,8 +135,40 @@ mod tests {
     use crate::stl::formula_definition::FormulaDefinition;
     #[test]
     fn test_stl_macro() {
-        let _: FormulaDefinition = stl! {
+        let formula: FormulaDefinition = stl!(
             G[0,5]((signal>5) and ((x>0)U[0,2](true)))
+        );
+        println!("{}", formula.to_tree_string(2))
+    }
+    #[test]
+    fn test_stl_macro_aliases() {
+        let formula: FormulaDefinition = stl! {
+            globally[0,5]((signal>5) and ((x>0)until[0,2](true)))
         };
+        println!("{}", formula.to_tree_string(2))
+    }
+    #[test]
+    fn test_stl_macro_2() {
+        let formula: FormulaDefinition = stl! {
+            (eventually [0, 2] (x > 5)) and (globally [0, 2] (x > 0))
+        };
+        println!("{}", formula.to_tree_string(2))
+    }
+    #[test]
+    fn test_stl_macro_2_aliases() {
+        let formula: FormulaDefinition = stl! {
+           (F [0, 2] (x > 5)) && (G[0, 2] (x > 0))
+        };
+        println!("{}", formula.to_tree_string(2))
+    }
+    #[test]
+    fn test_stl_object_in_stl_macro() {
+        let formula_1: FormulaDefinition = stl! {
+            (eventually [0, 2] (x > 5)) and (globally [0, 2] (x > 0))
+        };
+        let formula_2: FormulaDefinition = stl! {
+            (formula_1) or (false)
+        };
+        println!("{}", formula_2.to_tree_string(2))
     }
 }
