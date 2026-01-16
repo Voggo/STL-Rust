@@ -2,8 +2,12 @@ use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{
     RobustnessInterval, RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait,
 };
-use crate::stl::robustness_cached::{And, Atomic, Eventually, Globally, Not, Or, Until};
-use crate::stl::robustness_naive::{StlFormula, StlOperator};
+use crate::stl::operators::atomic_operators::Atomic;
+use crate::stl::operators::binary_operators::{And, Or};
+use crate::stl::operators::not_operator::Not;
+use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
+use crate::stl::operators::until_operator::Until;
+use crate::stl::naive_operators::{StlFormula, StlOperator};
 use crate::stl::formula_definition::FormulaDefinition;
 use std::any::TypeId;
 
