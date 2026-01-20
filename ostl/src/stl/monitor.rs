@@ -94,7 +94,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
     where
         T: Into<f64> + Copy + 'static, // Add required bounds
-        Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug, // Add required bounds
+        Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug + PartialOrd, // Add required bounds
     {
         // The RobustnessSemantics bound guarantees Y is one of the supported types.
         let identifier: &'static str = if TypeId::of::<Y>() == TypeId::of::<bool>() {
@@ -145,7 +145,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
-        Y: RobustnessSemantics + 'static,
+        Y: RobustnessSemantics + 'static + PartialOrd,
     {
         let formula_enum = build_naive_formula(formula);
 
@@ -196,7 +196,7 @@ fn build_incremental_operator<T, Y>(
 ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>>
 where
     T: Into<f64> + Copy + 'static,
-    Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
+    Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug + PartialOrd,
 {
     // Determine configuration flags
     let is_eager = matches!(mode, EvaluationMode::Eager);
