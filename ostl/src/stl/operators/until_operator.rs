@@ -89,7 +89,7 @@ where
 
         let t_max_combined = self.t_max.0.min(self.t_max.1);
 
-        // 1. add all updates to eval_buffer and caches
+        // Add all updates to eval_buffer and caches
         for right_update in &right_updates {
             self.eval_buffer.insert(right_update.timestamp);
             if IS_ROSI {
@@ -108,7 +108,6 @@ where
             }
             if IS_ROSI {
                 for (t_eval, left_cache) in &mut self.left_cache_matrix {
-                    // only insert into caches where t_eval <= left_update.timestamp
                     if *t_eval <= left_update.timestamp {
                         if !left_cache.update_step(left_update.clone()) {
                             left_cache.add_step(left_update.clone());
@@ -160,24 +159,12 @@ where
                     if let Some(left_cache) = self.left_cache_matrix.get(&t_eval) {
                         left_cache
                             .iter()
-                            // skipwhile seems to be redundant here since the t_eval has its own cache now
-                            .skip_while(|s| s.timestamp < t_eval) // t'' >= t_eval+a
                             .take_while(|s| s.timestamp <= t_prime)
                             .filter_map(|s| s.value.clone())
                             .fold(Y::globally_identity(), Y::and)
                     } else {
                         Y::globally_identity()
                     };
-
-                // // if no data in in left_cache for >t_prime, we need to and with unknown
-                // if let Some(left_cache) = self.left_cache_matrix.get(&t_eval) {
-                //     if let Some(last_left_step) = left_cache.iter().find(|s| s.timestamp > t_prime) {
-                //         if last_left_step.timestamp < t_prime {
-                //             // no data for t'' up to t', need to and with unknown
-                //             robustness_phi_left = Y::and(robustness_phi_left, Y::unknown());
-                //         }
-                //     }
-                // }
 
                 // Advance the right_cache iterator to find the step corresponding to t_prime
                 while let Some(step) = right_cache_t_prime_iter.peek() {
@@ -429,106 +416,6 @@ mod tests {
             assert_eq!(output.value, expected.value);
         }
     }
-
-    // #[test]
-    // fn until_operator_interpolation() {
-    //     let interval = TimeInterval {
-    //         start: Duration::from_secs(0),
-    //         end: Duration::from_secs(4),
-    //     };
-    //     let atomic_left = Atomic::<bool>::new_greater_than("x", 5.0);
-    //     let atomic_right = Atomic::<bool>::new_less_than("y", 10.0);
-    //     let mut until = Until::<f64, RingBuffer<Option<bool>>, bool, false, false>::new(
-    //         interval,
-    //         Box::new(atomic_left),
-    //         Box::new(atomic_right),
-    //         None,
-    //         None,
-    //     );
-    //     until.get_signal_identifiers();
-    //     let signal_values_x = vec![6.0, 12.0, 8.0];
-    //     let signal_timestamps_x = vec![0, 2, 4];
-    //     let signal_values_y = vec![15.0, 8.0];
-    //     let signal_timestamps_y = vec![1, 3];
-
-    //     let signal_x: Vec<_> = signal_values_x
-    //         .into_iter()
-    //         .zip(signal_timestamps_x)
-    //         .map(|(val, ts)| Step::new("x", val, Duration::from_secs(ts)))
-    //         .collect();
-
-    //     let signal_y: Vec<_> = signal_values_y
-    //         .into_iter()
-    //         .zip(signal_timestamps_y)
-    //         .map(|(val, ts)| Step::new("y", val, Duration::from_secs(ts)))
-    //         .collect();
-
-    //     // zip the two signals based on timestamps
-    //     let mut all_steps = Vec::new();
-    //     all_steps.extend(signal_x);
-    //     all_steps.extend(signal_y);
-    //     all_steps.sort_by_key(|s| s.timestamp);
-
-    //     for s in &all_steps {
-    //         let _ = until.update(s);
-    //         if s.timestamp == Duration::from_secs(0) {
-    //             assert_eq!(until.left_cache_matrix.len(), 1);
-    //             // assert all equal to 1
-    //             assert!(
-    //                 until
-    //                     .left_cache_matrix
-    //                     .iter()
-    //                     .all(|step| step.value == Some(true))
-    //             );
-    //             assert_eq!(until.right_cache.len(), 0);
-    //         } else if s.timestamp == Duration::from_secs(1) {
-    //             assert_eq!(until.left_cache_matrix.len(), 1);
-    //             assert!(
-    //                 until
-    //                     .left_cache_matrix
-    //                     .iter()
-    //                     .all(|step| step.value == Some(true))
-    //             );
-    //             assert_eq!(until.right_cache.len(), 1);
-    //             assert!(
-    //                 until
-    //                     .right_cache
-    //                     .iter()
-    //                     .all(|step| step.value == Some(false))
-    //             );
-    //         } else if s.timestamp == Duration::from_secs(2) {
-    //             assert_eq!(until.left_cache_matrix.len(), 3);
-    //             assert_eq!(until.right_cache.len(), 1);
-    //         } else if s.timestamp == Duration::from_secs(3) {
-    //             assert_eq!(until.left_cache_matrix.len(), 3);
-    //             assert!(
-    //                 until
-    //                     .left_cache_matrix
-    //                     .iter()
-    //                     .all(|step| step.value == Some(true))
-    //             );
-    //             assert_eq!(until.right_cache.len(), 3);
-    //             // first two are false, last is true
-    //             let mut iter = until.right_cache.iter();
-    //             assert_eq!(iter.next().unwrap().value, Some(false));
-    //             assert_eq!(iter.next().unwrap().value, Some(false));
-    //             assert_eq!(iter.next().unwrap().value, Some(true));
-    //         } else if s.timestamp == Duration::from_secs(4) {
-    //             assert_eq!(until.left_cache_matrix.len(), 5);
-    //             assert!(
-    //                 until
-    //                     .left_cache_matrix
-    //                     .iter()
-    //                     .all(|step| step.value == Some(true))
-    //             );
-    //             assert_eq!(until.right_cache.len(), 3);
-    //             let mut iter = until.right_cache.iter();
-    //             assert_eq!(iter.next().unwrap().value, Some(false));
-    //             assert_eq!(iter.next().unwrap().value, Some(false));
-    //             assert_eq!(iter.next().unwrap().value, Some(true));
-    //         }
-    //     }
-    // }
 
     #[test]
     fn until_signal_identifiers() {
