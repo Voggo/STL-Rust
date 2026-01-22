@@ -154,6 +154,17 @@ pub trait RobustnessSemantics: Clone + PartialEq {
     fn atomic_greater_than(value: f64, c: f64) -> Self;
     fn atomic_less_than(value: f64, c: f64) -> Self;
     fn unknown() -> Self;
+
+    /// Returns true if 'old' is strictly dominated by 'new' such that 'old'
+    /// can be safely discarded from a Lemire sliding window.
+    ///
+    /// For RoSI, this requires strict separation of intervals.
+    ///
+    /// # Arguments
+    /// * `old` - The value to check for domination
+    /// * `new` - The potentially dominating value
+    /// * `is_max` - If true, checks domination for max operations; if false, for min operations
+    fn prune_dominated(old: Self, new: Self, is_max: bool) -> bool;
 }
 impl RobustnessSemantics for f64 {
     fn and(l: f64, r: f64) -> f64 {
@@ -188,6 +199,9 @@ impl RobustnessSemantics for f64 {
     }
     fn unknown() -> Self {
         f64::NAN
+    }
+    fn prune_dominated(old: Self, new: Self, is_max: bool) -> bool {
+        if is_max { old <= new } else { old >= new }
     }
 }
 
@@ -225,6 +239,14 @@ impl RobustnessSemantics for bool {
     fn unknown() -> Self {
         // In the boolean case, we can represent "unknown" as false
         false
+    }
+    fn prune_dominated(old: Self, new: Self, is_max: bool) -> bool {
+        // false <= true
+        if is_max {
+            !old || new // old <= new
+        } else {
+            old || !new // old >= new
+        }
     }
 }
 
@@ -281,6 +303,17 @@ impl RobustnessSemantics for RobustnessInterval {
     fn unknown() -> Self {
         RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY)
     }
+    fn prune_dominated(old: Self, new: Self, is_max: bool) -> bool {
+        if is_max {
+            // Max/Eventually: Discard old if it can never exceed new.
+            // We need new's lower bound to be >= old's upper bound.
+            old.1 <= new.0
+        } else {
+            // Min/Globally: Discard old if it can never be smaller than new.
+            // We need new's upper bound to be <= old's lower bound.
+            old.0 >= new.1
+        }
+    }
 }
 
 #[cfg(test)]
@@ -317,8 +350,8 @@ mod tests {
         let a = RobustnessInterval(1.0, 4.0);
         let b = RobustnessInterval(2.0, 3.0);
 
-    assert_eq!(a.min(b), RobustnessInterval(1.0, 3.0));
-    assert_eq!(a.max(b), RobustnessInterval(2.0, 4.0));
+        assert_eq!(a.min(b), RobustnessInterval(1.0, 3.0));
+        assert_eq!(a.max(b), RobustnessInterval(2.0, 4.0));
 
         let inter = a.intersection(b);
         assert_eq!(inter, RobustnessInterval(2.0, 3.0));
@@ -347,10 +380,19 @@ mod tests {
         assert!(<f64 as RobustnessSemantics>::globally_identity().is_infinite());
 
         assert_eq!(<f64 as RobustnessSemantics>::atomic_true(), f64::INFINITY);
-        assert_eq!(<f64 as RobustnessSemantics>::atomic_false(), f64::NEG_INFINITY);
+        assert_eq!(
+            <f64 as RobustnessSemantics>::atomic_false(),
+            f64::NEG_INFINITY
+        );
 
-        assert_eq!(<f64 as RobustnessSemantics>::atomic_greater_than(5.0, 3.0), 2.0);
-        assert_eq!(<f64 as RobustnessSemantics>::atomic_less_than(2.0, 5.0), 3.0);
+        assert_eq!(
+            <f64 as RobustnessSemantics>::atomic_greater_than(5.0, 3.0),
+            2.0
+        );
+        assert_eq!(
+            <f64 as RobustnessSemantics>::atomic_less_than(2.0, 5.0),
+            3.0
+        );
 
         let unk = <f64 as RobustnessSemantics>::unknown();
         assert!(unk.is_nan());
@@ -369,8 +411,14 @@ mod tests {
         assert_eq!(<bool as RobustnessSemantics>::atomic_true(), true);
         assert_eq!(<bool as RobustnessSemantics>::atomic_false(), false);
 
-        assert_eq!(<bool as RobustnessSemantics>::atomic_greater_than(5.0, 3.0), true);
-        assert_eq!(<bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0), false);
+        assert_eq!(
+            <bool as RobustnessSemantics>::atomic_greater_than(5.0, 3.0),
+            true
+        );
+        assert_eq!(
+            <bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0),
+            false
+        );
     }
 
     #[test]
@@ -378,10 +426,18 @@ mod tests {
         let a = RobustnessInterval(1.0, 2.0);
         let b = RobustnessInterval(0.5, 3.0);
 
+        let is_dom_true = RobustnessInterval::prune_dominated(a, b, false);
+        println!("is_dom_true: {}", is_dom_true);
         // and = min
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::and(a, b), a.min(b));
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::and(a, b),
+            a.min(b)
+        );
         // or = max
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::or(a, b), a.max(b));
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::or(a, b),
+            a.max(b)
+        );
         // not = negation
         assert_eq!(<RobustnessInterval as RobustnessSemantics>::not(a), -a);
 
@@ -389,14 +445,32 @@ mod tests {
         let imp = <RobustnessInterval as RobustnessSemantics>::implies(a, b);
         assert_eq!(imp, <RobustnessInterval as RobustnessSemantics>::or(-a, b));
 
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::eventually_identity(), RobustnessInterval(f64::NEG_INFINITY, f64::NEG_INFINITY));
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::globally_identity(), RobustnessInterval(f64::INFINITY, f64::INFINITY));
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::eventually_identity(),
+            RobustnessInterval(f64::NEG_INFINITY, f64::NEG_INFINITY)
+        );
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::globally_identity(),
+            RobustnessInterval(f64::INFINITY, f64::INFINITY)
+        );
 
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::atomic_true(), RobustnessInterval(f64::INFINITY, f64::INFINITY));
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::atomic_false(), RobustnessInterval(f64::NEG_INFINITY, f64::NEG_INFINITY));
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::atomic_true(),
+            RobustnessInterval(f64::INFINITY, f64::INFINITY)
+        );
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::atomic_false(),
+            RobustnessInterval(f64::NEG_INFINITY, f64::NEG_INFINITY)
+        );
 
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::atomic_greater_than(5.0, 3.0), RobustnessInterval(2.0, 2.0));
-        assert_eq!(<RobustnessInterval as RobustnessSemantics>::atomic_less_than(2.0, 5.0), RobustnessInterval(3.0, 3.0));
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::atomic_greater_than(5.0, 3.0),
+            RobustnessInterval(2.0, 2.0)
+        );
+        assert_eq!(
+            <RobustnessInterval as RobustnessSemantics>::atomic_less_than(2.0, 5.0),
+            RobustnessInterval(3.0, 3.0)
+        );
 
         let unk = <RobustnessInterval as RobustnessSemantics>::unknown();
         assert_eq!(unk, RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY));
@@ -404,9 +478,11 @@ mod tests {
 
     #[test]
     fn time_interval_basic() {
-        let ti = TimeInterval { start: Duration::from_secs(1), end: Duration::from_secs(5) };
+        let ti = TimeInterval {
+            start: Duration::from_secs(1),
+            end: Duration::from_secs(5),
+        };
         assert_eq!(ti.start, Duration::from_secs(1));
         assert_eq!(ti.end, Duration::from_secs(5));
     }
 }
-
