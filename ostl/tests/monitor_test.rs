@@ -3,8 +3,9 @@ mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
-    use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
     use ostl::stl::formula_definition::FormulaDefinition;
+    use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+    use ostl::synchronizer::InterpolationStrategy;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
@@ -622,11 +623,9 @@ mod tests {
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
         let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-            .formula(
-                stl! {
-                    (G[0,2] (x < 2)) and ((x > 0))
-                }
-            )
+            .formula(stl! {
+                (G[0,2] (x < 2)) and ((x > 0))
+            })
             .strategy(MonitoringStrategy::Incremental)
             .evaluation_mode(EvaluationMode::Eager)
             .build()
@@ -652,10 +651,7 @@ mod tests {
         }
     }
 
-    fn run_final_rosi_verdicts_check(
-        formulas: Vec<FormulaDefinition>,
-        signal: Vec<Step<f64>>,
-    ) {
+    fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<Step<f64>>) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
@@ -726,10 +722,7 @@ mod tests {
         }
     }
 
-    fn run_rosi_interval_bounds_check(
-        formulas: Vec<FormulaDefinition>,
-        signal: Vec<Step<f64>>,
-    ) {
+    fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<Step<f64>>) {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
@@ -833,7 +826,9 @@ mod tests {
 
     #[rstest]
     fn test_library_formulas_rosi(
-        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<Step<f64>>,
+        #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<
+            Step<f64>,
+        >,
     ) {
         let lib_formulas = ostl::stl::formulas::get_formulas(&[]);
         for (id, formula) in lib_formulas {
@@ -842,7 +837,6 @@ mod tests {
             run_rosi_interval_bounds_check(vec![formula], signal.clone());
         }
     }
-
 
     // ---
     // Test Runner for Build Failures
@@ -872,5 +866,57 @@ mod tests {
             .evaluation_mode(EvaluationMode::Eager)
             .build()
             .unwrap();
+    }
+
+    #[rstest]
+    fn test_interpolation(
+        #[values(InterpolationStrategy::ZeroOrderHold, InterpolationStrategy::Linear)]
+        interpolation_strategy: InterpolationStrategy,
+    ) {
+        // // x_steps are even timestamps from 0 to 100
+        let x_steps: Vec<Step<f64>> = (0..101)
+            .step_by(2)
+            .map(|i| Step::new("x", i as f64, Duration::from_secs(i)))
+            .collect();
+        // // y_steps are odd timestamps from 1 to 99
+        let y_steps: Vec<Step<f64>> = (1..101)
+            .step_by(2)
+            .map(|i| Step::new("y", i as f64, Duration::from_secs(i)))
+            .collect();
+
+        let mut monitor = StlMonitor::<f64, bool>::builder()
+            .formula(stl! { (x > 0) && (y < 150) })
+            .strategy(MonitoringStrategy::Incremental)
+            .evaluation_mode(EvaluationMode::Eager)
+            .interpolation_strategy(interpolation_strategy)
+            .build()
+            .unwrap();
+
+        let mut outputs = Vec::new();
+
+        for step in combine_and_sort_steps(vec![x_steps, y_steps]) {
+            let output = monitor.update(&step);
+            // println!(
+            //     "Monitor output at {:?} with {:?}={:?}: \n {:?} \n",
+            //     &step.timestamp, step.signal, step.value, output
+            // );
+            outputs.push(output);
+        }
+
+        // Check that we have outputs for all timestamps appearing in both x_steps and y_steps
+        // note that '0' is excluded since y_steps starts at t=1
+        // and '100' is excluded since y_steps ends at t=99
+        let expected_timestamps: Vec<Duration> = (1..100).map(|i| Duration::from_secs(i)).collect();
+        let output_timestamps: Vec<Duration> = outputs
+            .iter()
+            .flat_map(|steps| steps.iter().map(|s| s.timestamp))
+            .collect();
+        for ts in expected_timestamps {
+            assert!(
+                output_timestamps.contains(&ts),
+                "Missing output for timestamp {:?}",
+                ts
+            );
+        }
     }
 }

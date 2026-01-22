@@ -1,4 +1,4 @@
-use crate::ring_buffer::{RingBufferTrait, Step};
+use crate::ring_buffer::{guarded_prune, RingBufferTrait, Step};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
@@ -6,7 +6,6 @@ use crate::stl::core::{
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
-
 
 fn pop_dominated_values<C, Y, F>(cache: &mut C, sub_step: &Step<Option<Y>>, combine_op: F)
 where
@@ -157,7 +156,13 @@ where
         }
 
         // 3. Prune the cache and buffer
-        self.cache.prune(self.get_max_lookahead());
+        let protected_ts = self
+            .eval_buffer
+            .first()
+            .copied()
+            .unwrap_or(Duration::ZERO);
+        let lookahead = self.get_max_lookahead();
+        guarded_prune(&mut self.cache, lookahead, protected_ts);
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
@@ -304,7 +309,13 @@ where
         }
 
         // 3. Prune the cache and buffer
-        self.cache.prune(self.get_max_lookahead());
+        let protected_ts = self
+            .eval_buffer
+            .first()
+            .copied()
+            .unwrap_or(Duration::ZERO);
+        let lookahead = self.get_max_lookahead();
+        guarded_prune(&mut self.cache, lookahead, protected_ts);
         for t in tasks_to_remove {
             self.eval_buffer.remove(&t);
         }
