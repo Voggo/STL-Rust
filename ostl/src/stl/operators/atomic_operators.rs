@@ -38,6 +38,13 @@ where
     type Output = Y;
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let value = step.value.clone().into();
+
+        // filter by signal if this operator has specific signals (True/False have none)
+        let signals = self.get_signal_identifiers();
+        if !signals.is_empty() && !signals.contains(step.signal) {
+            return vec![];
+        }
+
         let result = match self {
             Atomic::True(_) => Y::atomic_true(),
             Atomic::False(_) => Y::atomic_false(),

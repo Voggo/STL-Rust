@@ -59,7 +59,7 @@ pub struct RingBuffer<T> {
 impl<T> Default for RingBuffer<T>
 where
     T: Copy,
- {
+{
     fn default() -> Self {
         Self::new()
     }
@@ -80,7 +80,8 @@ where
     }
 
     pub fn update_step(&mut self, step: Step<T>) -> bool {
-        self.steps.binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
+        self.steps
+            .binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
             .map(|index| {
                 self.steps[index] = step;
             })
@@ -90,7 +91,6 @@ where
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }
-
 }
 
 impl<T> RingBufferTrait for RingBuffer<T>
@@ -157,6 +157,27 @@ where
     }
 }
 
+/// Prunes a cache while protecting entries at or after a given timestamp.
+///
+/// This is useful when pruning caches with zero lookahead but pending evaluations
+/// that require recent data. The function ensures that all entries at or after
+/// `protected_ts` are preserved, even if `lookahead` would normally allow their removal.
+///
+/// # Arguments
+/// * `cache` - The ring buffer to prune
+/// * `lookahead` - The normal lookahead duration for pruning
+/// * `protected_ts` - Timestamp to protect; entries at or after this will not be pruned
+pub fn guarded_prune<C>(cache: &mut C, lookahead: Duration, protected_ts: Duration)
+where
+    C: RingBufferTrait,
+{
+    let Some(back) = cache.get_back() else { return };
+    // Preserve entries at or after the earliest pending evaluation timestamp.
+    let distance_to_protected = back.timestamp.saturating_sub(protected_ts);
+    let effective_max_age = lookahead.max(distance_to_protected);
+    cache.prune(effective_max_age);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,7 +202,9 @@ mod tests {
         });
 
         for i in 0..3 {
-            if let Some(step) = signal.steps.get(i) { assert_eq!(step.value, i + 1) }
+            if let Some(step) = signal.steps.get(i) {
+                assert_eq!(step.value, i + 1)
+            }
         }
     }
 
