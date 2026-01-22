@@ -1,4 +1,4 @@
-use crate::ring_buffer::{guarded_prune, RingBufferTrait, Step};
+use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
@@ -102,10 +102,9 @@ where
         }
         for left_update in &left_updates {
             self.eval_buffer.insert(left_update.timestamp);
-            if !self.left_cache_matrix.contains_key(&left_update.timestamp) {
-                self.left_cache_matrix
-                    .insert(left_update.timestamp, C::new());
-            }
+            self.left_cache_matrix
+                .entry(left_update.timestamp)
+                .or_insert_with(C::new);
             if IS_ROSI {
                 for (t_eval, left_cache) in &mut self.left_cache_matrix {
                     if *t_eval <= left_update.timestamp {
@@ -252,11 +251,7 @@ where
         }
 
         // 3. Prune the caches and remove completed tasks from the buffer.
-        let protected_ts = self
-            .eval_buffer
-            .first()
-            .copied()
-            .unwrap_or(Duration::ZERO);
+        let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.max_lookahead;
         self.left_cache_matrix
             .iter_mut()

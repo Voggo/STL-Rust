@@ -51,11 +51,9 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
     }
 
     /// Computes the instantaneous robustness for the current step.
-    pub fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> 
-    {
+    pub fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> {
         // 1. Push raw step into synchronizer
         self.synchronizer.evaluate(step.clone());
-
         let mut results = Vec::new();
 
         // 2. Drain all pending synchronized steps (interpolated + real)

@@ -1,4 +1,4 @@
-use crate::ring_buffer::{guarded_prune, RingBufferTrait, Step};
+use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
@@ -156,11 +156,7 @@ where
         }
 
         // 3. Prune the cache and buffer
-        let protected_ts = self
-            .eval_buffer
-            .first()
-            .copied()
-            .unwrap_or(Duration::ZERO);
+        let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.get_max_lookahead();
         guarded_prune(&mut self.cache, lookahead, protected_ts);
         for t in tasks_to_remove {
@@ -309,11 +305,7 @@ where
         }
 
         // 3. Prune the cache and buffer
-        let protected_ts = self
-            .eval_buffer
-            .first()
-            .copied()
-            .unwrap_or(Duration::ZERO);
+        let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.get_max_lookahead();
         guarded_prune(&mut self.cache, lookahead, protected_ts);
         for t in tasks_to_remove {

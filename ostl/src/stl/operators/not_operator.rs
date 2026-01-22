@@ -1,11 +1,10 @@
 use crate::ring_buffer::Step;
 use crate::stl::core::{
-    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait
+    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
 };
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::time::Duration;
-
 
 #[derive(Clone)]
 pub struct Not<T, Y> {

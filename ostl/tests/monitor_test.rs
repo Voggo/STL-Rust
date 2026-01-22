@@ -873,12 +873,12 @@ mod tests {
         #[values(InterpolationStrategy::ZeroOrderHold, InterpolationStrategy::Linear)]
         interpolation_strategy: InterpolationStrategy,
     ) {
-        // // x_steps are even timestamps from 0 to 100
+        // x_steps are even timestamps from 0 to 100
         let x_steps: Vec<Step<f64>> = (0..101)
             .step_by(2)
             .map(|i| Step::new("x", i as f64, Duration::from_secs(i)))
             .collect();
-        // // y_steps are odd timestamps from 1 to 99
+        // y_steps are odd timestamps from 1 to 99
         let y_steps: Vec<Step<f64>> = (1..101)
             .step_by(2)
             .map(|i| Step::new("y", i as f64, Duration::from_secs(i)))

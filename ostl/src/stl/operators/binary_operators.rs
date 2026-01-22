@@ -1,4 +1,4 @@
-use crate::ring_buffer::{guarded_prune, RingBufferTrait, Step};
+use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
 };
@@ -89,7 +89,7 @@ where
                         }
                     }
 
-                    // In Strict mode (and Eager fall-through), we discard the lagging step 
+                    // In Strict mode (and Eager fall-through), we discard the lagging step
                     // because it can never be matched with a future step from Right.
                     *left_last_known = left_cache.pop_front().unwrap();
                 } else {
@@ -120,7 +120,7 @@ where
                         continue;
                     }
                 }
-                break; 
+                break;
             }
             // Only Right has data - we must wait for Left
             (None, Some(r)) => {

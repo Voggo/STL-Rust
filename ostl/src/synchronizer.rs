@@ -8,7 +8,7 @@ use crate::ring_buffer::Step;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterpolationStrategy {
     ZeroOrderHold, // formula: v = v0
-    Linear, // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
+    Linear,        // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
 }
 
 impl Default for InterpolationStrategy {
@@ -205,7 +205,7 @@ mod tests {
                 result.push(s);
             }
         }
-        // With linear interpolation, at t=2, sifnal B should be linearly interpolated to 10.0
+        // With linear interpolation, at t=2, signal B should be linearly interpolated to 10.0
         assert!(result.iter().any(|s| s.signal == "B"
             && s.timestamp == Duration::from_secs(2)
             && (s.value - 10.0).abs() < 1e-6));
