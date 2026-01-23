@@ -10,7 +10,7 @@ use std::time::Duration;
 fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Option<Y>>, is_max: bool)
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics,
+    Y: RobustnessSemantics + Debug,
 {
     // Lemire's sliding min/max optimization with robust domination checks
     while let Some(back) = cache.get_back()
@@ -23,7 +23,6 @@ where
         )
     {
         // Short-circuit: new value dominates the back of the cache.
-        // println!("Popping dominated value from cache");
         cache.pop_back();
     }
 }
@@ -231,7 +230,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + Debug + 'static,
 {
     type Output = Y;
 
@@ -242,8 +241,6 @@ where
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
-
-        // println!("Cache len before Globally update: {}", self.cache.len());
 
         // 1. Add new sub-formula results to the cache
         if IS_ROSI {
@@ -277,8 +274,6 @@ where
                 self.cache.add_step(sub_step.clone());
             }
         }
-
-        // println!("Cache len after Globally update: {}", self.cache.len());
 
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;

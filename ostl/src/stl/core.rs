@@ -304,6 +304,16 @@ impl RobustnessSemantics for RobustnessInterval {
         RobustnessInterval(f64::NEG_INFINITY, f64::INFINITY)
     }
     fn prune_dominated(old: Self, new: Self, is_max: bool) -> bool {
+        // example: F[a,b] x>0
+        // x0 = -2, x1 = 2
+        // old = (-2, -2), new = (2, 2), is_max = true
+        // returns true: old can be discarded since it can never exceed new and we want the best only
+        // example: G[a,b] x>0
+        // x0 = 2, x1 = -2
+        // old = (2, 2), new = (-2, -2), is_max = false
+        // returns true: old can be discarded since it can never be smaller than new and we want the worst only
+
+
         if is_max {
             // Max/Eventually: Discard old if it can never exceed new.
             // We need new's lower bound to be >= old's upper bound.
