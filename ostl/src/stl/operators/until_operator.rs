@@ -3,7 +3,7 @@ use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
     left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    left_cache_matrix: HashMap<Duration, C>,
+    left_cache: C,
     right_cache: C,
     t_max: (Duration, Duration), // (left t_max, right t_max)
     eval_buffer: BTreeSet<Duration>,
@@ -26,7 +26,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
         interval: TimeInterval,
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache_matrix: Option<HashMap<Duration, C>>,
+        left_cache: Option<C>,
         right_cache: Option<C>,
     ) -> Self
     where
@@ -39,7 +39,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
             interval,
             left,
             right,
-            left_cache_matrix: left_cache_matrix.unwrap_or_else(|| HashMap::new()),
+            left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             t_max: (Duration::ZERO, Duration::ZERO),
             eval_buffer: BTreeSet::new(),
@@ -102,29 +102,19 @@ where
         }
         for left_update in &left_updates {
             self.eval_buffer.insert(left_update.timestamp);
-            if !self.left_cache_matrix.contains_key(&left_update.timestamp) {
-                self.left_cache_matrix
-                    .insert(left_update.timestamp, C::new());
-            }
             if IS_ROSI {
-                for (t_eval, left_cache) in &mut self.left_cache_matrix {
-                    if *t_eval <= left_update.timestamp {
-                        if !left_cache.update_step(left_update.clone()) {
-                            left_cache.add_step(left_update.clone());
-                        }
-                    }
+                if !self.left_cache.update_step(left_update.clone()) {
+                    self.left_cache.add_step(left_update.clone());
                 }
             } else {
-                for (_, cache) in &mut self.left_cache_matrix {
-                    cache.add_step(left_update.clone());
-                }
+                self.left_cache.add_step(left_update.clone());
             }
         }
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
 
         // If there is no data in the left cache it cannot be calculated yet
-        if self.left_cache_matrix.is_empty() || self.right_cache.is_empty() {
+        if self.left_cache.is_empty() || self.right_cache.is_empty() {
             return output_robustness;
         }
 
@@ -151,24 +141,20 @@ where
                 .take_while(|s| s <= &effective_end_time); // Only up to current time
 
             let mut left_cache_t_prime_min = Y::globally_identity();
-            let left_cache_ref = match self.left_cache_matrix.get(&t_eval) {
-                Some(cache) => cache,
-                None => break, // No left cache for this t_eval yet
-            };
-            let mut left_cache_iter = left_cache_ref.iter();
-            let mut right_cache_iter = self.right_cache.iter();
+            // Collect left_cache into a vector for progressive skipping
+            let left_cache_vec: Vec<_> = self.left_cache.iter().collect();
+            let right_cache_vec: Vec<_> = self.right_cache.iter().collect();
 
-            // Align iterators: drop oldest right entries so both iterators have equal length
-            let left_len = left_cache_ref.len();
-            let right_len = self.right_cache.len();
-            let mut left_consumed = 0;
-            let mut right_consumed = 0;
-            if right_len > left_len {
-                for _ in 0..(right_len - left_len) {
-                    right_cache_iter.next();
-                }
-            }
-            for step_psi_t_prime in t_prime_iter {
+            // Find how many elements to skip based on t_eval position
+            let skip_count = left_cache_vec
+                .iter()
+                .take_while(|entry| entry.timestamp < t_eval)
+                .count();
+
+            let mut left_cache_iter = left_cache_vec.iter().skip(skip_count);
+            let mut right_cache_iter = right_cache_vec.iter().skip(skip_count);
+
+            for _step_psi_t_prime in t_prime_iter {
 
                 let left_step = match left_cache_iter.next() {
                     Some(step) => step,
@@ -178,7 +164,6 @@ where
                     left_cache_t_prime_min.clone(),
                     left_step.value.clone().unwrap(),
                 );
-                left_consumed += 1;
                 let robustness_phi_left = left_cache_t_prime_min.clone();
 
                 // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
@@ -186,7 +171,6 @@ where
                 // 1. Get rho_psi(t')
                 let robustness_psi_right = match right_cache_iter.next() {
                     Some(val) => {
-                        right_consumed += 1;
                         val.value.clone().unwrap()
                     }
                     None => Y::unknown(), // Cannot compute with None
@@ -263,15 +247,12 @@ where
 
         // 3. Prune the caches and remove completed tasks from the buffer.
         let lookahead = self.max_lookahead;
-        self.left_cache_matrix
-            .iter_mut()
-            .for_each(|(_, cache)| cache.prune(lookahead));
+        self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
 
         for t in tasks_to_remove {
             // println!("Removing completed task at t_eval={:?}", t);
             self.eval_buffer.remove(&t);
-            self.left_cache_matrix.remove(&t);
         }
 
         output_robustness
