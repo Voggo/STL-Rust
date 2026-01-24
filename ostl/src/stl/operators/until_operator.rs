@@ -1,4 +1,4 @@
-use crate::ring_buffer::{RingBufferTrait, Step};
+use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
@@ -239,6 +239,7 @@ where
         }
 
         // 3. Prune the caches and remove completed tasks from the buffer.
+        let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.max_lookahead;
         self.left_cache.prune(lookahead);
         self.right_cache.prune(lookahead);
