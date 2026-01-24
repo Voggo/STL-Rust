@@ -48,6 +48,21 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
             max_lookahead,
         }
     }
+
+    /// Helper to add a step to a cache, handling ROSI update-or-add semantics
+    fn add_to_cache<const ROSI: bool>(cache: &mut C, step: Step<Option<Y>>)
+    where
+        C: RingBufferTrait<Value = Option<Y>>,
+        Y: Clone,
+    {
+        if ROSI {
+            if !cache.update_step(step.clone()) {
+                cache.add_step(step);
+            }
+        } else {
+            cache.add_step(step);
+        }
+    }
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
@@ -90,25 +105,13 @@ where
         let t_max_combined = self.t_max.0.min(self.t_max.1);
 
         // Add all updates to eval_buffer and caches
-        for right_update in &right_updates {
-            self.eval_buffer.insert(right_update.timestamp);
-            if IS_ROSI {
-                if !self.right_cache.update_step(right_update.clone()) {
-                    self.right_cache.add_step(right_update.clone());
-                }
-            } else {
-                self.right_cache.add_step(right_update.clone());
-            }
+        for update in &right_updates {
+            self.eval_buffer.insert(update.timestamp);
+            Self::add_to_cache::<IS_ROSI>(&mut self.right_cache, update.clone());
         }
-        for left_update in &left_updates {
-            self.eval_buffer.insert(left_update.timestamp);
-            if IS_ROSI {
-                if !self.left_cache.update_step(left_update.clone()) {
-                    self.left_cache.add_step(left_update.clone());
-                }
-            } else {
-                self.left_cache.add_step(left_update.clone());
-            }
+        for update in &left_updates {
+            self.eval_buffer.insert(update.timestamp);
+            Self::add_to_cache::<IS_ROSI>(&mut self.left_cache, update.clone());
         }
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
@@ -154,45 +157,35 @@ where
             let mut left_cache_iter = left_cache_vec.iter().skip(skip_count);
             let mut right_cache_iter = right_cache_vec.iter().skip(skip_count);
 
-            for _step_psi_t_prime in t_prime_iter {
-
+            for _ in t_prime_iter {
+                // 1. Get cumulative min of phi (left operand) up to t'
                 let left_step = match left_cache_iter.next() {
                     Some(step) => step,
                     None => break,
                 };
-                left_cache_t_prime_min = Y::and(
-                    left_cache_t_prime_min.clone(),
-                    left_step.value.clone().unwrap(),
-                );
+                left_cache_t_prime_min =
+                    Y::and(left_cache_t_prime_min, left_step.value.clone().unwrap());
                 let robustness_phi_left = left_cache_t_prime_min.clone();
 
-                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
-
-                // 1. Get rho_psi(t')
+                // 2. Get rho_psi(t') - the right operand at t'
                 let robustness_psi_right = match right_cache_iter.next() {
-                    Some(val) => {
-                        val.value.clone().unwrap()
-                    }
-                    None => Y::unknown(), // Cannot compute with None
+                    Some(val) => val.value.clone().unwrap(),
+                    None => Y::unknown(),
                 };
 
-                // --- EAGER FALSIFICATION CHECK ---
-                // If phi has become false, and psi has not *already* made us true,
-                // then we are (and will remain) false.
+                // 3. Eager falsification check: if phi has become false, short-circuit
                 if IS_EAGER
                     && robustness_phi_left == Y::atomic_false()
-                    // && robustness_psi_right != Y::atomic_true()
                     && t_max_combined >= t_eval
                 {
                     falsified = true;
                     max_robustness_vec.push(Y::atomic_false());
                     break;
-                    // continue; // Short-circuit: Falsified
                 }
 
-                // 3. Combine: min(rho_psi(t'), robustness_phi_left)
+                // 4. Combine: min(rho_psi(t'), robustness_phi_left)
                 let robustness_t_prime = Y::and(robustness_psi_right, robustness_phi_left);
-                max_robustness_vec.push(robustness_t_prime); // For the outer max/sup
+                max_robustness_vec.push(robustness_t_prime);
             }
 
             let max_robustness = if max_robustness_vec.is_empty() {
@@ -263,12 +256,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Until<T, C, Y, IS_EAGER, IS_ROSI>
 {
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
-        let mut ids = std::collections::HashSet::new();
         self.left_signals_set
             .extend(self.left.get_signal_identifiers());
         self.right_signals_set
             .extend(self.right.get_signal_identifiers());
-        ids.extend(self.left_signals_set.iter().cloned());
+
+        let mut ids = self.left_signals_set.clone();
         ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
