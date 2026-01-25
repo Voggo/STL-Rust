@@ -72,17 +72,17 @@ impl FormulaDefinition {
                 FormulaDefinition::And(_, _) => "And".to_string(),
                 FormulaDefinition::Or(_, _) => "Or".to_string(),
                 FormulaDefinition::Globally(interval, _) => format!(
-                    "Always [{} - {}]",
+                    "Globally[{},{}]",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64()
                 ),
                 FormulaDefinition::Eventually(interval, _) => format!(
-                    "Eventually [{} - {}]",
+                    "Eventually[{},{}]",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64()
                 ),
                 FormulaDefinition::Until(interval, _, _) => format!(
-                    "Until [{} - {}]",
+                    "Until[{},{}]",
                     interval.start.as_secs_f64(),
                     interval.end.as_secs_f64()
                 ),

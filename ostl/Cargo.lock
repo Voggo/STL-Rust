@@ -628,6 +628,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "dyn-clone",
+ "ostl-macros",
  "pretty_assertions",
  "proptest",
  "rand",
@@ -636,6 +637,15 @@ dependencies = [
  "rumqttc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ostl-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -11,6 +11,8 @@ use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
 use crate::stl::operators::until_operator::Until;
 use crate::synchronizer::{Interpolatable, InterpolationStrategy, Synchronizer};
 use std::any::TypeId;
+use std::fmt::Debug;
+use std::time::Duration;
 
 /// Defines the monitoring strategy.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,6 +40,142 @@ impl Default for EvaluationMode {
     }
 }
 
+/// Represents the output of a single monitor update operation.
+///
+/// This struct provides a mapping between the input step that triggered
+/// the evaluation and the resulting output steps from the monitor.
+#[derive(Clone, PartialEq)]
+pub struct MonitorOutput<T, Y> {
+    /// The signal name from the input step that triggered this evaluation
+    pub input_signal: &'static str,
+    /// The timestamp of the input step
+    pub input_timestamp: Duration,
+    /// The value of the input step
+    pub input_value: T,
+    /// Each synchronized step and its corresponding evaluation results.
+    /// The synchronizer may produce multiple steps (interpolated + real) for a single input.
+    pub evaluations: Vec<SyncStepResult<T, Y>>,
+}
+
+impl<Y> Debug for MonitorOutput<f64, Y>
+where
+    Y: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "MonitorOutput {{")?;
+        writeln!(f, "  input: signal=\"{}\", timestamp={:?}, value={}",
+            self.input_signal, self.input_timestamp, self.input_value)?;
+        if self.evaluations.is_empty() {
+            writeln!(f, "  evaluations: (none)")?;
+        } else {
+            writeln!(f, "  evaluations:")?;
+            for (i, eval) in self.evaluations.iter().enumerate() {
+                let is_last = i == self.evaluations.len() - 1;
+                let prefix = if is_last { "└──" } else { "├──" };
+                let cont = if is_last { "   " } else { "│  " };
+                writeln!(f, "  {} sync_step: signal=\"{}\", timestamp={:?}, value={}",
+                    prefix, eval.sync_step.signal, eval.sync_step.timestamp, eval.sync_step.value)?;
+                if eval.outputs.is_empty() {
+                    writeln!(f, "  {}     outputs: (none)", cont)?;
+                } else {
+                    writeln!(f, "  {}     outputs:", cont)?;
+                    for (j, output) in eval.outputs.iter().enumerate() {
+                        let out_is_last = j == eval.outputs.len() - 1;
+                        let out_prefix = if out_is_last { "└──" } else { "├──" };
+                        writeln!(f, "  {}       {} t={:?} → {:?}",
+                            cont, out_prefix, output.timestamp, output.value)?;
+                    }
+                }
+            }
+        }
+        write!(f, "}}")
+    }
+}
+
+/// Represents the evaluation result for a single synchronized step.
+#[derive(Clone, PartialEq)]
+pub struct SyncStepResult<T, Y> {
+    /// The synchronized step that was evaluated (may be interpolated)
+    pub sync_step: Step<T>,
+    /// The output steps produced by evaluating this synchronized step
+    pub outputs: Vec<Step<Option<Y>>>,
+}
+
+impl<Y> Debug for SyncStepResult<f64, Y>
+where
+    Y: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SyncStepResult {{ sync_step: {:?}, outputs: {:?} }}",
+            self.sync_step, self.outputs)
+    }
+}
+
+impl<T, Y> SyncStepResult<T, Y> {
+    /// Creates a new SyncStepResult.
+    pub fn new(sync_step: Step<T>, outputs: Vec<Step<Option<Y>>>) -> Self {
+        SyncStepResult { sync_step, outputs }
+    }
+
+    /// Returns true if this result has any outputs.
+    pub fn has_outputs(&self) -> bool {
+        !self.outputs.is_empty()
+    }
+}
+
+impl<T, Y> MonitorOutput<T, Y> {
+    /// Creates a new MonitorOutput from an input step and its evaluation results.
+    pub fn new(input: &Step<T>, evaluations: Vec<SyncStepResult<T, Y>>) -> Self
+    where
+        T: Clone,
+    {
+        MonitorOutput {
+            input_signal: input.signal,
+            input_timestamp: input.timestamp,
+            input_value: input.value.clone(),
+            evaluations,
+        }
+    }
+
+    /// Returns true if any evaluation produced outputs.
+    pub fn has_outputs(&self) -> bool {
+        self.evaluations.iter().any(|e| !e.outputs.is_empty())
+    }
+
+    /// Returns the total number of output steps across all evaluations.
+    pub fn total_outputs(&self) -> usize {
+        self.evaluations.iter().map(|e| e.outputs.len()).sum()
+    }
+
+    /// Returns true if there are no evaluations.
+    pub fn is_empty(&self) -> bool {
+        self.evaluations.is_empty()
+    }
+
+    /// Returns an iterator over all output steps (flattened across all evaluations).
+    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Option<Y>>> {
+        self.evaluations.iter().flat_map(|e| e.outputs.iter())
+    }
+
+    /// Returns the latest verdict for requested timestamp, if any.
+    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Option<Y>>> {
+        self.outputs_iter()
+            .filter(|s| s.timestamp == timestamp)
+            .last()
+    }
+
+    /// Collects all outputs into a flat vector.
+    pub fn all_outputs(&self) -> Vec<Step<Option<Y>>>
+    where
+        Y: Clone,
+    {
+        self.evaluations
+            .iter()
+            .flat_map(|e| e.outputs.clone())
+            .collect()
+    }
+}
+
 /// The final monitor struct that handles the input stream.
 pub struct StlMonitor<T: Clone + Interpolatable, Y> {
     root_operator: Box<dyn StlOperatorTrait<T, Output = Y>>,
@@ -50,20 +188,24 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
         StlMonitorBuilder::new()
     }
 
-    /// Computes the instantaneous robustness for the current step.
-    pub fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Y>>> {
+    /// Returns a `MonitorOutput` that contains both the input step information
+    /// and the resulting output steps from the monitor evaluation.
+    pub fn update(&mut self, step: &Step<T>) -> MonitorOutput<T, Y>
+    where
+        Y: RobustnessSemantics + Debug,
+    {
         // 1. Push raw step into synchronizer
         self.synchronizer.evaluate(step.clone());
-        let mut results = Vec::new();
+        let mut evaluations = Vec::new();
 
         // 2. Drain all pending synchronized steps (interpolated + real)
         //    and feed them into the operator tree.
         while let Some(sync_step) = self.synchronizer.pending.pop_front() {
             let op_res = self.root_operator.update(&sync_step);
-            results.extend(op_res);
+            evaluations.push(SyncStepResult::new(sync_step, op_res));
         }
 
-        results
+        MonitorOutput::new(step, evaluations)
     }
 
     /// Returns the string representation of the monitor's formula.

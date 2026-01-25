@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 dyn-clone = "1.0.20"
+ostl-macros = { path = "ostl-macros" }
 
 [dev-dependencies]
 proptest = "1.8.0"
