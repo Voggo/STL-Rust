@@ -3,7 +3,7 @@ use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
     TimeInterval,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
     left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
     right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    left_cache_matrix: HashMap<Duration, C>,
+    left_cache: C,
     right_cache: C,
     t_max: (Duration, Duration), // (left t_max, right t_max)
     eval_buffer: BTreeSet<Duration>,
@@ -26,7 +26,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
         interval: TimeInterval,
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache_matrix: Option<HashMap<Duration, C>>,
+        left_cache: Option<C>,
         right_cache: Option<C>,
     ) -> Self
     where
@@ -39,13 +39,28 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
             interval,
             left,
             right,
-            left_cache_matrix: left_cache_matrix.unwrap_or_else(|| HashMap::new()),
+            left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             t_max: (Duration::ZERO, Duration::ZERO),
             eval_buffer: BTreeSet::new(),
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
             max_lookahead,
+        }
+    }
+
+    /// Helper to add a step to a cache, handling ROSI update-or-add semantics
+    fn add_to_cache<const ROSI: bool>(cache: &mut C, step: Step<Option<Y>>)
+    where
+        C: RingBufferTrait<Value = Option<Y>>,
+        Y: Clone,
+    {
+        if ROSI {
+            if !cache.update_step(step.clone()) {
+                cache.add_step(step);
+            }
+        } else {
+            cache.add_step(step);
         }
     }
 }
@@ -90,40 +105,19 @@ where
         let t_max_combined = self.t_max.0.min(self.t_max.1);
 
         // Add all updates to eval_buffer and caches
-        for right_update in &right_updates {
-            self.eval_buffer.insert(right_update.timestamp);
-            if IS_ROSI {
-                if !self.right_cache.update_step(right_update.clone()) {
-                    self.right_cache.add_step(right_update.clone());
-                }
-            } else {
-                self.right_cache.add_step(right_update.clone());
-            }
+        for update in &right_updates {
+            self.eval_buffer.insert(update.timestamp);
+            Self::add_to_cache::<IS_ROSI>(&mut self.right_cache, update.clone());
         }
-        for left_update in &left_updates {
-            self.eval_buffer.insert(left_update.timestamp);
-            self.left_cache_matrix
-                .entry(left_update.timestamp)
-                .or_insert_with(C::new);
-            if IS_ROSI {
-                for (t_eval, left_cache) in &mut self.left_cache_matrix {
-                    if *t_eval <= left_update.timestamp {
-                        if !left_cache.update_step(left_update.clone()) {
-                            left_cache.add_step(left_update.clone());
-                        }
-                    }
-                }
-            } else {
-                for (_, cache) in &mut self.left_cache_matrix {
-                    cache.add_step(left_update.clone());
-                }
-            }
+        for update in &left_updates {
+            self.eval_buffer.insert(update.timestamp);
+            Self::add_to_cache::<IS_ROSI>(&mut self.left_cache, update.clone());
         }
         let mut tasks_to_remove = Vec::new();
         let current_time = step.timestamp;
 
         // If there is no data in the left cache it cannot be calculated yet
-        if self.left_cache_matrix.is_empty() || self.right_cache.is_empty() {
+        if self.left_cache.is_empty() || self.right_cache.is_empty() {
             return output_robustness;
         }
 
@@ -148,56 +142,50 @@ where
                 .copied()
                 .skip_while(|s| s < &window_start_t_eval)
                 .take_while(|s| s <= &effective_end_time); // Only up to current time
-            let mut right_cache_t_prime_iter = self.right_cache.iter().peekable();
 
-            for step_psi_t_prime in t_prime_iter {
-                let t_prime = step_psi_t_prime;
+            let mut left_cache_t_prime_min = Y::globally_identity();
+            // Collect left_cache into a vector for progressive skipping
+            let left_cache_vec: Vec<_> = self.left_cache.iter().collect();
+            let right_cache_vec: Vec<_> = self.right_cache.iter().collect();
 
-                // 2. Get min_{t'' \in [t_eval+a, t')} rho_phi(t'')
-                let robustness_phi_left =
-                    if let Some(left_cache) = self.left_cache_matrix.get(&t_eval) {
-                        left_cache
-                            .iter()
-                            .take_while(|s| s.timestamp <= t_prime)
-                            .filter_map(|s| s.value.clone())
-                            .fold(Y::globally_identity(), Y::and)
-                    } else {
-                        Y::globally_identity()
-                    };
+            // Find how many elements to skip based on t_eval position
+            let skip_count = left_cache_vec
+                .iter()
+                .take_while(|entry| entry.timestamp < t_eval)
+                .count();
 
-                // Advance the right_cache iterator to find the step corresponding to t_prime
-                while let Some(step) = right_cache_t_prime_iter.peek() {
-                    if step.timestamp < t_prime {
-                        right_cache_t_prime_iter.next(); // Consume and advance
-                    } else {
-                        break; // Found t' or passed it
-                    }
-                }
-                let t_prime_right_step =
-                    right_cache_t_prime_iter.find(|s| s.timestamp <= t_max_combined);
-                // 1. Get rho_psi(t')
-                let robustness_psi_right = match t_prime_right_step {
+            let mut left_cache_iter = left_cache_vec.iter().skip(skip_count);
+            let mut right_cache_iter = right_cache_vec.iter().skip(skip_count);
+
+            for _ in t_prime_iter {
+                // 1. Get cumulative min of phi (left operand) up to t'
+                let left_step = match left_cache_iter.next() {
+                    Some(step) => step,
+                    None => break,
+                };
+                left_cache_t_prime_min =
+                    Y::and(left_cache_t_prime_min, left_step.value.clone().unwrap());
+                let robustness_phi_left = left_cache_t_prime_min.clone();
+
+                // 2. Get rho_psi(t') - the right operand at t'
+                let robustness_psi_right = match right_cache_iter.next() {
                     Some(val) => val.value.clone().unwrap(),
-                    None => Y::unknown(), // Cannot compute with None
+                    None => Y::unknown(),
                 };
 
-                // --- EAGER FALSIFICATION CHECK ---
-                // If phi has become false, and psi has not *already* made us true,
-                // then we are (and will remain) false.
+                // 3. Eager falsification check: if phi has become false, short-circuit
                 if IS_EAGER
                     && robustness_phi_left == Y::atomic_false()
-                    && robustness_psi_right != Y::atomic_true()
                     && t_max_combined >= t_eval
                 {
                     falsified = true;
                     max_robustness_vec.push(Y::atomic_false());
                     break;
-                    // continue; // Short-circuit: Falsified
                 }
 
-                // 3. Combine: min(rho_psi(t'), robustness_phi_left)
+                // 4. Combine: min(rho_psi(t'), robustness_phi_left)
                 let robustness_t_prime = Y::and(robustness_psi_right, robustness_phi_left);
-                max_robustness_vec.push(robustness_t_prime); // For the outer max/sup
+                max_robustness_vec.push(robustness_t_prime);
             }
 
             let max_robustness = if max_robustness_vec.is_empty() {
@@ -253,14 +241,12 @@ where
         // 3. Prune the caches and remove completed tasks from the buffer.
         let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.max_lookahead;
-        self.left_cache_matrix
-            .iter_mut()
-            .for_each(|(_, cache)| guarded_prune(cache, lookahead, protected_ts));
-        guarded_prune(&mut self.right_cache, lookahead, protected_ts);
+        self.left_cache.prune(lookahead);
+        self.right_cache.prune(lookahead);
 
         for t in tasks_to_remove {
+            // println!("Removing completed task at t_eval={:?}", t);
             self.eval_buffer.remove(&t);
-            self.left_cache_matrix.remove(&t);
         }
 
         output_robustness
@@ -271,12 +257,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Until<T, C, Y, IS_EAGER, IS_ROSI>
 {
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
-        let mut ids = std::collections::HashSet::new();
         self.left_signals_set
             .extend(self.left.get_signal_identifiers());
         self.right_signals_set
             .extend(self.right.get_signal_identifiers());
-        ids.extend(self.left_signals_set.iter().cloned());
+
+        let mut ids = self.left_signals_set.clone();
         ids.extend(self.right_signals_set.iter().cloned());
         ids
     }
@@ -359,14 +345,145 @@ mod tests {
             Step::new("x", 8.0, Duration::from_secs(3)),
             Step::new("x", 10.0, Duration::from_secs(6)),
             Step::new("x", 15.0, Duration::from_secs(8)),
-            Step::new("x", 20.0, Duration::from_secs(9)),
-            Step::new("x", 25.0, Duration::from_secs(10)),
         ];
         for signal in signals {
             let outputs = until.update(&signal);
+            let outputs_globally = until.left.update(&signal);
+            let outputs_eventually = until.right.update(&signal);
             println!("Output at signal t={:?}:", signal.timestamp);
+            for output in outputs_globally {
+                println!(
+                    "  Globally t={:?}:\n   {:?}",
+                    output.timestamp, output.value
+                );
+            }
+            for output in outputs_eventually {
+                println!(
+                    "  Eventually t={:?}:\n   {:?}",
+                    output.timestamp, output.value
+                );
+            }
             for output in outputs {
-                println!("t={:?}:\n {:?}", output.timestamp, output.value);
+                println!("  Until t={:?}:\n   {:?}", output.timestamp, output.value);
+            }
+            println!("---");
+        }
+    }
+
+    #[test]
+    fn debug_eager() {
+        use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(4),
+        };
+        let atomic_left = Atomic::<f64>::new_greater_than("x", 2.0);
+        let atomic_right = Atomic::<f64>::new_greater_than("x", 8.0);
+        let mut globally = Globally::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+            interval,
+            Box::new(atomic_left.clone()),
+            None,
+            None,
+        );
+        let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+            interval,
+            Box::new(atomic_right.clone()),
+            None,
+            None,
+        );
+
+        let mut until = Until::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+            interval,
+            Box::new(globally.clone()),
+            Box::new(eventually.clone()),
+            None,
+            None,
+        );
+        println!("Until operator: {}", until);
+
+        let signals = vec![
+            Step::new("x", 1.0, Duration::from_secs(0)),
+            Step::new("x", 2.0, Duration::from_secs(1)),
+            Step::new("x", 3.0, Duration::from_secs(2)),
+            Step::new("x", 8.0, Duration::from_secs(3)),
+            Step::new("x", 12.0, Duration::from_secs(6)),
+            Step::new("x", 15.0, Duration::from_secs(8)),
+        ];
+        println!("Until operator: {}", until);
+
+        for signal in signals {
+            let outputs = until.update(&signal);
+            let outputs_globally = globally.update(&signal);
+            let outputs_eventually = eventually.update(&signal);
+            println!("Output at signal t={:?}:", signal.timestamp);
+            for output in outputs_globally {
+                println!("  Globally t={:?}:   {:?}", output.timestamp, output.value);
+            }
+            for output in outputs_eventually {
+                println!(
+                    "  Eventually t={:?}:   {:?}",
+                    output.timestamp, output.value
+                );
+            }
+            for output in outputs {
+                println!("  Until t={:?}:   {:?}", output.timestamp, output.value);
+            }
+            println!("---");
+        }
+    }
+
+    #[test]
+    fn debug_bool() {
+        use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(4),
+        };
+        let atomic_left = Atomic::<bool>::new_greater_than("x", 2.0);
+        let atomic_right = Atomic::<bool>::new_greater_than("x", 8.0);
+        let mut globally = Globally::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+            interval,
+            Box::new(atomic_left.clone()),
+            None,
+            None,
+        );
+        let mut eventually = Eventually::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+            interval,
+            Box::new(atomic_right.clone()),
+            None,
+            None,
+        );
+
+        let mut until = Until::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+            interval,
+            Box::new(globally.clone()),
+            Box::new(eventually.clone()),
+            None,
+            None,
+        );
+        println!("Until operator: {}", until);
+
+        let signals = vec![
+            Step::new("x", 1.0, Duration::from_secs(0)),
+            Step::new("x", 2.0, Duration::from_secs(1)),
+            Step::new("x", 3.0, Duration::from_secs(2)),
+            Step::new("x", 8.0, Duration::from_secs(3)),
+            Step::new("x", 12.0, Duration::from_secs(6)),
+            Step::new("x", 15.0, Duration::from_secs(8)),
+        ];
+        for signal in signals {
+            let outputs = until.update(&signal);
+            let outputs_globally = globally.update(&signal);
+            let outputs_eventually = eventually.update(&signal);
+            println!("Output at signal t={:?}:", signal.timestamp);
+            for output in outputs_globally {
+                println!("  Globally t={:?}:   {:?}", output.timestamp, output.value);
+            }
+            for output in outputs_eventually {
+                println!("  Eventually t={:?}:   {:?}", output.timestamp, output.value);
+            }
+            for output in outputs {
+                println!("  Until t={:?}:   {:?}", output.timestamp, output.value);
             }
             println!("---");
         }

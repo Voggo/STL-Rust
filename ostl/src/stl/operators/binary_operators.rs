@@ -17,12 +17,12 @@ fn process_binary<C, Y, F, const IS_EAGER: bool, const IS_ROSI: bool>(
 ) -> Vec<Step<Option<Y>>>
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics + Copy + PartialEq + 'static,
+    Y: RobustnessSemantics + Copy + Debug + PartialEq + 'static,
     F: Fn(Y, Y) -> Y,
 {
     let mut output_robustness = Vec::new();
 
-    // CASE 1: Refinable Semantics (e.g., RoSI)
+    // CASE 1: Refinable Semantics (i.e., RoSI)
     if IS_ROSI {
         let mut l_iter = left_cache.iter();
         let mut r_iter = right_cache.iter();
@@ -37,11 +37,16 @@ where
 
                 l_curr = l_iter.next();
                 r_curr = r_iter.next();
+                *left_last_known = Step::new("", l.value, l.timestamp);
+                *right_last_known = Step::new("", r.value, r.timestamp);
             } else if l.timestamp < r.timestamp {
                 l_curr = l_iter.next();
+                *left_last_known = Step::new("", l.value, l.timestamp);
             } else {
                 r_curr = r_iter.next();
+                *right_last_known = Step::new("", r.value, r.timestamp);
             }
+
         }
 
         return output_robustness;
@@ -213,25 +218,33 @@ where
             }
         };
 
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.update(step);
-            for update in left_updates {
-                if check_relevance(update.timestamp, self.last_eval_time)
-                    && !self.left_cache.update_step(update.clone())
-                {
-                    self.left_cache.add_step(update);
-                }
+        let left_updates =
+            if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
+                self.left.update(step)
+            } else {
+                Vec::new()
+            };
+
+        for update in &left_updates {
+            if check_relevance(update.timestamp, self.last_eval_time)
+                && !self.left_cache.update_step(update.clone())
+            {
+                self.left_cache.add_step(update.clone());
             }
         }
 
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.update(step);
-            for update in right_updates {
-                if check_relevance(update.timestamp, self.last_eval_time)
-                    && !self.right_cache.update_step(update.clone())
-                {
-                    self.right_cache.add_step(update);
-                }
+        let right_updates =
+            if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
+                self.right.update(step)
+            } else {
+                Vec::new()
+            };
+
+        for update in &right_updates {
+            if check_relevance(update.timestamp, self.last_eval_time)
+                && !self.right_cache.update_step(update.clone())
+            {
+                self.right_cache.add_step(update.clone());
             }
         }
 
@@ -250,14 +263,14 @@ where
         }
 
         let lookahead = self.get_max_lookahead();
+
+        // we protect up to the minimum of the last known timestamps minus lookahead
+        // we can safely prune it if both sides have verdict and are beyond lookahead
         let protected_ts = self
-            .left_cache
-            .get_front()
-            .into_iter()
-            .chain(self.right_cache.get_front())
-            .map(|s| s.timestamp)
-            .min()
-            .unwrap_or(Duration::ZERO);
+            .left_last_known
+            .timestamp
+            .min(self.right_last_known.timestamp)
+            .saturating_sub(lookahead);
 
         guarded_prune(&mut self.left_cache, lookahead, protected_ts);
         guarded_prune(&mut self.right_cache, lookahead, protected_ts);
@@ -369,25 +382,33 @@ where
             }
         };
 
-        if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
-            let left_updates = self.left.update(step);
-            for update in left_updates {
-                if check_relevance(update.timestamp, self.last_eval_time)
-                    && !self.left_cache.update_step(update.clone())
-                {
-                    self.left_cache.add_step(update);
-                }
+        let left_updates =
+            if self.left_signals_set.contains(&step.signal) || self.left_signals_set.is_empty() {
+                self.left.update(step)
+            } else {
+                Vec::new()
+            };
+
+        for update in &left_updates {
+            if check_relevance(update.timestamp, self.last_eval_time)
+                && !self.left_cache.update_step(update.clone())
+            {
+                self.left_cache.add_step(update.clone());
             }
         }
 
-        if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
-            let right_updates = self.right.update(step);
-            for update in right_updates {
-                if check_relevance(update.timestamp, self.last_eval_time)
-                    && !self.right_cache.update_step(update.clone())
-                {
-                    self.right_cache.add_step(update);
-                }
+        let right_updates =
+            if self.right_signals_set.contains(&step.signal) || self.right_signals_set.is_empty() {
+                self.right.update(step)
+            } else {
+                Vec::new()
+            };
+
+        for update in &right_updates {
+            if check_relevance(update.timestamp, self.last_eval_time)
+                && !self.right_cache.update_step(update.clone())
+            {
+                self.right_cache.add_step(update.clone());
             }
         }
 
@@ -406,8 +427,17 @@ where
         }
 
         let lookahead = self.get_max_lookahead();
-        self.left_cache.prune(lookahead);
-        self.right_cache.prune(lookahead);
+
+        // we protect up to the minimum of the last known timestamps minus lookahead
+        // we can safely prune it if both sides have verdict and are beyond lookahead
+        let protected_ts = self
+            .left_last_known
+            .timestamp
+            .min(self.right_last_known.timestamp)
+            .saturating_sub(lookahead);
+
+        guarded_prune(&mut self.left_cache, lookahead, protected_ts);
+        guarded_prune(&mut self.right_cache, lookahead, protected_ts);
 
         // Update last_eval_time based on strictness semantics
         if let Some(eval_time) = if IS_ROSI {

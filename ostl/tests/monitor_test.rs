@@ -531,12 +531,13 @@ mod tests {
 
             let mut all_results = Vec::new();
             for step in signal.clone() {
-                all_results.push(monitor.update(&step));
+                let output = monitor.update(&step);
                 println!(
                     "Step at {:?}, Monitor Output: {:?}",
                     step.timestamp,
-                    all_results.last().unwrap()
+                    &output
                 );
+                all_results.push(output.all_outputs());
             }
 
             assert_eq!(
@@ -646,7 +647,7 @@ mod tests {
             let output = monitor.update(&s);
             println!(
                 "Monitor output at {:?} with input: {:?}: \n {:?} \n",
-                &s.timestamp, s.value, output
+                &s.timestamp, s.value, output.all_outputs()
             );
         }
     }
@@ -665,19 +666,21 @@ mod tests {
 
                 // build a strict monitor for comparison
                 let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-                    .formula(formula)
+                    .formula(formula.clone())
                     .strategy(MonitoringStrategy::Incremental)
                     .evaluation_mode(EvaluationMode::Strict)
                     .build()
                     .unwrap();
 
-                println!("Testing formula: {} \n", monitor.specification_to_string());
+                println!("Testing formula:\n{} \n", formula.to_tree_string(2));
 
                 signal
                     .iter()
                     .flat_map(|s| {
-                        let rosi_outputs = monitor.update(&s);
-                        let strict_outputs = strict_monitor.update(&s);
+                        let rosi_output = monitor.update(&s);
+                        let strict_output = strict_monitor.update(&s);
+                        let rosi_outputs = rosi_output.all_outputs();
+                        let strict_outputs = strict_output.all_outputs();
 
                         // Validate strict vs RoSI for the first (final) strict step, if present
                         if let Some(strict_step) = strict_outputs.first() {
@@ -686,8 +689,8 @@ mod tests {
                                     .iter()
                                     .find(|step| step.timestamp == strict_step.timestamp)
                                     .expect(&format!(
-                                        "No RoSI step found for timestamp {:?}",
-                                        strict_step.timestamp
+                                        "No RoSI step found for timestamp {:?} at input step {:?}",
+                                        strict_step.timestamp, s.timestamp
                                     ));
                                 if let Some(rosi_iv) = rosi_step.value {
                                     assert_eq!(
@@ -741,9 +744,9 @@ mod tests {
                 let mut rosi_output: Vec<Step<Option<RobustnessInterval>>> = Vec::new();
 
                 for s in signal.clone() {
-                    let outputs = monitor.update(&s);
+                    let output = monitor.update(&s);
 
-                    for out_step in outputs.iter() {
+                    for out_step in output.outputs_iter() {
                         if let Some(iv) = out_step.value {
                             if let Some(prev) = last_intervals.get(&out_step.timestamp) {
                                 // New lower bound must be >= previous lower bound
@@ -768,7 +771,7 @@ mod tests {
                         }
                     }
 
-                    rosi_output.extend(outputs.clone());
+                    rosi_output.extend(output.all_outputs());
                 }
 
                 rosi_output
@@ -884,7 +887,7 @@ mod tests {
             .map(|i| Step::new("y", i as f64, Duration::from_secs(i)))
             .collect();
 
-        let mut monitor = StlMonitor::<f64, bool>::builder()
+        let mut monitor = StlMonitor::<f64, RobustnessInterval>::builder()
             .formula(stl! { (x > 0) && (y < 150) })
             .strategy(MonitoringStrategy::Incremental)
             .evaluation_mode(EvaluationMode::Eager)
@@ -900,7 +903,7 @@ mod tests {
             //     "Monitor output at {:?} with {:?}={:?}: \n {:?} \n",
             //     &step.timestamp, step.signal, step.value, output
             // );
-            outputs.push(output);
+            outputs.push(output.all_outputs());
         }
 
         // Check that we have outputs for all timestamps appearing in both x_steps and y_steps

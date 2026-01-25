@@ -144,11 +144,11 @@ fn evaluate_formula(
         let output_rosi = monitor_rosi.update(step);
         let output_strict = monitor_strict.update(step);
 
-        let (times_rosi, values_rosi) = format_output(&output_rosi, |s| {
+        let (times_rosi, values_rosi) = format_output(&output_rosi.all_outputs(), |s| {
             s.value.map(|iv| format_robustness_interval(iv))
         });
 
-        let (times_strict, values_strict) = format_output(&output_strict, |s| {
+        let (times_strict, values_strict) = format_output(&output_strict.all_outputs(), |s| {
             s.value.map(|v| format!("{}", v))
         });
 
