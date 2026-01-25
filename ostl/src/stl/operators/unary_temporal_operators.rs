@@ -7,19 +7,20 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
-fn pop_dominated_values<C, Y, F>(cache: &mut C, sub_step: &Step<Option<Y>>, combine_op: F)
+fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Option<Y>>, is_max: bool)
 where
     C: RingBufferTrait<Value = Option<Y>>,
-    Y: RobustnessSemantics,
-    F: Fn(Y, Y) -> Y,
+    Y: RobustnessSemantics + Debug,
 {
-    // lemires sliding min/max optimization
+    // Lemire's sliding min/max optimization with robust domination checks
     while let Some(back) = cache.get_back()
         && sub_step.value.is_some()
         && back.value.is_some()
-        && combine_op(sub_step.clone().value.unwrap(), back.clone().value.unwrap())
-            == sub_step.clone().value.unwrap()
-    // this really needs to not use clone()
+        && Y::prune_dominated(
+            back.value.clone().unwrap(),
+            sub_step.value.clone().unwrap(),
+            is_max,
+        )
     {
         // Short-circuit: new value dominates the back of the cache.
         cache.pop_back();
@@ -79,15 +80,32 @@ where
         if IS_ROSI {
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
+
+                // Try to update existing step
                 if !self.cache.update_step(sub_step.clone()) {
-                    // pop_dominated_values(&mut self.cache, &sub_step, Y::or);
-                    self.cache.add_step(sub_step);
+                    // Not found in cache.
+                    // Check if this is a NEW step or an OLD one that was pruned.
+                    let is_new_step = match self.cache.get_back() {
+                        Some(back) => sub_step.timestamp > back.timestamp,
+                        None => true,
+                    };
+
+                    if is_new_step {
+                        // New step: Safe to prune back and append (Lemire)
+                        pop_dominated_values(&mut self.cache, &sub_step, true); // true for Max (Eventually)
+                        self.cache.add_step(sub_step);
+                    } else {
+                        // Old step: It was previously pruned.
+                        // Because we use robust pruning, we know it is still dominated.
+                        // We safely ignore it.
+                    }
                 }
             }
         } else {
+            // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                pop_dominated_values(&mut self.cache, &sub_step, Y::or);
+                pop_dominated_values(&mut self.cache, &sub_step, true); // true for Max
                 self.cache.add_step(sub_step.clone());
             }
         }
@@ -224,7 +242,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
-    Y: RobustnessSemantics + 'static,
+    Y: RobustnessSemantics + Debug + 'static,
 {
     type Output = Y;
 
@@ -240,14 +258,30 @@ where
         if IS_ROSI {
             for sub_step in sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
+
                 if !self.cache.update_step(sub_step.clone()) {
-                    // pop_dominated_values(&mut self.cache, &sub_step, Y::and);
-                    self.cache.add_step(sub_step);
+                    // Not found in cache.
+                    // Check if this is a NEW step or an OLD one that was pruned.
+                    let is_new_step = match self.cache.get_back() {
+                        Some(back) => sub_step.timestamp > back.timestamp,
+                        None => true,
+                    };
+
+                    if is_new_step {
+                        // New step: Safe to prune back and append (Lemire)
+                        pop_dominated_values(&mut self.cache, &sub_step, false); // false for Min (Globally)
+                        self.cache.add_step(sub_step);
+                    } else {
+                        // Old step: It was previously pruned.
+                        // Because we use robust pruning, we know it is still dominated.
+                        // We safely ignore it.
+                    }
                 }
             }
         } else {
+            // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
-                pop_dominated_values(&mut self.cache, &sub_step, Y::and);
+                pop_dominated_values(&mut self.cache, &sub_step, false); // false for Min
                 self.eval_buffer.insert(sub_step.timestamp);
                 self.cache.add_step(sub_step.clone());
             }

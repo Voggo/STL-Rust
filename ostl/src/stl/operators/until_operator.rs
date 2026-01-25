@@ -241,8 +241,8 @@ where
         // 3. Prune the caches and remove completed tasks from the buffer.
         let protected_ts = self.eval_buffer.first().copied().unwrap_or(Duration::ZERO);
         let lookahead = self.max_lookahead;
-        self.left_cache.prune(lookahead);
-        self.right_cache.prune(lookahead);
+        guarded_prune(&mut self.left_cache, lookahead, protected_ts);
+        guarded_prune(&mut self.right_cache, lookahead, protected_ts);
 
         for t in tasks_to_remove {
             // println!("Removing completed task at t_eval={:?}", t);
