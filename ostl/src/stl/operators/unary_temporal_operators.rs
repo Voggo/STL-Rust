@@ -125,8 +125,20 @@ where
             let final_value: Option<Y>;
             let mut remove_task = false;
 
+            let t = if IS_ROSI {
+                self.cache
+                    .get_back()
+                    .map(|s| s.timestamp)
+                    .unwrap_or(Duration::ZERO)
+            } else {
+                current_time
+            };
+
+            // println!("t: {:?}, current_time: {:?}, t_eval: {:?}, max_lookahead: {:?}, windowed_max_value: {:?}",
+            //     t, current_time, t_eval, self.max_lookahead, windowed_max_value);
+
             // state-based logic
-            if current_time >= t_eval + self.max_lookahead {
+            if t >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_max_value);
                 remove_task = true;
@@ -274,8 +286,18 @@ where
             let final_value: Option<Y>;
             let mut remove_task = false;
 
+            // we can finalize when cache has a ver
+            let t = if IS_ROSI {
+                self.cache
+                    .get_back()
+                    .map(|s| s.timestamp)
+                    .unwrap_or(Duration::ZERO)
+            } else {
+                current_time
+            };
+
             // state-based logic
-            if current_time >= t_eval + self.max_lookahead {
+            if t >= t_eval + self.max_lookahead {
                 // Case 1: Full window has passed. This is a final, "closed" value.
                 final_value = Some(windowed_min_value);
                 remove_task = true;
