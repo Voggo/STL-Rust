@@ -7,6 +7,7 @@ use crate::ring_buffer::Step;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterpolationStrategy {
+    None,        // No interpolation
     ZeroOrderHold, // formula: v = v0
     Linear,        // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
 }
@@ -50,6 +51,12 @@ where
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
     pub fn evaluate(&mut self, current_step: Step<T>) {
+
+        if self.strategy == InterpolationStrategy::None {
+            self.pending.push_back(current_step);
+            return;
+        }
+
         let signal_id = current_step.signal;
         let current_time = current_step.timestamp;
         let current_value = current_step.value;
@@ -74,6 +81,7 @@ where
 
                 for t in missed_timestamps {
                     let interp_val = match self.strategy {
+                        InterpolationStrategy::None => current_value, // this will never be hit
                         InterpolationStrategy::ZeroOrderHold => prev_val,
                         InterpolationStrategy::Linear => {
                             let dt_total = current_time.as_secs_f64() - prev_time.as_secs_f64();

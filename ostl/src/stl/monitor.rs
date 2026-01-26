@@ -1,6 +1,7 @@
 use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{
-    RobustnessInterval, RobustnessSemantics, StlOperatorAndSignalIdentifier, StlOperatorTrait,
+    RobustnessInterval, RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
+    StlOperatorTrait,
 };
 use crate::stl::formula_definition::FormulaDefinition;
 use crate::stl::naive_operators::{StlFormula, StlOperator};
@@ -63,8 +64,11 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "MonitorOutput {{")?;
-        writeln!(f, "  input: signal=\"{}\", timestamp={:?}, value={}",
-            self.input_signal, self.input_timestamp, self.input_value)?;
+        writeln!(
+            f,
+            "  input: signal=\"{}\", timestamp={:?}, value={}",
+            self.input_signal, self.input_timestamp, self.input_value
+        )?;
         if self.evaluations.is_empty() {
             writeln!(f, "  evaluations: (none)")?;
         } else {
@@ -73,17 +77,27 @@ where
                 let is_last = i == self.evaluations.len() - 1;
                 let prefix = if is_last { "└──" } else { "├──" };
                 let cont = if is_last { "   " } else { "│  " };
-                writeln!(f, "  {} sync_step: signal=\"{}\", timestamp={:?}, value={}",
-                    prefix, eval.sync_step.signal, eval.sync_step.timestamp, eval.sync_step.value)?;
+                writeln!(
+                    f,
+                    "  {} sync_step: signal=\"{}\", timestamp={:?}, value={}",
+                    prefix, eval.sync_step.signal, eval.sync_step.timestamp, eval.sync_step.value
+                )?;
                 if eval.outputs.is_empty() {
                     writeln!(f, "  {}     outputs: (none)", cont)?;
                 } else {
                     writeln!(f, "  {}     outputs:", cont)?;
                     for (j, output) in eval.outputs.iter().enumerate() {
                         let out_is_last = j == eval.outputs.len() - 1;
-                        let out_prefix = if out_is_last { "└──" } else { "├──" };
-                        writeln!(f, "  {}       {} t={:?} → {:?}",
-                            cont, out_prefix, output.timestamp, output.value)?;
+                        let out_prefix = if out_is_last {
+                            "└──"
+                        } else {
+                            "├──"
+                        };
+                        writeln!(
+                            f,
+                            "  {}       {} t={:?} → {:?}",
+                            cont, out_prefix, output.timestamp, output.value
+                        )?;
                     }
                 }
             }
@@ -106,8 +120,11 @@ where
     Y: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SyncStepResult {{ sync_step: {:?}, outputs: {:?} }}",
-            self.sync_step, self.outputs)
+        write!(
+            f,
+            "SyncStepResult {{ sync_step: {:?}, outputs: {:?} }}",
+            self.sync_step, self.outputs
+        )
     }
 }
 
@@ -279,7 +296,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             "RobustnessInterval"
         };
 
-        let formula_def = self
+        let mut formula_def = self
             .formula
             .clone()
             .ok_or("Formula definition is required")?;
@@ -291,19 +308,25 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             }
             (MonitoringStrategy::Incremental, _, _) => {
                 let mut root_operator =
-                    build_incremental_operator::<T, Y>(formula_def, self.evaluation_mode);
+                    build_incremental_operator::<T, Y>(formula_def.clone(), self.evaluation_mode);
                 root_operator.get_signal_identifiers();
                 root_operator
             }
             (MonitoringStrategy::Naive, EvaluationMode::Strict, _) => {
-                self.build_naive_operator(formula_def, self.evaluation_mode)
+                self.build_naive_operator(formula_def.clone(), self.evaluation_mode)
             }
             (_, _, _) => {
                 return Err("Chosen strategy and evaluation mode combination is not supported");
             }
         };
 
-        let synchronizer = Synchronizer::new(self.interpolation_strategy);
+        let synchronizer = if formula_def.get_signal_identifiers().len() <= 1 {
+            // No need for synchronization if only one signal is involved
+            eprintln!("Warning: Only one signal involved, synchronization of signals is disabled for performance.");
+            Synchronizer::new(InterpolationStrategy::None)
+        } else {
+            Synchronizer::new(self.interpolation_strategy)
+        };
 
         Ok(StlMonitor {
             root_operator,

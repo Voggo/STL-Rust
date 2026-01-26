@@ -1,4 +1,4 @@
-use crate::stl::core::TimeInterval;
+use crate::stl::core::{SignalIdentifier, TimeInterval};
 
 use std::fmt::Display;
 
@@ -53,6 +53,41 @@ impl Display for FormulaDefinition {
                 FormulaDefinition::LessThan(s, val) => format!("{s} < {val}"),
             }
         )
+    }
+}
+
+impl SignalIdentifier for FormulaDefinition {
+    fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
+        let mut signals = std::collections::HashSet::new();
+        fn collect_signals(
+            node: &FormulaDefinition,
+            signals: &mut std::collections::HashSet<&'static str>,
+        ) {
+            match node {
+                FormulaDefinition::GreaterThan(s, _) | FormulaDefinition::LessThan(s, _) => {
+                    signals.insert(*s);
+                }
+                FormulaDefinition::True | FormulaDefinition::False => {}
+                FormulaDefinition::Not(f) => {
+                    collect_signals(f, signals);
+                }
+                FormulaDefinition::And(f1, f2)
+                | FormulaDefinition::Or(f1, f2)
+                | FormulaDefinition::Implies(f1, f2) => {
+                    collect_signals(f1, signals);
+                    collect_signals(f2, signals);
+                }
+                FormulaDefinition::Eventually(_, f) | FormulaDefinition::Globally(_, f) => {
+                    collect_signals(f, signals);
+                }
+                FormulaDefinition::Until(_, f1, f2) => {
+                    collect_signals(f1, signals);
+                    collect_signals(f2, signals);
+                }
+            }
+        }
+        collect_signals(self, &mut signals);
+        signals
     }
 }
 
