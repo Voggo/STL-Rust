@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
       fail-fast: false
 
     steps:
@@ -50,7 +50,9 @@ jobs:
         maturin build --release
     
     - name: Install package
-      run: pip install ostl-python/target/wheels/*.whl
+      shell: bash
+      run: |
+        pip install ostl-python/target/wheels/*.whl
     
     - name: Run tests
       run: |
