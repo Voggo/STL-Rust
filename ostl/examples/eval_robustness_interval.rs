@@ -1,13 +1,11 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessInterval;
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use ostl::stl::formula_definition::FormulaDefinition;
-use std::time::Duration;
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
-
-
+use std::time::Duration;
 
 // Helper to read a single signal CSV into a Vec<Step<f64>>
 fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
@@ -153,8 +151,16 @@ fn evaluate_formula(
         });
 
         let input_time_secs = step.timestamp.as_secs();
-        writeln!(file_rosi, "{},\"{}\",\"{}\"", input_time_secs, times_rosi, values_rosi)?;
-        writeln!(file_strict, "{},\"{}\",\"{}\"", input_time_secs, times_strict, values_strict)?;
+        writeln!(
+            file_rosi,
+            "{},\"{}\",\"{}\"",
+            input_time_secs, times_rosi, values_rosi
+        )?;
+        writeln!(
+            file_strict,
+            "{},\"{}\",\"{}\"",
+            input_time_secs, times_strict, values_strict
+        )?;
     }
 
     println!(

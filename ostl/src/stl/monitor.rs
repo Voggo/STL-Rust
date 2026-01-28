@@ -322,7 +322,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
 
         let synchronizer = if formula_def.get_signal_identifiers().len() <= 1 {
             // No need for synchronization if only one signal is involved
-            eprintln!("Warning: Only one signal involved, synchronization of signals is disabled for performance.");
+            eprintln!(
+                "Warning: Only one signal involved, synchronization of signals is disabled for performance."
+            );
             Synchronizer::new(InterpolationStrategy::None)
         } else {
             Synchronizer::new(self.interpolation_strategy)

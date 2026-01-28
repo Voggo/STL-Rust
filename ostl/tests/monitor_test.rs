@@ -534,8 +534,7 @@ mod tests {
                 let output = monitor.update(&step);
                 println!(
                     "Step at {:?}, Monitor Output: {:?}",
-                    step.timestamp,
-                    &output
+                    step.timestamp, &output
                 );
                 all_results.push(output.all_outputs());
             }
@@ -647,7 +646,9 @@ mod tests {
             let output = monitor.update(&s);
             println!(
                 "Monitor output at {:?} with input: {:?}: \n {:?} \n",
-                &s.timestamp, s.value, output.all_outputs()
+                &s.timestamp,
+                s.value,
+                output.all_outputs()
             );
         }
     }

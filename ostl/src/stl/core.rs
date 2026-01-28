@@ -313,7 +313,6 @@ impl RobustnessSemantics for RobustnessInterval {
         // old = (2, 2), new = (-2, -2), is_max = false
         // returns true: old can be discarded since it can never be smaller than new and we want the worst only
 
-
         if is_max {
             // Max/Eventually: Discard old if it can never exceed new.
             // We need new's lower bound to be >= old's upper bound.

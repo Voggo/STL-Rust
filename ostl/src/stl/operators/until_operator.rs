@@ -174,9 +174,7 @@ where
                 };
 
                 // 3. Eager falsification check: if phi has become false, short-circuit
-                if IS_EAGER
-                    && robustness_phi_left == Y::atomic_false()
-                    && t_max_combined >= t_eval
+                if IS_EAGER && robustness_phi_left == Y::atomic_false() && t_max_combined >= t_eval
                 {
                     falsified = true;
                     max_robustness_vec.push(Y::atomic_false());
@@ -480,7 +478,10 @@ mod tests {
                 println!("  Globally t={:?}:   {:?}", output.timestamp, output.value);
             }
             for output in outputs_eventually {
-                println!("  Eventually t={:?}:   {:?}", output.timestamp, output.value);
+                println!(
+                    "  Eventually t={:?}:   {:?}",
+                    output.timestamp, output.value
+                );
             }
             for output in outputs {
                 println!("  Until t={:?}:   {:?}", output.timestamp, output.value);

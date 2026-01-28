@@ -46,7 +46,6 @@ where
                 r_curr = r_iter.next();
                 *right_last_known = Step::new("", r.value, r.timestamp);
             }
-
         }
 
         return output_robustness;

@@ -1,9 +1,9 @@
 use ostl::ring_buffer::Step;
 
-use ostl::stl::core::{TimeInterval};
+use ostl::stl::core::TimeInterval;
 
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use ostl::stl::formula_definition::FormulaDefinition;
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 
 use rand::rng;
 use rand::rngs::ThreadRng;
@@ -304,8 +304,6 @@ fn main() {
         timestamp_secs: f64,
     }
 
-    
-
     let mut signal_generator_x = SignalStepGenerator::new(
         "x",
         0.0,
@@ -339,7 +337,11 @@ fn main() {
         for out in result_x.outputs_iter() {
             let entry = OutputEntry {
                 // prefix signal name so the plot can distinguish monitors
-                signal: format!("spec1_/{}/{}", monitor.specification_to_string(), out.signal),
+                signal: format!(
+                    "spec1_/{}/{}",
+                    monitor.specification_to_string(),
+                    out.signal
+                ),
                 value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
@@ -347,7 +349,11 @@ fn main() {
         }
         for out in result_evt.outputs_iter() {
             let entry = OutputEntry {
-                signal: format!("spec2_/{}/{}", monitor_eventually.specification_to_string(), out.signal),
+                signal: format!(
+                    "spec2_/{}/{}",
+                    monitor_eventually.specification_to_string(),
+                    out.signal
+                ),
                 value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
