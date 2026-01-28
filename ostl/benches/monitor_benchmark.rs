@@ -27,11 +27,11 @@ where
         if let Ok(value_str) = line {
             // we split the line by the comma and take the second element
             let columns: Vec<&str> = value_str.split(',').collect();
-            if columns.len() == 2 {
-                if let Ok(val) = columns[1].trim().parse::<f64>() {
-                    let t = Duration::from_secs_f64(i as f64);
-                    signal.push(Step::new("x", val, t));
-                }
+            if columns.len() == 2
+                && let Ok(val) = columns[1].trim().parse::<f64>()
+            {
+                let t = Duration::from_secs_f64(i as f64);
+                signal.push(Step::new("x", val, t));
             }
         }
     }

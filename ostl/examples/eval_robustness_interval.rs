@@ -20,11 +20,11 @@ where
         if let Ok(value_str) = line {
             // we split the line by the comma and take the second element
             let columns: Vec<&str> = value_str.split(',').collect();
-            if columns.len() == 2 {
-                if let Ok(val) = columns[1].trim().parse::<f64>() {
-                    let t = Duration::from_secs_f64(i as f64);
-                    signal.push(Step::new("x", val, t));
-                }
+            if columns.len() == 2
+                && let Ok(val) = columns[1].trim().parse::<f64>()
+            {
+                let t = Duration::from_secs_f64(i as f64);
+                signal.push(Step::new("x", val, t));
             }
         }
     }
@@ -72,9 +72,7 @@ fn evaluate_formula(
 
     println!(
         "Evaluating formula{}:\n {}\n with signal size {}...",
-        formula_id,
-        formula.to_string(),
-        signal_size
+        formula_id, formula, signal_size
     );
 
     // Build monitors
@@ -143,7 +141,7 @@ fn evaluate_formula(
         let output_strict = monitor_strict.update(step);
 
         let (times_rosi, values_rosi) = format_output(&output_rosi.all_outputs(), |s| {
-            s.value.map(|iv| format_robustness_interval(iv))
+            s.value.map(format_robustness_interval)
         });
 
         let (times_strict, values_strict) = format_output(&output_strict.all_outputs(), |s| {

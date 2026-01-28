@@ -16,29 +16,19 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 /// Defines the monitoring strategy.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MonitoringStrategy {
     Naive,
+    #[default]
     Incremental,
 }
 
-impl Default for MonitoringStrategy {
-    fn default() -> Self {
-        MonitoringStrategy::Incremental
-    }
-}
-
 /// Defines the evaluation mode
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum EvaluationMode {
     Eager,
+    #[default]
     Strict,
-}
-
-impl Default for EvaluationMode {
-    fn default() -> Self {
-        EvaluationMode::Strict
-    }
 }
 
 /// Represents the output of a single monitor update operation.

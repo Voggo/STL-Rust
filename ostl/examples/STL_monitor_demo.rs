@@ -66,24 +66,23 @@ impl SignalStepGenerator {
 
     fn next_step(&mut self) -> Step<f64> {
         // If an anomaly is scheduled and time has been reached, update distribution once
-        if !self.anomaly_applied {
-            if let Some(at) = self.anomaly_at {
-                if self.current_time >= at {
-                    // compute new parameters
-                    let new_mean = self.original_mean + self.anomaly_mean_shift;
-                    let new_std = (self.original_std * self.anomaly_std_multiplier).max(1e-12);
-                    self.normal_dist = Normal::new(new_mean, new_std).unwrap();
-                    self.anomaly_applied = true;
-                    println!(
-                        "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
-                        self.current_time,
-                        new_mean,
-                        self.anomaly_mean_shift,
-                        new_std,
-                        self.anomaly_std_multiplier
-                    );
-                }
-            }
+        if !self.anomaly_applied
+            && let Some(at) = self.anomaly_at
+            && self.current_time >= at
+        {
+            // compute new parameters
+            let new_mean = self.original_mean + self.anomaly_mean_shift;
+            let new_std = (self.original_std * self.anomaly_std_multiplier).max(1e-12);
+            self.normal_dist = Normal::new(new_mean, new_std).unwrap();
+            self.anomaly_applied = true;
+            println!(
+                "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
+                self.current_time,
+                new_mean,
+                self.anomaly_mean_shift,
+                new_std,
+                self.anomaly_std_multiplier
+            );
         }
 
         let value = self.normal_dist.sample(&mut self.rng);
