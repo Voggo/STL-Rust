@@ -409,19 +409,19 @@ mod tests {
 
     #[test]
     fn bool_semantics_basic() {
-        assert!(<bool as RobustnessSemantics>::and(true, false));
+        assert!(!<bool as RobustnessSemantics>::and(true, false));
         assert!(<bool as RobustnessSemantics>::or(true, false));
-        assert!(<bool as RobustnessSemantics>::not(true));
-        assert!(<bool as RobustnessSemantics>::implies(true, false));
+        assert!(!<bool as RobustnessSemantics>::not(true));
+        assert!(!<bool as RobustnessSemantics>::implies(true, false));
 
-        assert!(<bool as RobustnessSemantics>::eventually_identity());
+        assert!(!<bool as RobustnessSemantics>::eventually_identity());
         assert!(<bool as RobustnessSemantics>::globally_identity());
 
         assert!(<bool as RobustnessSemantics>::atomic_true());
-        assert!(<bool as RobustnessSemantics>::atomic_false());
+        assert!(!<bool as RobustnessSemantics>::atomic_false());
 
         assert!(<bool as RobustnessSemantics>::atomic_greater_than(5.0, 3.0));
-        assert!(<bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0));
+        assert!(!<bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0));
     }
 
     #[test]
