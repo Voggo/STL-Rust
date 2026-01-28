@@ -41,13 +41,16 @@ jobs:
       with:
         workspaces: ostl-python
     
-    - name: Install maturin
+    - name: Install maturin and pytest
       run: pip install maturin pytest
     
     - name: Build Python package
       run: |
         cd ostl-python
-        maturin develop --release
+        maturin build --release
+    
+    - name: Install package
+      run: pip install ostl-python/target/wheels/*.whl
     
     - name: Run tests
       run: |

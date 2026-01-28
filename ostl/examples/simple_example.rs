@@ -2,27 +2,14 @@ use ostl::ring_buffer::Step;
 use ostl::stl;
 use ostl::stl::core::RobustnessInterval;
 use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
-use std::f64::consts::PI;
 use std::time::Duration;
-
-fn sinusoid() -> Vec<Step<f64>> {
-    const N: usize = 51;
-    (0..N)
-        .map(|i| {
-            let timestamp = Duration::from_secs(i as u64);
-            let t = i as f64 / (N as f64 - 1.0);
-            let value = 10.0 * (2.0 * PI * t).sin();
-            Step::new("x", value, timestamp)
-        })
-        .collect()
-}
 
 fn main() {
     // let f = stl!(
     //     eventually [0, 2] (x > 2) or eventually [0, 3] (y > 0)
     // );
     let f = stl!(
-        G[0,2] (x > 0 and y <10)
+        x > 0 and x <10
     );
     // let f = stl!(
     //     (F[0, 10]((F[0, 10](x > 0)) && (F[0, 10](x > 0)))) && (F[0, 10]((F[0, 10](x > 0)) && (F[0, 10](x > 0))))
@@ -54,7 +41,7 @@ fn main() {
     for step in x {
         // println!("INPUT STEP AT TIME: {:?} ({:?})", step.timestamp, step.signal);
         let monitor_output = monitor.update(&step);
-        println!("{:?}", monitor_output);
+        println!("{:?}", monitor_output.all_outputs());
         println!("-------------------------");
     }
 }
