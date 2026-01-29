@@ -1,17 +1,15 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use ostl::stl::formula_definition::FormulaDefinition;
-use std::time::Duration;
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use std::env;
+use std::time::Duration;
 
 // WARNING: UNUSED FILE
-
 
 // This file is a simple binary used in combination with heaptrack to monitor memory usage
 // of different monitoring strategies and evaluation modes.
 // The output is hard to use so there is also a more integrated benchmarking in benches/monitor_benchmark.rs
-
 
 // ---
 // Copy-paste your formula/signal fixtures here
@@ -81,7 +79,6 @@ fn _formula_2() -> FormulaDefinition {
         formula = FormulaDefinition::And(Box::new(formula), Box::new(g_op_2));
     }
     formula
-
 }
 
 // IMPORTANT: Create a *long* signal for meaningful benchmarks
@@ -163,9 +160,7 @@ fn main() {
         None => EvaluationMode::Strict,
     };
 
-    println!(
-        "Using strategy: {strategy:?}, evaluation_mode: {evaluation_mode:?}"
-    );
+    println!("Using strategy: {strategy:?}, evaluation_mode: {evaluation_mode:?}");
 
     let formula = formula_1();
     let signal_size = 1000; // Size of the signal for benchmarking

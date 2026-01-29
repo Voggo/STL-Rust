@@ -105,7 +105,7 @@ where
             // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                pop_dominated_values(&mut self.cache, &sub_step, true); // true for Max
+                pop_dominated_values(&mut self.cache, sub_step, true); // true for Max
                 self.cache.add_step(sub_step.clone());
             }
         }
@@ -281,7 +281,7 @@ where
         } else {
             // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
-                pop_dominated_values(&mut self.cache, &sub_step, false); // false for Min
+                pop_dominated_values(&mut self.cache, sub_step, false); // false for Min
                 self.eval_buffer.insert(sub_step.timestamp);
                 self.cache.add_step(sub_step.clone());
             }

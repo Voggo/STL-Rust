@@ -1,8 +1,8 @@
-use std::fmt::Display;
-use std::time::Duration;
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
 use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use std::fmt::Display;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 
@@ -34,10 +34,10 @@ where
     C: RingBufferTrait<Value = T> + 'static,
     Y: RobustnessSemantics + 'static,
 {
-     formula: StlOperator,
-     signal: C,
-     last_eval_time: Option<Duration>,
-     _phantom: std::marker::PhantomData<Y>,
+    formula: StlOperator,
+    signal: C,
+    last_eval_time: Option<Duration>,
+    _phantom: std::marker::PhantomData<Y>,
 }
 
 impl<T, C, Y> StlFormula<T, C, Y>
@@ -130,12 +130,8 @@ impl StlOperator {
         match self {
             StlOperator::True => self.eval_true(t_eval),
             StlOperator::False => self.eval_false(t_eval),
-            StlOperator::GreaterThan(name, c) => {
-                self.eval_greater_than(*c, name, signal, t_eval)
-            }
-            StlOperator::LessThan(name, c) => {
-                self.eval_less_than(*c, name, signal, t_eval)
-            }
+            StlOperator::GreaterThan(name, c) => self.eval_greater_than(*c, name, signal, t_eval),
+            StlOperator::LessThan(name, c) => self.eval_less_than(*c, name, signal, t_eval),
             StlOperator::Not(phi) => self.eval_not(phi, signal, t_eval),
             StlOperator::And(phi, psi) => self.eval_and(phi, psi, signal, t_eval),
             StlOperator::Or(phi, psi) => self.eval_or(phi, psi, signal, t_eval),

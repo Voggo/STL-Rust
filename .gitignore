@@ -5,3 +5,4 @@ eval_results/
 plots/
 *_log.txt
 .DS_Store
+.vscode/

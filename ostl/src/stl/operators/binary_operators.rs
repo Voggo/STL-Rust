@@ -46,7 +46,6 @@ where
                 r_curr = r_iter.next();
                 *right_last_known = Step::new("", r.value, r.timestamp);
             }
-
         }
 
         return output_robustness;
@@ -82,16 +81,10 @@ where
                     let l_val = l.value;
 
                     // Eager Short-Circuit Check
-                    if IS_EAGER {
-                        if let (Some(lv), Some(rl)) = (l_val, right_last_known.value) {
-                            output_robustness.push(Step::new(
-                                "output",
-                                Some(combine_op(lv, rl)),
-                                l_ts,
-                            ));
-                            *left_last_known = left_cache.pop_front().unwrap();
-                            continue;
-                        }
+                    if IS_EAGER && let (Some(lv), Some(rl)) = (l_val, right_last_known.value) {
+                        output_robustness.push(Step::new("output", Some(combine_op(lv, rl)), l_ts));
+                        *left_last_known = left_cache.pop_front().unwrap();
+                        continue;
                     }
 
                     // In Strict mode (and Eager fall-through), we discard the lagging step

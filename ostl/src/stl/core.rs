@@ -313,7 +313,6 @@ impl RobustnessSemantics for RobustnessInterval {
         // old = (2, 2), new = (-2, -2), is_max = false
         // returns true: old can be discarded since it can never be smaller than new and we want the worst only
 
-
         if is_max {
             // Max/Eventually: Discard old if it can never exceed new.
             // We need new's lower bound to be >= old's upper bound.
@@ -410,25 +409,19 @@ mod tests {
 
     #[test]
     fn bool_semantics_basic() {
-        assert_eq!(<bool as RobustnessSemantics>::and(true, false), false);
-        assert_eq!(<bool as RobustnessSemantics>::or(true, false), true);
-        assert_eq!(<bool as RobustnessSemantics>::not(true), false);
-        assert_eq!(<bool as RobustnessSemantics>::implies(true, false), false);
+        assert!(!<bool as RobustnessSemantics>::and(true, false));
+        assert!(<bool as RobustnessSemantics>::or(true, false));
+        assert!(!<bool as RobustnessSemantics>::not(true));
+        assert!(!<bool as RobustnessSemantics>::implies(true, false));
 
-        assert_eq!(<bool as RobustnessSemantics>::eventually_identity(), false);
-        assert_eq!(<bool as RobustnessSemantics>::globally_identity(), true);
+        assert!(!<bool as RobustnessSemantics>::eventually_identity());
+        assert!(<bool as RobustnessSemantics>::globally_identity());
 
-        assert_eq!(<bool as RobustnessSemantics>::atomic_true(), true);
-        assert_eq!(<bool as RobustnessSemantics>::atomic_false(), false);
+        assert!(<bool as RobustnessSemantics>::atomic_true());
+        assert!(!<bool as RobustnessSemantics>::atomic_false());
 
-        assert_eq!(
-            <bool as RobustnessSemantics>::atomic_greater_than(5.0, 3.0),
-            true
-        );
-        assert_eq!(
-            <bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0),
-            false
-        );
+        assert!(<bool as RobustnessSemantics>::atomic_greater_than(5.0, 3.0));
+        assert!(!<bool as RobustnessSemantics>::atomic_less_than(2.0, 1.0));
     }
 
     #[test]

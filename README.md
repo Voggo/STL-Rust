@@ -1,4 +1,9 @@
 # Signal Temporal Logic (STL) in Rust
+
+[![Rust CI](https://github.com/Voggo/STL-Rust/workflows/Rust%20CI/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/rust.yml)
+[![Python Tests](https://github.com/Voggo/STL-Rust/workflows/Python%20Tests/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/python-tests.yml)
+[![codecov](https://codecov.io/gh/Voggo/STL-Rust/branch/main/graph/badge.svg)](https://codecov.io/gh/Voggo/STL-Rust)
+
 A Rust library for working with Signal Temporal Logic (STL), a formalism for specifying and reasoning about temporal properties of real-valued signals. This was made as part of a Research and Development (R&D) project at Aarhus University.
 
 **Students**

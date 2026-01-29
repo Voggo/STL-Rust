@@ -150,19 +150,15 @@ impl FormulaDefinition {
                     } else {
                         format!("{}│   ", prefix)
                     }
-                } else {
-                    if is_last {
-                        format!("{}    ", prefix)
-                    } else {
-                        format!("{}│   ", prefix)
-                    }
-                }
-            } else {
-                if is_last {
+                } else if is_last {
                     format!("{}    ", prefix)
                 } else {
                     format!("{}│   ", prefix)
                 }
+            } else if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
             };
 
             match node {
