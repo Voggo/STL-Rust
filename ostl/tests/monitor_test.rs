@@ -5,7 +5,7 @@ mod tests {
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::formula_definition::FormulaDefinition;
     use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
-    use ostl::synchronizer::InterpolationStrategy;
+    use ostl::synchronizer::SynchronizationStrategy;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
@@ -531,7 +531,7 @@ mod tests {
             vec![Step::new("output", Some(false), Duration::from_secs(3))],
             vec![Step::new("output", Some(false), Duration::from_secs(4))],
             vec![Step::new("output", Some(false), Duration::from_secs(5))],
-            vec![Step::new("output", Some(false), Duration::from_secs(6))]
+            vec![Step::new("output", Some(false), Duration::from_secs(6))],
         ]
     }
 
@@ -553,11 +553,9 @@ mod tests {
             vec![
                 Step::new("output", Some(true), Duration::from_secs(5)),
                 Step::new("output", Some(true), Duration::from_secs(6)),
-                
             ],
         ]
     }
-
 
     /// This helper function contains the actual test logic.
     /// It is called by the `rstest` runners below.
@@ -921,8 +919,11 @@ mod tests {
 
     #[rstest]
     fn test_interpolation(
-        #[values(InterpolationStrategy::ZeroOrderHold, InterpolationStrategy::Linear)]
-        interpolation_strategy: InterpolationStrategy,
+        #[values(
+            SynchronizationStrategy::ZeroOrderHold,
+            SynchronizationStrategy::Linear
+        )]
+        interpolation_strategy: SynchronizationStrategy,
     ) {
         // x_steps are even timestamps from 0 to 100
         let x_steps: Vec<Step<f64>> = (0..101)
@@ -939,7 +940,7 @@ mod tests {
             .formula(stl! { (x > 0) && (y < 150) })
             .strategy(MonitoringStrategy::Incremental)
             .evaluation_mode(EvaluationMode::Eager)
-            .interpolation_strategy(interpolation_strategy)
+            .synchronization_strategy(interpolation_strategy)
             .build()
             .unwrap();
 

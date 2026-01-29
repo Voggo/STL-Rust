@@ -21,6 +21,7 @@ fn main() {
         .formula(f)
         .evaluation_mode(EvaluationMode::Eager)
         .strategy(MonitoringStrategy::Incremental)
+        .synchronization_strategy(ostl::synchronizer::SynchronizationStrategy::ZeroOrderHold)
         .build()
         .unwrap();
     let x = vec![

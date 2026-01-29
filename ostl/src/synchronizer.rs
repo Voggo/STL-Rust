@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::ring_buffer::Step;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum InterpolationStrategy {
+pub enum SynchronizationStrategy {
     None, // No interpolation
     #[default]
     ZeroOrderHold, // formula: v = v0
@@ -24,7 +24,7 @@ impl Interpolatable for f64 {}
 /// It maintains a timeline of all timestamps and the last known step for each active signal.
 /// A signal is considered active if it has received at least one step.
 pub struct Synchronizer<T> {
-    strategy: InterpolationStrategy,
+    strategy: SynchronizationStrategy,
     last_steps: HashMap<&'static str, Step<T>>,
     timeline: BTreeSet<Duration>,
     pub pending: VecDeque<Step<T>>, // Exposed so consumers can drain it
@@ -34,7 +34,7 @@ impl<T> Synchronizer<T>
 where
     T: Interpolatable,
 {
-    pub fn new(strategy: InterpolationStrategy) -> Self {
+    pub fn new(strategy: SynchronizationStrategy) -> Self {
         Self {
             strategy,
             last_steps: HashMap::new(),
@@ -46,7 +46,7 @@ where
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
     pub fn evaluate(&mut self, current_step: Step<T>) {
-        if self.strategy == InterpolationStrategy::None {
+        if self.strategy == SynchronizationStrategy::None {
             self.pending.push_back(current_step);
             return;
         }
@@ -75,9 +75,9 @@ where
 
                 for t in missed_timestamps {
                     let interp_val = match self.strategy {
-                        InterpolationStrategy::None => current_value, // this will never be hit
-                        InterpolationStrategy::ZeroOrderHold => prev_val,
-                        InterpolationStrategy::Linear => {
+                        SynchronizationStrategy::None => current_value, // this will never be hit
+                        SynchronizationStrategy::ZeroOrderHold => prev_val,
+                        SynchronizationStrategy::Linear => {
                             let dt_total = current_time.as_secs_f64() - prev_time.as_secs_f64();
                             let dt_curr = t.as_secs_f64() - prev_time.as_secs_f64();
                             let alpha = if dt_total != 0.0 {
@@ -156,7 +156,7 @@ mod tests {
                 timestamp: Duration::from_secs(5),
             },
         ];
-        let mut sync = Synchronizer::new(InterpolationStrategy::ZeroOrderHold);
+        let mut sync = Synchronizer::new(SynchronizationStrategy::ZeroOrderHold);
         let mut result = Vec::new();
         for step in &steps {
             sync.evaluate(step.clone());
@@ -198,7 +198,7 @@ mod tests {
                 timestamp: Duration::from_secs(4),
             },
         ];
-        let mut sync = Synchronizer::new(InterpolationStrategy::Linear);
+        let mut sync = Synchronizer::new(SynchronizationStrategy::Linear);
         let mut result = Vec::new();
         for step in &steps {
             sync.evaluate(step.clone());

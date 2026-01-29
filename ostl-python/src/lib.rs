@@ -2,7 +2,7 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{EvaluationMode, MonitorOutput, MonitoringStrategy, StlMonitor};
-use ostl::synchronizer::InterpolationStrategy;
+use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
 use std::time::Duration;
@@ -250,7 +250,7 @@ struct Monitor {
     semantics: String,
     strategy: String,
     mode: String,
-    interpolation: String,
+    synchronization: String,
 }
 
 #[pymethods]
@@ -274,8 +274,8 @@ impl Monitor {
     ///     The evaluation mode:
     ///     - "eager": produces verdicts as soon as possible (default for robustness)
     ///     - "strict": waits for complete information (default for qualitative/quantitative)
-    /// interpolation : str, optional
-    ///     The signal interpolation method:
+    /// synchronization : str, optional
+    ///     The signal synchronization method:
     ///     - "zoh": zero-order hold (default)
     ///     - "linear": linear interpolation
     ///     - "none": no interpolation
@@ -283,13 +283,13 @@ impl Monitor {
     /// --------
     /// Monitor
     #[new]
-    #[pyo3(signature = (formula, semantics="qualitative", strategy="incremental", mode=None, interpolation="zoh"))]
+    #[pyo3(signature = (formula, semantics="qualitative", strategy="incremental", mode=None, synchronization="zoh"))]
     fn new(
         formula: &Formula,
         semantics: &str,
         strategy: &str,
         mode: Option<&str>,
-        interpolation: &str,
+        synchronization: &str,
     ) -> PyResult<Self> {
         // Parse strategy
         let monitoring_strategy = match strategy {
@@ -320,13 +320,13 @@ impl Monitor {
             }
         };
 
-        let interpolation_strategy = match interpolation {
-            "zoh" => InterpolationStrategy::ZeroOrderHold,
-            "linear" => InterpolationStrategy::Linear,
-            "none" => InterpolationStrategy::None,
+        let synchronization_strategy = match synchronization {
+            "zoh" => SynchronizationStrategy::ZeroOrderHold,
+            "linear" => SynchronizationStrategy::Linear,
+            "none" => SynchronizationStrategy::None,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid interpolation. Use 'zoh', 'linear', or 'none'",
+                    "Invalid synchronization. Use 'zoh', 'linear', or 'none'",
                 ));
             }
         };
@@ -338,7 +338,7 @@ impl Monitor {
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
-                    .interpolation_strategy(interpolation_strategy)
+                    .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -346,7 +346,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     strategy: strategy.to_string(),
                     mode: mode_str.to_string(),
-                    interpolation: interpolation.to_string(),
+                    synchronization: synchronization.to_string(),
                 })
             }
             "quantitative" => {
@@ -360,7 +360,7 @@ impl Monitor {
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
-                    .interpolation_strategy(interpolation_strategy)
+                    .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -368,7 +368,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     strategy: strategy.to_string(),
                     mode: mode_str.to_string(),
-                    interpolation: interpolation.to_string(),
+                    synchronization: synchronization.to_string(),
                 })
             }
             "rosi" => {
@@ -376,7 +376,7 @@ impl Monitor {
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
-                    .interpolation_strategy(interpolation_strategy)
+                    .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -384,7 +384,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     strategy: strategy.to_string(),
                     mode: mode_str.to_string(),
-                    interpolation: interpolation.to_string(),
+                    synchronization: synchronization.to_string(),
                 })
             }
             _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -447,16 +447,16 @@ impl Monitor {
     fn __repr__(&self) -> String {
         match &self.inner {
             InnerMonitor::Qualitative(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
-                self.semantics, self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
+                self.semantics, self.strategy, self.mode, self.synchronization
             ),
             InnerMonitor::Quantitative(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
-                self.semantics, self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
+                self.semantics, self.strategy, self.mode, self.synchronization
             ),
             InnerMonitor::Rosi(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
-                self.semantics, self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
+                self.semantics, self.strategy, self.mode, self.synchronization
             ),
         }
     }

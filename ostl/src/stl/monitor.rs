@@ -10,7 +10,7 @@ use crate::stl::operators::binary_operators::{And, Or};
 use crate::stl::operators::not_operator::Not;
 use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
 use crate::stl::operators::until_operator::Until;
-use crate::synchronizer::{Interpolatable, InterpolationStrategy, Synchronizer};
+use crate::synchronizer::{Interpolatable, SynchronizationStrategy, Synchronizer};
 use std::any::TypeId;
 use std::fmt::Debug;
 use std::time::Duration;
@@ -226,7 +226,7 @@ pub struct StlMonitorBuilder<T, Y> {
     formula: Option<FormulaDefinition>,
     strategy: MonitoringStrategy,
     evaluation_mode: EvaluationMode,
-    interpolation_strategy: InterpolationStrategy,
+    synchronization_strategy: SynchronizationStrategy,
     _phantom: std::marker::PhantomData<(T, Y)>,
 }
 
@@ -236,7 +236,7 @@ impl<T, Y> Default for StlMonitorBuilder<T, Y> {
             formula: None,
             strategy: MonitoringStrategy::default(),
             evaluation_mode: EvaluationMode::default(),
-            interpolation_strategy: InterpolationStrategy::default(),
+            synchronization_strategy: SynchronizationStrategy::default(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -264,9 +264,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         self
     }
 
-    /// Configures the interpolation strategy for signal synchronization.
-    pub fn interpolation_strategy(mut self, strategy: InterpolationStrategy) -> Self {
-        self.interpolation_strategy = strategy;
+    /// Configures the synchronization strategy for signal synchronization.
+    pub fn synchronization_strategy(mut self, strategy: SynchronizationStrategy) -> Self {
+        self.synchronization_strategy = strategy;
         self
     }
 
@@ -315,9 +315,9 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             eprintln!(
                 "Warning: Only one signal involved, synchronization of signals is disabled for performance."
             );
-            Synchronizer::new(InterpolationStrategy::None)
+            Synchronizer::new(SynchronizationStrategy::None)
         } else {
-            Synchronizer::new(self.interpolation_strategy)
+            Synchronizer::new(self.synchronization_strategy)
         };
 
         Ok(StlMonitor {
