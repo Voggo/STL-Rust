@@ -115,11 +115,11 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct SyncStepResult<T, Y> {
     pub sync_step: Step<T>,
-    pub outputs: Vec<Step<Option<Y>>>,
+    pub outputs: Vec<Step<Y>>,
 }
 
 impl<T, Y> SyncStepResult<T, Y> {
-    pub fn new(sync_step: Step<T>, outputs: Vec<Step<Option<Y>>>) -> Self {
+    pub fn new(sync_step: Step<T>, outputs: Vec<Step<Y>>) -> Self {
         SyncStepResult { sync_step, outputs }
     }
     pub fn has_outputs(&self) -> bool {
@@ -148,15 +148,15 @@ impl<T, Y> MonitorOutput<T, Y> {
     pub fn is_empty(&self) -> bool {
         self.evaluations.is_empty()
     }
-    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Option<Y>>> {
+    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Y>> {
         self.evaluations.iter().flat_map(|e| e.outputs.iter())
     }
-    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Option<Y>>> {
+    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Y>> {
         self.outputs_iter()
             .filter(|s| s.timestamp == timestamp)
             .last()
     }
-    pub fn all_outputs(&self) -> Vec<Step<Option<Y>>>
+    pub fn all_outputs(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
     {
@@ -165,7 +165,7 @@ impl<T, Y> MonitorOutput<T, Y> {
             .flat_map(|e| e.outputs.clone())
             .collect()
     }
-    pub fn finalize(&self) -> Vec<Step<Option<Y>>>
+    pub fn finalize(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
     {
@@ -303,10 +303,9 @@ where
                 root_operator.get_signal_identifiers();
                 root_operator
             }
-            (
-                Algorithm::Naive,
-                Semantics::StrictSatisfaction | Semantics::Robustness,
-            ) => self.build_naive_operator(formula_def.clone(), self.semantics),
+            (Algorithm::Naive, Semantics::StrictSatisfaction | Semantics::Robustness) => {
+                self.build_naive_operator(formula_def.clone(), self.semantics)
+            }
             (Algorithm::Naive, Semantics::EagerSatisfaction | Semantics::Rosi) => {
                 return Err("Naive algorithm does not support RoSI/Eaver evaluation");
             }
@@ -391,13 +390,15 @@ where
     let is_eager = matches!(semantics, Semantics::EagerSatisfaction);
     let is_rosi = matches!(semantics, Semantics::Rosi);
 
+    // We use `$( $arg:expr ),*` to capture arguments as a list.
+    // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
     macro_rules! dispatch_operator {
         ($OpType:ident, $( $arg:expr ),* ) => {
             match (is_eager, is_rosi) {
-                (true, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, true>::new( $( $arg ),* )),
-                (true, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, false>::new( $( $arg ),* )),
-                (false, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, true>::new( $( $arg ),* )),
-                (false, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, false>::new( $( $arg ),* )),
+                (true, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, true>::new( $( $arg ),* )),
+                (true, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, false>::new( $( $arg ),* )),
+                (false, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, true>::new( $( $arg ),* )),
+                (false, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, false>::new( $( $arg ),* )),
             }
         };
     }

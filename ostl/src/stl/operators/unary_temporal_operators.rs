@@ -7,20 +7,14 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
-fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Option<Y>>, is_max: bool)
+fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Y>, is_max: bool)
 where
-    C: RingBufferTrait<Value = Option<Y>>,
+    C: RingBufferTrait<Value = Y>,
     Y: RobustnessSemantics + Debug,
 {
     // Lemire's sliding min/max optimization with robust domination checks
     while let Some(back) = cache.get_back()
-        && sub_step.value.is_some()
-        && back.value.is_some()
-        && Y::prune_dominated(
-            back.value.clone().unwrap(),
-            sub_step.value.clone().unwrap(),
-            is_max,
-        )
+        && Y::prune_dominated(back.value.clone(), sub_step.value.clone(), is_max)
     {
         // Short-circuit: new value dominates the back of the cache.
         cache.pop_back();
@@ -45,7 +39,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_
     ) -> Self
     where
         T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
@@ -63,7 +57,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
     for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + Debug + 'static,
 {
     type Output = Y;
@@ -72,7 +66,7 @@ where
         self.max_lookahead
     }
 
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
@@ -124,7 +118,7 @@ where
                     .iter()
                     .skip_while(|entry| entry.timestamp < window_start)
                     .take_while(|entry| entry.timestamp <= window_end)
-                    .map(|entry| entry.value.clone().unwrap())
+                    .map(|entry| entry.value.clone())
                     .fold(Y::eventually_identity(), Y::or)
             } else {
                 // Standard optimization (valid for f64/bool with append-only data)
@@ -134,7 +128,7 @@ where
                     .find(|entry| entry.timestamp >= window_start);
 
                 if let Some(entry) = windowed_max_step {
-                    entry.value.clone().unwrap()
+                    entry.value.clone()
                 } else {
                     Y::eventually_identity()
                 }
@@ -177,7 +171,7 @@ where
             }
 
             if let Some(val) = final_value {
-                output_robustness.push(Step::new("output", Some(val), t_eval));
+                output_robustness.push(Step::new("output", val, t_eval));
             }
 
             if remove_task {
@@ -223,7 +217,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EA
     ) -> Self
     where
         T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
@@ -241,7 +235,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
     for Globally<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + Debug + 'static,
 {
     type Output = Y;
@@ -250,7 +244,7 @@ where
         self.max_lookahead
     }
 
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
 
@@ -301,7 +295,7 @@ where
                     .iter()
                     .skip_while(|entry| entry.timestamp < window_start)
                     .take_while(|entry| entry.timestamp <= window_end)
-                    .map(|entry| entry.value.clone().unwrap())
+                    .map(|entry| entry.value.clone())
                     .fold(Y::globally_identity(), Y::and)
             } else {
                 // Standard optimization (valid for f64/bool with append-only data)
@@ -311,7 +305,7 @@ where
                     .find(|entry| entry.timestamp >= window_start);
 
                 if let Some(entry) = windowed_min_step {
-                    entry.value.clone().unwrap()
+                    entry.value.clone()
                 } else {
                     Y::globally_identity()
                 }
@@ -352,7 +346,7 @@ where
             }
 
             if let Some(val) = final_value {
-                output_robustness.push(Step::new("output", Some(val), t_eval));
+                output_robustness.push(Step::new("output", val, t_eval));
             }
 
             if remove_task {
@@ -424,7 +418,7 @@ mod tests {
             end: Duration::from_secs(4),
         };
         let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
-        let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut eventually = Eventually::<f64, RingBuffer<f64>, f64, false, false>::new(
             interval,
             Box::new(atomic),
             None,
@@ -446,19 +440,19 @@ mod tests {
         }
 
         let expected_outputs = [
-            Step::new("output", Some(5.0), Duration::from_secs(0)),
-            Step::new("output", Some(2.0), Duration::from_secs(2)),
-            Step::new("output", Some(2.0), Duration::from_secs(4)),
+            Step::new("output", 5.0, Duration::from_secs(0)),
+            Step::new("output", 2.0, Duration::from_secs(2)),
+            Step::new("output", 2.0, Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
         for (output, expected) in all_outputs.iter().zip(expected_outputs.iter()) {
             assert_eq!(output.timestamp, expected.timestamp);
             assert!(
-                (output.value.unwrap() - expected.value.unwrap()).abs() < 1e-9,
+                (output.value - expected.value).abs() < 1e-9,
                 "left: {}, right: {}",
-                output.value.unwrap(),
-                expected.value.unwrap()
+                output.value,
+                expected.value
             );
         }
     }
@@ -470,7 +464,7 @@ mod tests {
             end: Duration::from_secs(4),
         };
         let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
-        let mut globally = Globally::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut globally = Globally::<f64, RingBuffer<f64>, f64, false, false>::new(
             interval,
             Box::new(atomic),
             None,
@@ -492,19 +486,19 @@ mod tests {
         }
 
         let expected_outputs = [
-            Step::new("output", Some(-2.0), Duration::from_secs(0)),
-            Step::new("output", Some(-5.0), Duration::from_secs(2)),
-            Step::new("output", Some(-5.0), Duration::from_secs(4)),
+            Step::new("output", -2.0, Duration::from_secs(0)),
+            Step::new("output", -5.0, Duration::from_secs(2)),
+            Step::new("output", -5.0, Duration::from_secs(4)),
         ];
 
         assert_eq!(all_outputs.len(), expected_outputs.len());
         for (output, expected) in all_outputs.iter().zip(expected_outputs.iter()) {
             assert_eq!(output.timestamp, expected.timestamp);
             assert!(
-                (output.value.unwrap() - expected.value.unwrap()).abs() < 1e-9,
+                (output.value - expected.value).abs() < 1e-9,
                 "left: {}, right: {}",
-                output.value.unwrap(),
-                expected.value.unwrap()
+                output.value,
+                expected.value
             );
         }
     }
@@ -516,7 +510,7 @@ mod tests {
             end: Duration::from_secs(4),
         };
         let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
-        let mut globally = Globally::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut globally = Globally::<f64, RingBuffer<f64>, f64, false, false>::new(
             interval,
             Box::new(atomic),
             None,

@@ -10,13 +10,13 @@ use std::time::Duration;
 fn process_binary<C, Y, F, const IS_EAGER: bool, const IS_ROSI: bool>(
     left_cache: &mut C,
     right_cache: &mut C,
-    left_last_known: &mut Step<Option<Y>>,
-    right_last_known: &mut Step<Option<Y>>,
+    left_last_known: &mut Step<Y>,
+    right_last_known: &mut Step<Y>,
     combine_op: F,
     short_circuit_val: Option<Y>,
-) -> Vec<Step<Option<Y>>>
+) -> Vec<Step<Y>>
 where
-    C: RingBufferTrait<Value = Option<Y>>,
+    C: RingBufferTrait<Value = Y>,
     Y: RobustnessSemantics + Copy + Debug + PartialEq + 'static,
     F: Fn(Y, Y) -> Y,
 {
@@ -32,7 +32,7 @@ where
 
         while let (Some(l), Some(r)) = (l_curr, r_curr) {
             if l.timestamp == r.timestamp {
-                let combined = l.value.zip(r.value).map(|(lv, rv)| combine_op(lv, rv));
+                let combined = combine_op(l.value, r.value);
                 output_robustness.push(Step::new("output", combined, l.timestamp));
 
                 l_curr = l_iter.next();
@@ -61,15 +61,11 @@ where
             (Some(l), Some(r)) => {
                 if l.timestamp == r.timestamp {
                     // 1. Timestamps align
-                    let val = l.value.zip(r.value).map(|(lv, rv)| combine_op(lv, rv));
+                    let val = combine_op(l.value, r.value);
                     let ts = l.timestamp;
 
-                    if let Some(v) = l.value {
-                        *left_last_known = Step::new("", Some(v), ts);
-                    }
-                    if let Some(v) = r.value {
-                        *right_last_known = Step::new("", Some(v), ts);
-                    }
+                    *left_last_known = Step::new("", l.value, ts);
+                    *right_last_known = Step::new("", r.value, ts);
 
                     output_robustness.push(Step::new("output", val, ts));
 
@@ -81,8 +77,12 @@ where
                     let l_val = l.value;
 
                     // Eager Short-Circuit Check
-                    if IS_EAGER && let (Some(lv), Some(rl)) = (l_val, right_last_known.value) {
-                        output_robustness.push(Step::new("output", Some(combine_op(lv, rl)), l_ts));
+                    if IS_EAGER {
+                        output_robustness.push(Step::new(
+                            "output",
+                            combine_op(l_val, right_last_known.value),
+                            l_ts,
+                        ));
                         *left_last_known = left_cache.pop_front().unwrap();
                         continue;
                     }
@@ -95,8 +95,12 @@ where
                     let r_ts = r.timestamp;
                     let r_val = r.value;
 
-                    if IS_EAGER && let (Some(rv), Some(ll)) = (r_val, left_last_known.value) {
-                        output_robustness.push(Step::new("output", Some(combine_op(ll, rv)), r_ts));
+                    if IS_EAGER {
+                        output_robustness.push(Step::new(
+                            "output",
+                            combine_op(left_last_known.value, r_val),
+                            r_ts,
+                        ));
                         *right_last_known = right_cache.pop_front().unwrap();
                         continue;
                     }
@@ -110,10 +114,10 @@ where
                 if IS_EAGER {
                     let l_ts = l.timestamp;
                     let l_val = l.value;
-                    if let (Some(sc), Some(lv)) = (short_circuit_val, l_val)
-                        && lv == sc
+                    if let Some(sc) = short_circuit_val
+                        && l_val == sc
                     {
-                        output_robustness.push(Step::new("output", Some(sc), l_ts));
+                        output_robustness.push(Step::new("output", sc, l_ts));
                         *left_last_known = left_cache.pop_front().unwrap();
                         continue;
                     }
@@ -125,10 +129,10 @@ where
                 if IS_EAGER {
                     let r_ts = r.timestamp;
                     let r_val = r.value;
-                    if let (Some(sc), Some(rv)) = (short_circuit_val, r_val)
-                        && rv == sc
+                    if let Some(sc) = short_circuit_val
+                        && r_val == sc
                     {
-                        output_robustness.push(Step::new("output", Some(sc), r_ts));
+                        output_robustness.push(Step::new("output", sc, r_ts));
                         *right_last_known = right_cache.pop_front().unwrap();
                         continue;
                     }
@@ -149,8 +153,8 @@ pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left_cache: C,
     right_cache: C,
     last_eval_time: Option<Duration>,
-    left_last_known: Step<Option<Y>>,
-    right_last_known: Step<Option<Y>>,
+    left_last_known: Step<Y>,
+    right_last_known: Step<Y>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
@@ -165,7 +169,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, 
     ) -> Self
     where
         T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
@@ -175,8 +179,8 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, 
             left_cache: left_cache.unwrap_or_else(|| C::new()),
             right_cache: right_cache.unwrap_or_else(|| C::new()),
             last_eval_time: None,
-            left_last_known: Step::new("", None, Duration::ZERO),
-            right_last_known: Step::new("", None, Duration::ZERO),
+            left_last_known: Step::new("", Y::unknown(), Duration::ZERO),
+            right_last_known: Step::new("", Y::unknown(), Duration::ZERO),
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
             max_lookahead,
@@ -188,7 +192,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
     for And<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + Debug + Copy,
 {
     type Output = Y;
@@ -197,7 +201,7 @@ where
         self.max_lookahead
     }
 
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
                 Some(last) => {
@@ -305,8 +309,8 @@ pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left_cache: C,
     right_cache: C,
     last_eval_time: Option<Duration>,
-    left_last_known: Step<Option<Y>>,
-    right_last_known: Step<Option<Y>>,
+    left_last_known: Step<Y>,
+    right_last_known: Step<Y>,
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
@@ -321,7 +325,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, I
     ) -> Self
     where
         T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
@@ -333,12 +337,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, I
             last_eval_time: None,
             left_last_known: Step {
                 signal: "",
-                value: None,
+                value: Y::unknown(),
                 timestamp: Duration::ZERO,
             },
             right_last_known: Step {
                 signal: "",
-                value: None,
+                value: Y::unknown(),
                 timestamp: Duration::ZERO,
             },
             left_signals_set: HashSet::new(),
@@ -352,7 +356,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
     for Or<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + Debug + Copy,
 {
     type Output = Y;
@@ -361,7 +365,7 @@ where
         self.max_lookahead
     }
 
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
                 Some(last) => {
@@ -491,7 +495,7 @@ mod tests {
     fn and_operator_robustness_strict() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
-        let mut and = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut and = And::<f64, RingBuffer<f64>, f64, false, false>::new(
             Box::new(atomic1),
             Box::new(atomic2),
             None,
@@ -503,7 +507,7 @@ mod tests {
         let robustness = and.update(&step);
         assert_eq!(
             robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", 5.0, Duration::from_secs(5))]
         );
     }
 
@@ -511,7 +515,7 @@ mod tests {
     fn or_operator_robustness_strict() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 5.0);
-        let mut or = Or::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut or = Or::<f64, RingBuffer<f64>, f64, false, false>::new(
             Box::new(atomic1),
             Box::new(atomic2),
             None,
@@ -523,7 +527,7 @@ mod tests {
         let robustness = or.update(&step);
         assert_eq!(
             robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", 5.0, Duration::from_secs(5))]
         );
     }
 
@@ -531,7 +535,7 @@ mod tests {
     fn binary_operators_signal_identifiers() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("y", 5.0);
-        let mut and = And::<f64, RingBuffer<Option<f64>>, f64, false, false>::new(
+        let mut and = And::<f64, RingBuffer<f64>, f64, false, false>::new(
             Box::new(atomic1),
             Box::new(atomic2),
             None,

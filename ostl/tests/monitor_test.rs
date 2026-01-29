@@ -16,18 +16,15 @@ mod tests {
     use std::time::Duration;
     use std::vec;
 
-    fn convert_f64_vec_to_bool_vec(
-        input: Vec<Vec<Step<Option<f64>>>>,
-    ) -> Vec<Vec<Step<Option<bool>>>> {
+    fn convert_f64_vec_to_bool_vec(input: Vec<Vec<Step<f64>>>) -> Vec<Vec<Step<bool>>> {
         input
             .into_iter()
             .map(|inner_vec| {
                 inner_vec
                     .into_iter()
                     .map(|step| {
-                        let bool_value = step
-                            .value
-                            .map(|v| v > 0.0 || (v == 0.0 && v.is_sign_negative()));
+                        let bool_value = step.value > 0.0
+                            || (step.value == 0.0 && step.value.is_sign_negative());
                         Step::new("output", bool_value, step.timestamp)
                     })
                     .collect()
@@ -261,35 +258,35 @@ mod tests {
     // Expected Result "Oracles" (Plain functions)
     // ---
 
-    fn exp_f1_s1_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f1_s1_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
             vec![],
             vec![],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(-1.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))],
+            vec![Step::new("output", 1.0, Duration::from_secs(0))],
+            vec![Step::new("output", -1.0, Duration::from_secs(1))],
+            vec![Step::new("output", -1.0, Duration::from_secs(2))],
         ]
     }
 
-    fn exp_f1_s1_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f1_s1_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict())
     }
 
-    fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![],
-            vec![Step::new("output", Some(true), Duration::from_secs(0))],
+            vec![Step::new("output", true, Duration::from_secs(0))],
             vec![
-                Step::new("output", Some(false), Duration::from_secs(1)),
-                Step::new("output", Some(false), Duration::from_secs(2)),
-                Step::new("output", Some(false), Duration::from_secs(3)),
+                Step::new("output", false, Duration::from_secs(1)),
+                Step::new("output", false, Duration::from_secs(2)),
+                Step::new("output", false, Duration::from_secs(3)),
             ],
             vec![],
         ]
     }
 
-    fn exp_f2_s2_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f2_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
             vec![],
             vec![],
@@ -299,17 +296,17 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(2))],
+            vec![Step::new("output", 1.0, Duration::from_secs(0))],
+            vec![Step::new("output", 1.0, Duration::from_secs(1))],
+            vec![Step::new("output", 1.0, Duration::from_secs(2))],
         ]
     }
 
-    fn exp_f2_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f2_s2_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict())
     }
 
-    fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![],
@@ -317,93 +314,93 @@ mod tests {
             vec![],
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(0)),
-                Step::new("output", Some(true), Duration::from_secs(1)),
-                Step::new("output", Some(true), Duration::from_secs(2)),
-                Step::new("output", Some(true), Duration::from_secs(3)),
+                Step::new("output", true, Duration::from_secs(0)),
+                Step::new("output", true, Duration::from_secs(1)),
+                Step::new("output", true, Duration::from_secs(2)),
+                Step::new("output", true, Duration::from_secs(3)),
             ],
             vec![
-                Step::new("output", Some(false), Duration::from_secs(4)),
-                Step::new("output", Some(false), Duration::from_secs(5)),
+                Step::new("output", false, Duration::from_secs(4)),
+                Step::new("output", false, Duration::from_secs(5)),
             ],
             vec![],
-            vec![Step::new("output", Some(false), Duration::from_secs(6))],
-            vec![Step::new("output", Some(false), Duration::from_secs(7))],
-            vec![Step::new("output", Some(false), Duration::from_secs(8))],
+            vec![Step::new("output", false, Duration::from_secs(6))],
+            vec![Step::new("output", false, Duration::from_secs(7))],
+            vec![Step::new("output", false, Duration::from_secs(8))],
         ]
     }
 
-    fn exp_f3_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f3_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
             vec![],
             vec![],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(2))],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(3))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
+            vec![Step::new("output", 0.0, Duration::from_secs(0))],
+            vec![Step::new("output", 0.0, Duration::from_secs(1))],
+            vec![Step::new("output", 0.0, Duration::from_secs(2))],
+            vec![Step::new("output", 0.0, Duration::from_secs(3))],
+            vec![Step::new("output", 1.0, Duration::from_secs(4))],
         ]
     }
 
-    fn exp_f3_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f3_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict())
     }
 
-    fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
-            vec![Step::new("output", Some(false), Duration::from_secs(0))],
+            vec![Step::new("output", false, Duration::from_secs(0))],
             vec![],
             vec![],
             vec![
-                Step::new("output", Some(false), Duration::from_secs(1)),
-                Step::new("output", Some(false), Duration::from_secs(2)),
-                Step::new("output", Some(false), Duration::from_secs(3)),
+                Step::new("output", false, Duration::from_secs(1)),
+                Step::new("output", false, Duration::from_secs(2)),
+                Step::new("output", false, Duration::from_secs(3)),
             ],
             vec![],
             vec![],
-            vec![Step::new("output", Some(true), Duration::from_secs(4))],
+            vec![Step::new("output", true, Duration::from_secs(4))],
         ]
     }
 
-    fn exp_f4_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f4_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
             vec![],
             vec![],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(3.0), Duration::from_secs(2))],
-            vec![Step::new("output", Some(3.0), Duration::from_secs(3))],
-            vec![Step::new("output", Some(3.0), Duration::from_secs(4))],
+            vec![Step::new("output", 1.0, Duration::from_secs(0))],
+            vec![Step::new("output", 1.0, Duration::from_secs(1))],
+            vec![Step::new("output", 3.0, Duration::from_secs(2))],
+            vec![Step::new("output", 3.0, Duration::from_secs(3))],
+            vec![Step::new("output", 3.0, Duration::from_secs(4))],
         ]
     }
 
-    fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict())
     }
 
-    fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(0)),
-                Step::new("output", Some(true), Duration::from_secs(1)),
+                Step::new("output", true, Duration::from_secs(0)),
+                Step::new("output", true, Duration::from_secs(1)),
             ],
             vec![],
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(2)),
-                Step::new("output", Some(true), Duration::from_secs(3)),
-                Step::new("output", Some(true), Duration::from_secs(4)),
+                Step::new("output", true, Duration::from_secs(2)),
+                Step::new("output", true, Duration::from_secs(3)),
+                Step::new("output", true, Duration::from_secs(4)),
             ],
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(5)),
-                Step::new("output", Some(true), Duration::from_secs(6)),
+                Step::new("output", true, Duration::from_secs(5)),
+                Step::new("output", true, Duration::from_secs(6)),
             ],
         ]
     }
 
-    fn exp_f6_s2_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f6_s2_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![],
@@ -412,149 +409,149 @@ mod tests {
             vec![],
             vec![
                 // step t=5s
-                Step::new("output", Some(false), Duration::from_secs(0)),
+                Step::new("output", false, Duration::from_secs(0)),
             ],
             vec![
                 // step t=6s, x=0.0, G[0,5](x>0) is false => short-circuit to true
-                Step::new("output", Some(true), Duration::from_secs(1)),
-                Step::new("output", Some(true), Duration::from_secs(2)),
-                Step::new("output", Some(true), Duration::from_secs(3)),
-                Step::new("output", Some(true), Duration::from_secs(4)),
-                Step::new("output", Some(true), Duration::from_secs(5)),
-                Step::new("output", Some(true), Duration::from_secs(6)),
+                Step::new("output", true, Duration::from_secs(1)),
+                Step::new("output", true, Duration::from_secs(2)),
+                Step::new("output", true, Duration::from_secs(3)),
+                Step::new("output", true, Duration::from_secs(4)),
+                Step::new("output", true, Duration::from_secs(5)),
+                Step::new("output", true, Duration::from_secs(6)),
             ],
-            vec![Step::new("output", Some(true), Duration::from_secs(7))],
-            vec![Step::new("output", Some(true), Duration::from_secs(8))],
+            vec![Step::new("output", true, Duration::from_secs(7))],
+            vec![Step::new("output", true, Duration::from_secs(8))],
             vec![],
             vec![],
         ]
     }
-    fn exp_f6_s2_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f6_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
             vec![],
             vec![],
             vec![],
             vec![],
             vec![],
-            vec![Step::new("output", Some(-1.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(-0.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(0.0), Duration::from_secs(2))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(3))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(5))],
+            vec![Step::new("output", -1.0, Duration::from_secs(0))],
+            vec![Step::new("output", -0.0, Duration::from_secs(1))],
+            vec![Step::new("output", 0.0, Duration::from_secs(2))],
+            vec![Step::new("output", 1.0, Duration::from_secs(3))],
+            vec![Step::new("output", 1.0, Duration::from_secs(4))],
+            vec![Step::new("output", 1.0, Duration::from_secs(5))],
         ]
     }
-    fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![],
             vec![],
             vec![],
             vec![],
-            vec![Step::new("output", Some(false), Duration::from_secs(0))],
-            vec![Step::new("output", Some(true), Duration::from_secs(1))],
-            vec![Step::new("output", Some(true), Duration::from_secs(2))],
-            vec![Step::new("output", Some(true), Duration::from_secs(3))],
-            vec![Step::new("output", Some(true), Duration::from_secs(4))],
-            vec![Step::new("output", Some(true), Duration::from_secs(5))],
+            vec![Step::new("output", false, Duration::from_secs(0))],
+            vec![Step::new("output", true, Duration::from_secs(1))],
+            vec![Step::new("output", true, Duration::from_secs(2))],
+            vec![Step::new("output", true, Duration::from_secs(3))],
+            vec![Step::new("output", true, Duration::from_secs(4))],
+            vec![Step::new("output", true, Duration::from_secs(5))],
         ]
     }
 
-    fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
-            vec![Step::new("output", Some(-5.0), Duration::from_secs(0))],
-            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],
-            vec![Step::new("output", Some(-4.0), Duration::from_secs(2))],
-            vec![Step::new("output", Some(-5.0), Duration::from_secs(3))],
-            vec![Step::new("output", Some(3.0), Duration::from_secs(4))],
-            vec![Step::new("output", Some(-4.0), Duration::from_secs(5))],
-            vec![Step::new("output", Some(2.0), Duration::from_secs(6))],
+            vec![Step::new("output", -5.0, Duration::from_secs(0))],
+            vec![Step::new("output", 1.0, Duration::from_secs(1))],
+            vec![Step::new("output", -4.0, Duration::from_secs(2))],
+            vec![Step::new("output", -5.0, Duration::from_secs(3))],
+            vec![Step::new("output", 3.0, Duration::from_secs(4))],
+            vec![Step::new("output", -4.0, Duration::from_secs(5))],
+            vec![Step::new("output", 2.0, Duration::from_secs(6))],
         ]
     }
 
-    fn exp_f7_s3_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f7_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f7_s3_f64_strict())
     }
 
-    fn exp_f7_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f7_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
         exp_f7_s3_bool_strict()
     }
 
-    fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<Option<f64>>>> {
+    fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![
-            vec![],                                                        // x@t=0
-            vec![],                                                        // y@t=0
-            vec![],                                                        // x@t=1
-            vec![],                                                        // y@t=1
-            vec![Step::new("output", Some(0.0), Duration::from_secs(0))],  // x@t=2
-            vec![],                                                        // y@t=2
-            vec![Step::new("output", Some(1.0), Duration::from_secs(1))],  // x@t=3
-            vec![],                                                        // y@t=3
-            vec![Step::new("output", Some(-1.0), Duration::from_secs(2))], // x@t=4
-            vec![],                                                        // y@t=5
-            vec![Step::new("output", Some(-2.0), Duration::from_secs(3))], // x@t=5
-            vec![],                                                        // y@t=4
-            vec![Step::new("output", Some(1.0), Duration::from_secs(4))],  // x@t=6
-            vec![],                                                        // y@t=6
+            vec![],                                                  // x@t=0
+            vec![],                                                  // y@t=0
+            vec![],                                                  // x@t=1
+            vec![],                                                  // y@t=1
+            vec![Step::new("output", 0.0, Duration::from_secs(0))],  // x@t=2
+            vec![],                                                  // y@t=2
+            vec![Step::new("output", 1.0, Duration::from_secs(1))],  // x@t=3
+            vec![],                                                  // y@t=3
+            vec![Step::new("output", -1.0, Duration::from_secs(2))], // x@t=4
+            vec![],                                                  // y@t=5
+            vec![Step::new("output", -2.0, Duration::from_secs(3))], // x@t=5
+            vec![],                                                  // y@t=4
+            vec![Step::new("output", 1.0, Duration::from_secs(4))],  // x@t=6
+            vec![],                                                  // y@t=6
         ]
     }
 
-    fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<bool>>> {
         convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict())
     }
 
-    fn exp_f8_s4_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f8_s4_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
-            vec![Step::new("output", Some(false), Duration::from_secs(0))], // x@t=0
-            vec![],                                                         // y@t=0
-            vec![],                                                         // x@t=1
-            vec![],                                                         // y@t=1
-            vec![],                                                         // x@t=2
-            vec![],                                                         // y@t=2
+            vec![Step::new("output", false, Duration::from_secs(0))], // x@t=0
+            vec![],                                                   // y@t=0
+            vec![],                                                   // x@t=1
+            vec![],                                                   // y@t=1
+            vec![],                                                   // x@t=2
+            vec![],                                                   // y@t=2
             vec![
-                Step::new("output", Some(true), Duration::from_secs(1)), // x@t=3
-                Step::new("output", Some(false), Duration::from_secs(2)),
+                Step::new("output", true, Duration::from_secs(1)), // x@t=3
+                Step::new("output", false, Duration::from_secs(2)),
             ],
-            vec![Step::new("output", Some(false), Duration::from_secs(3))], // y@t=3
-            vec![],                                                         // x@t=4
-            vec![],                                                         // y@t=4
-            vec![],                                                         // x@t=5
-            vec![],                                                         // y@t=5
-            vec![Step::new("output", Some(true), Duration::from_secs(4))],  // x@t=6
-            vec![],                                                         // y@t=6
+            vec![Step::new("output", false, Duration::from_secs(3))], // y@t=3
+            vec![],                                                   // x@t=4
+            vec![],                                                   // y@t=4
+            vec![],                                                   // x@t=5
+            vec![],                                                   // y@t=5
+            vec![Step::new("output", true, Duration::from_secs(4))],  // x@t=6
+            vec![],                                                   // y@t=6
         ]
     }
 
-    fn exp_f10_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f10_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
-            vec![Step::new("output", Some(false), Duration::from_secs(0))],
-            vec![Step::new("output", Some(false), Duration::from_secs(1))],
-            vec![Step::new("output", Some(false), Duration::from_secs(2))],
-            vec![Step::new("output", Some(false), Duration::from_secs(3))],
-            vec![Step::new("output", Some(false), Duration::from_secs(4))],
-            vec![Step::new("output", Some(false), Duration::from_secs(5))],
-            vec![Step::new("output", Some(false), Duration::from_secs(6))],
+            vec![Step::new("output", false, Duration::from_secs(0))],
+            vec![Step::new("output", false, Duration::from_secs(1))],
+            vec![Step::new("output", false, Duration::from_secs(2))],
+            vec![Step::new("output", false, Duration::from_secs(3))],
+            vec![Step::new("output", false, Duration::from_secs(4))],
+            vec![Step::new("output", false, Duration::from_secs(5))],
+            vec![Step::new("output", false, Duration::from_secs(6))],
         ]
     }
 
-    fn exp_f11_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+    fn exp_f11_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(0)),
-                Step::new("output", Some(true), Duration::from_secs(1)),
+                Step::new("output", true, Duration::from_secs(0)),
+                Step::new("output", true, Duration::from_secs(1)),
             ],
             vec![],
             vec![],
             vec![
-                Step::new("output", Some(false), Duration::from_secs(2)),
-                Step::new("output", Some(false), Duration::from_secs(3)),
-                Step::new("output", Some(false), Duration::from_secs(4)),
+                Step::new("output", false, Duration::from_secs(2)),
+                Step::new("output", false, Duration::from_secs(3)),
+                Step::new("output", false, Duration::from_secs(4)),
             ],
             vec![],
             vec![
-                Step::new("output", Some(true), Duration::from_secs(5)),
-                Step::new("output", Some(true), Duration::from_secs(6)),
+                Step::new("output", true, Duration::from_secs(5)),
+                Step::new("output", true, Duration::from_secs(6)),
             ],
         ]
     }
@@ -566,7 +563,7 @@ mod tests {
         signal: Vec<Step<f64>>,
         strategy: Algorithm,
         semantics: S,
-        expected: Vec<Vec<Step<Option<Y>>>>,
+        expected: Vec<Vec<Step<Y>>>,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
         S: ostl::stl::monitor::semantic_markers::SemanticType<Output = Y> + Copy,
@@ -615,7 +612,7 @@ mod tests {
     fn test_f64_strict(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<f64>>>>,
+        #[case] expected: Vec<Vec<Step<f64>>>,
         #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
     ) {
         run_monitor_test(formulas, signal, strategy, Robustness, expected);
@@ -635,7 +632,7 @@ mod tests {
     fn test_bool_strict(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<bool>>>>,
+        #[case] expected: Vec<Vec<Step<bool>>>,
         #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
     ) {
         run_monitor_test(formulas, signal, strategy, StrictSatisfaction, expected);
@@ -657,7 +654,7 @@ mod tests {
     fn test_bool_eager(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<bool>>>>,
+        #[case] expected: Vec<Vec<Step<bool>>>,
         #[values(Algorithm::Incremental)] strategy: Algorithm,
     ) {
         run_monitor_test(formulas, signal, strategy, EagerSatisfaction, expected);
@@ -698,7 +695,7 @@ mod tests {
     }
 
     fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<Step<f64>>) {
-        let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
+        let all_rosi_outputs: Vec<Vec<Step<RobustnessInterval>>> = formulas
             .into_iter()
             .map(|formula| {
                 // Build an incremental monitor that emits RobustnessInterval outputs
@@ -728,26 +725,25 @@ mod tests {
                         let strict_outputs = strict_output.all_outputs();
 
                         // Validate strict vs RoSI for the first (final) strict step, if present
-                        if let Some(strict_step) = strict_outputs.first() &&
-                             let Some(strict_val) = strict_step.value {
-                                let rosi_step = rosi_outputs
-                                    .iter()
-                                    .find(|step| step.timestamp == strict_step.timestamp)
-                                    .unwrap_or_else(|| panic!("No RoSI step found for timestamp {:?} at input step {:?}",
-                                        strict_step.timestamp, s.timestamp));
-                                if let Some(rosi_iv) = rosi_step.value {
-                                    assert_eq!(
-                                        strict_val, rosi_iv.0,
-                                        "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
-                                        strict_val, rosi_iv.0, s.timestamp
-                                    );
-                                    assert_eq!(
-                                        strict_val, rosi_iv.1,
-                                        "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
-                                        strict_val, rosi_iv.1, s.timestamp
-                                    );
-                                }
-                            }
+                        if let Some(strict_step) = strict_outputs.first() {
+                            let strict_val = strict_step.value;
+                            let rosi_step = rosi_outputs
+                                .iter()
+                                .find(|step| step.timestamp == strict_step.timestamp)
+                                .unwrap_or_else(|| panic!("No RoSI step found for timestamp {:?} at input step {:?}",
+                                    strict_step.timestamp, s.timestamp));
+                            let rosi_iv = rosi_step.value;
+                            assert_eq!(
+                                strict_val, rosi_iv.0,
+                                "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
+                                strict_val, rosi_iv.0, s.timestamp
+                            );
+                            assert_eq!(
+                                strict_val, rosi_iv.1,
+                                "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
+                                strict_val, rosi_iv.1, s.timestamp
+                            );
+                        }
                         rosi_outputs.into_iter()
                     })
                     .collect()
@@ -767,7 +763,7 @@ mod tests {
     }
 
     fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<Step<f64>>) {
-        let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
+        let all_rosi_outputs: Vec<Vec<Step<RobustnessInterval>>> = formulas
             .into_iter()
             .map(|formula| {
                 let mut monitor = StlMonitor::builder()
@@ -780,36 +776,36 @@ mod tests {
                 // Track the last seen interval for each timestamp. As the monitor refines
                 // partial/unknown intervals, the lower bound should never decrease and the
                 // upper bound should never increase for a given timestamp.
-                let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> = HashMap::new();
+                let mut last_intervals: HashMap<std::time::Duration, RobustnessInterval> =
+                    HashMap::new();
 
-                let mut rosi_output: Vec<Step<Option<RobustnessInterval>>> = Vec::new();
+                let mut rosi_output: Vec<Step<RobustnessInterval>> = Vec::new();
 
                 for s in signal.clone() {
                     let output = monitor.update(&s);
 
                     for out_step in output.outputs_iter() {
-                        if let Some(iv) = out_step.value {
-                            if let Some(prev) = last_intervals.get(&out_step.timestamp) {
-                                // New lower bound must be >= previous lower bound
-                                assert!(
-                                    iv.0 >= prev.0,
-                                    "Lower bound for timestamp {:?} decreased: previous={:?}, new={:?}",
-                                    out_step.timestamp,
-                                    prev,
-                                    iv
-                                );
+                        let iv = out_step.value;
+                        if let Some(prev) = last_intervals.get(&out_step.timestamp) {
+                            // New lower bound must be >= previous lower bound
+                            assert!(
+                                iv.0 >= prev.0,
+                                "Lower bound for timestamp {:?} decreased: previous={:?}, new={:?}",
+                                out_step.timestamp,
+                                prev,
+                                iv
+                            );
 
-                                // New upper bound must be <= previous upper bound
-                                assert!(
-                                    iv.1 <= prev.1,
-                                    "Upper bound for timestamp {:?} increased: previous={:?}, new={:?}",
-                                    out_step.timestamp,
-                                    prev,
-                                    iv
-                                );
-                            }
-                            last_intervals.insert(out_step.timestamp, iv);
+                            // New upper bound must be <= previous upper bound
+                            assert!(
+                                iv.1 <= prev.1,
+                                "Upper bound for timestamp {:?} increased: previous={:?}, new={:?}",
+                                out_step.timestamp,
+                                prev,
+                                iv
+                            );
                         }
+                        last_intervals.insert(out_step.timestamp, iv);
                     }
 
                     rosi_output.extend(output.all_outputs());
