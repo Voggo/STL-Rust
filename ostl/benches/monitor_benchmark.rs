@@ -3,8 +3,7 @@ use criterion::{
     AxisScale, Criterion, PlotConfiguration, Throughput, criterion_group, criterion_main,
 };
 use ostl::ring_buffer::Step;
-use ostl::stl::core::RobustnessInterval;
-use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
+use ostl::stl::monitor::{Algorithm, Robustness, Rosi, StlMonitor, StrictSatisfaction};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -66,8 +65,9 @@ fn benchmark_monitors(c: &mut Criterion) {
 
     for (id, formula) in formulas {
         // Create a temp monitor to get the specification string for the group name
-        let temp: StlMonitor<f64, bool> = StlMonitor::builder()
+        let temp = StlMonitor::builder()
             .formula(formula.clone())
+            .semantics(StrictSatisfaction)
             .build()
             .unwrap();
         let spec_str = temp.specification_to_string();
@@ -118,10 +118,10 @@ fn benchmark_monitors(c: &mut Criterion) {
                 |b, signal| {
                     b.iter_batched(
                         || {
-                            let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                            let monitor = StlMonitor::builder()
                                 .formula(formula.clone())
+                                .semantics(Robustness)
                                 .algorithm(Algorithm::Incremental)
-                                .semantics(Semantics::Robustness)
                                 .build()
                                 .unwrap();
                             (monitor, signal.clone())
@@ -221,13 +221,12 @@ fn benchmark_monitors(c: &mut Criterion) {
                 |b, signal| {
                     b.iter_batched(
                         || {
-                            let monitor: StlMonitor<f64, RobustnessInterval> =
-                                StlMonitor::builder()
-                                    .formula(formula.clone())
-                                    .algorithm(Algorithm::Incremental)
-                                    .semantics(Semantics::Rosi)
-                                    .build()
-                                    .unwrap();
+                            let monitor = StlMonitor::builder()
+                                .formula(formula.clone())
+                                .semantics(Rosi)
+                                .algorithm(Algorithm::Incremental)
+                                .build()
+                                .unwrap();
                             (monitor, signal.clone())
                         },
                         |(mut monitor, signal)| {

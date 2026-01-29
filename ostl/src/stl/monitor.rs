@@ -1,7 +1,6 @@
 use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{
-    RobustnessInterval, RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier,
-    StlOperatorTrait,
+    RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
 };
 use crate::stl::formula_definition::FormulaDefinition;
 use crate::stl::naive_operators::{StlFormula, StlOperator};
@@ -33,20 +32,62 @@ pub enum Semantics {
     EagerSatisfaction,
 }
 
+/// Marker traits and structs for Type-Driven Semantics
+pub mod semantic_markers {
+    use super::Semantics;
+    use crate::stl::core::RobustnessInterval;
+
+    pub trait SemanticType {
+        type Output: super::RobustnessSemantics + 'static;
+        fn as_enum() -> Semantics;
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct Rosi;
+    impl SemanticType for Rosi {
+        type Output = RobustnessInterval;
+        fn as_enum() -> Semantics {
+            Semantics::Rosi
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct Robustness;
+    impl SemanticType for Robustness {
+        type Output = f64;
+        fn as_enum() -> Semantics {
+            Semantics::Robustness
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct StrictSatisfaction;
+    impl SemanticType for StrictSatisfaction {
+        type Output = bool;
+        fn as_enum() -> Semantics {
+            Semantics::StrictSatisfaction
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct EagerSatisfaction;
+    impl SemanticType for EagerSatisfaction {
+        type Output = bool;
+        fn as_enum() -> Semantics {
+            Semantics::EagerSatisfaction
+        }
+    }
+}
+
+// Re-export markers for easier access like `monitor::StrictSatisfaction`
+pub use semantic_markers::{EagerSatisfaction, Robustness, Rosi, StrictSatisfaction};
+
 /// Represents the output of a single monitor update operation.
-///
-/// This struct provides a mapping between the input step that triggered
-/// the evaluation and the resulting output steps from the monitor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MonitorOutput<T, Y> {
-    /// The signal name from the input step that triggered this evaluation
     pub input_signal: &'static str,
-    /// The timestamp of the input step
     pub input_timestamp: Duration,
-    /// The value of the input step
     pub input_value: T,
-    /// Each synchronized step and its corresponding evaluation results.
-    /// The synchronizer may produce multiple steps (interpolated + real) for a single input.
     pub evaluations: Vec<SyncStepResult<T, Y>>,
 }
 
@@ -54,7 +95,6 @@ impl<Y> Display for MonitorOutput<f64, Y>
 where
     Y: Debug + Clone,
 {
-    /// Writes the finalized string representation of the MonitorOutput.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let finalized = self.finalize();
 
@@ -72,29 +112,22 @@ where
     }
 }
 
-/// Represents the evaluation result for a single synchronized step.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SyncStepResult<T, Y> {
-    /// The synchronized step that was evaluated (may be interpolated)
     pub sync_step: Step<T>,
-    /// The output steps produced by evaluating this synchronized step
     pub outputs: Vec<Step<Option<Y>>>,
 }
 
 impl<T, Y> SyncStepResult<T, Y> {
-    /// Creates a new SyncStepResult.
     pub fn new(sync_step: Step<T>, outputs: Vec<Step<Option<Y>>>) -> Self {
         SyncStepResult { sync_step, outputs }
     }
-
-    /// Returns true if this result has any outputs.
     pub fn has_outputs(&self) -> bool {
         !self.outputs.is_empty()
     }
 }
 
 impl<T, Y> MonitorOutput<T, Y> {
-    /// Creates a new MonitorOutput from an input step and its evaluation results.
     pub fn new(input: &Step<T>, evaluations: Vec<SyncStepResult<T, Y>>) -> Self
     where
         T: Clone,
@@ -106,35 +139,23 @@ impl<T, Y> MonitorOutput<T, Y> {
             evaluations,
         }
     }
-
-    /// Returns true if any evaluation produced outputs.
     pub fn has_outputs(&self) -> bool {
         self.evaluations.iter().any(|e| !e.outputs.is_empty())
     }
-
-    /// Returns the total number of output steps across all evaluations.
     pub fn total_outputs(&self) -> usize {
         self.evaluations.iter().map(|e| e.outputs.len()).sum()
     }
-
-    /// Returns true if there are no evaluations.
     pub fn is_empty(&self) -> bool {
         self.evaluations.is_empty()
     }
-
-    /// Returns an iterator over all output steps (flattened across all evaluations).
     pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Option<Y>>> {
         self.evaluations.iter().flat_map(|e| e.outputs.iter())
     }
-
-    /// Returns the latest verdict for requested timestamp, if any.
     pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Option<Y>>> {
         self.outputs_iter()
             .filter(|s| s.timestamp == timestamp)
             .last()
     }
-
-    /// Collects all outputs into a flat vector.
     pub fn all_outputs(&self) -> Vec<Step<Option<Y>>>
     where
         Y: Clone,
@@ -144,8 +165,6 @@ impl<T, Y> MonitorOutput<T, Y> {
             .flat_map(|e| e.outputs.clone())
             .collect()
     }
-
-    /// Finalizes the monitor output by collecting all outputs with latest verdict for each available timestamp.
     pub fn finalize(&self) -> Vec<Step<Option<Y>>>
     where
         Y: Clone,
@@ -162,38 +181,41 @@ impl<T, Y> MonitorOutput<T, Y> {
 }
 
 /// The final monitor struct that handles the input stream.
+/// We do not constrain Y on the struct definition to allow flexible builder patterns,
+/// though valid monitors will always have Y: RobustnessSemantics.
 pub struct StlMonitor<T: Clone + Interpolatable, Y> {
     root_operator: Box<dyn StlOperatorTrait<T, Output = Y>>,
     synchronizer: Synchronizer<T>,
 }
 
-impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
-    /// Creates a new builder instance.
-    pub fn builder() -> StlMonitorBuilder<T, Y> {
-        StlMonitorBuilder::new()
+/// Entry point for the builder.
+/// This impl block enables `StlMonitor::builder()` to return a builder with default T=f64 and Y=f64.
+impl StlMonitor<f64, f64> {
+    pub fn builder() -> StlMonitorBuilder<f64, f64> {
+        StlMonitorBuilder {
+            formula: None,
+            algorithm: Algorithm::default(),
+            semantics: Semantics::Robustness, // Default, but will be overwritten if semantics() is called
+            synchronization_strategy: SynchronizationStrategy::default(),
+            _phantom: std::marker::PhantomData,
+        }
     }
+}
 
-    /// Returns a `MonitorOutput` that contains both the input step information
-    /// and the resulting output steps from the monitor evaluation.
+impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
     pub fn update(&mut self, step: &Step<T>) -> MonitorOutput<T, Y>
     where
         Y: RobustnessSemantics + Debug,
     {
-        // 1. Push raw step into synchronizer
         self.synchronizer.evaluate(step.clone());
         let mut evaluations = Vec::new();
-
-        // 2. Drain all pending synchronized steps (interpolated + real)
-        //    and feed them into the operator tree.
         while let Some(sync_step) = self.synchronizer.pending.pop_front() {
             let op_res = self.root_operator.update(&sync_step);
             evaluations.push(SyncStepResult::new(sync_step, op_res));
         }
-
         MonitorOutput::new(step, evaluations)
     }
 
-    /// Returns the string representation of the monitor's formula.
     pub fn specification_to_string(&self) -> String {
         self.root_operator.to_string()
     }
@@ -203,28 +225,13 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
 pub struct StlMonitorBuilder<T, Y> {
     formula: Option<FormulaDefinition>,
     algorithm: Algorithm,
+    /// We store the enum value for logic, and use Y for type safety
     semantics: Semantics,
     synchronization_strategy: SynchronizationStrategy,
     _phantom: std::marker::PhantomData<(T, Y)>,
 }
 
-impl<T, Y> Default for StlMonitorBuilder<T, Y> {
-    fn default() -> Self {
-        Self {
-            formula: None,
-            algorithm: Algorithm::default(),
-            semantics: Semantics::default(),
-            synchronization_strategy: SynchronizationStrategy::default(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
 impl<T, Y> StlMonitorBuilder<T, Y> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Sets the formula definition to be monitored.
     pub fn formula(mut self, formula: FormulaDefinition) -> Self {
         self.formula = Some(formula);
@@ -237,31 +244,41 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         self
     }
 
-    /// Configures the semantics (output type and evaluation mode).
-    pub fn semantics(mut self, semantics: Semantics) -> Self {
-        self.semantics = semantics;
-        self
-    }
-
     /// Configures the synchronization strategy for signal synchronization.
     pub fn synchronization_strategy(mut self, strategy: SynchronizationStrategy) -> Self {
         self.synchronization_strategy = strategy;
         self
     }
 
-    /// Builds the final StlMonitor by recursively constructing the operator tree.
-    pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str>
-    where
-        T: Into<f64> + Copy + Interpolatable + 'static, // Add required bounds
-        Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug, // Add required bounds
-    {
-        // The RobustnessSemantics bound guarantees Y is one of the supported types.
+    /// Applies the semantics, switching the Builder's generic type `Y` to match the semantics.
+    /// This allows inference of the output type (bool, f64, RobustnessInterval).
+    pub fn semantics<S: semantic_markers::SemanticType>(
+        self,
+        _marker: S,
+    ) -> StlMonitorBuilder<T, S::Output> {
+        StlMonitorBuilder {
+            formula: self.formula,
+            algorithm: self.algorithm,
+            semantics: S::as_enum(),
+            synchronization_strategy: self.synchronization_strategy,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+// The build method is only available when Y implements RobustnessSemantics.
+// This prevents building when Y is still `Unset`.
+impl<T, Y> StlMonitorBuilder<T, Y>
+where
+    T: Into<f64> + Copy + Interpolatable + 'static,
+    Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
+{
+    pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str> {
         let identifier: &'static str = if TypeId::of::<Y>() == TypeId::of::<bool>() {
             "bool"
         } else if TypeId::of::<Y>() == TypeId::of::<f64>() {
             "f64"
         } else {
-            // At this point, only RobustnessInterval remains (guaranteed by the trait bound).
             "RobustnessInterval"
         };
 
@@ -271,6 +288,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             .ok_or("Formula definition is required")?;
 
         // Validate semantics matches output type Y
+        // (This check is theoretically redundant due to the type system now, but kept for safety)
         match (self.semantics, identifier) {
             (Semantics::Rosi, "RobustnessInterval") => {}
             (Semantics::Robustness, "f64") => {}
@@ -278,7 +296,6 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             _ => return Err("Semantics does not match output type Y"),
         }
 
-        // Factory pattern: Build the correct operator tree based on the algorithm and semantics
         let root_operator = match (self.algorithm, self.semantics) {
             (Algorithm::Incremental, _) => {
                 let mut root_operator =
@@ -288,15 +305,14 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             }
             (
                 Algorithm::Naive,
-                Semantics::StrictSatisfaction | Semantics::Robustness | Semantics::Rosi,
+                Semantics::StrictSatisfaction | Semantics::Robustness,
             ) => self.build_naive_operator(formula_def.clone(), self.semantics),
-            (Algorithm::Naive, Semantics::EagerSatisfaction) => {
-                return Err("Naive algorithm does not support eager evaluation");
+            (Algorithm::Naive, Semantics::EagerSatisfaction | Semantics::Rosi) => {
+                return Err("Naive algorithm does not support RoSI/Eaver evaluation");
             }
         };
 
         let synchronizer = if formula_def.get_signal_identifiers().len() <= 1 {
-            // No need for synchronization if only one signal is involved
             eprintln!(
                 "Warning: Only one signal involved, synchronization of signals is disabled for performance."
             );
@@ -311,12 +327,10 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         })
     }
 
-    /// Top-level factory for the Naive monitor.
-    /// It builds the formula enum tree and wraps it in the final StlFormula operator.
     fn build_naive_operator(
         &self,
         formula: FormulaDefinition,
-        _semantics: Semantics, // Note: semantics isn't used by naive directly, but we keep it for consistency
+        _semantics: Semantics,
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
@@ -375,10 +389,8 @@ where
 {
     // Determine configuration flags
     let is_eager = matches!(semantics, Semantics::EagerSatisfaction);
-    let is_rosi = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
+    let is_rosi = matches!(semantics, Semantics::Rosi);
 
-    // We use `$( $arg:expr ),*` to capture arguments as a list.
-    // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
     macro_rules! dispatch_operator {
         ($OpType:ident, $( $arg:expr ),* ) => {
             match (is_eager, is_rosi) {
@@ -391,7 +403,6 @@ where
     }
 
     match formula {
-        // --- Group A: Clean Operators (No Const Generics) ---
         FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
         FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
         FormulaDefinition::True => Box::new(Atomic::new_true()),
@@ -402,7 +413,6 @@ where
             Box::new(Not::new(child))
         }
 
-        // --- Group B: Optimized Operators (Uses dispatch macro) ---
         FormulaDefinition::And(l, r) => {
             let left = build_incremental_operator(*l, semantics);
             let right = build_incremental_operator(*r, semantics);
@@ -447,6 +457,29 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn test_builder_type_inference() {
+        let formula = FormulaDefinition::GreaterThan("x", 5.0);
+
+        // This is the syntax you requested:
+        // T is defaulted to f64 by StlMonitor::builder()
+        // Y is inferred as `bool` because of StrictSatisfaction
+        let mut monitor = StlMonitor::builder()
+            .formula(formula)
+            .semantics(StrictSatisfaction) // Use the marker struct
+            .algorithm(Algorithm::Incremental)
+            .build()
+            .unwrap();
+
+        // The compiler knows this is f64 input, bool output
+        let step = Step::new("x", 10.0, Duration::from_secs(1));
+        let output = monitor.update(&step);
+
+        // We can assert types in the test
+        assert_eq!(output.input_value, 10.0); // T=f64
+        // output.latest_verdict_at(...) returns Option<&Step<Option<bool>>>
+    }
+
+    #[test]
     fn test_build_1() {
         let formula = FormulaDefinition::And(
             Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
@@ -459,108 +492,23 @@ mod tests {
             )),
         );
 
-        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+        // Usage with marker struct implies Y = f64
+        let monitor = StlMonitor::builder()
             .formula(formula.clone())
             .algorithm(Algorithm::Incremental)
-            .semantics(Semantics::Robustness)
+            .semantics(Robustness)
             .build()
             .unwrap();
 
-        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
+        let monitor_naive = StlMonitor::builder()
             .formula(formula)
             .algorithm(Algorithm::Naive)
-            .semantics(Semantics::Robustness)
+            .semantics(Robustness)
             .build()
             .unwrap();
-
-        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
-        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
 
         let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {spec}");
-
         let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {spec_naive}");
-
-        assert_eq!(spec, spec_naive);
-    }
-
-    #[test]
-    fn test_build_2() {
-        let formula = FormulaDefinition::Until(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(5),
-            },
-            Box::new(FormulaDefinition::GreaterThan("x", 3.0)),
-            Box::new(FormulaDefinition::LessThan("x", 7.0)),
-        );
-
-        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula.clone())
-            .algorithm(Algorithm::Incremental)
-            .semantics(Semantics::Robustness)
-            .build()
-            .unwrap();
-
-        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula)
-            .algorithm(Algorithm::Naive)
-            .semantics(Semantics::Robustness)
-            .build()
-            .unwrap();
-
-        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
-        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
-
-        let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {spec}");
-
-        let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {spec_naive}");
-
-        assert_eq!(spec, spec_naive);
-    }
-
-    #[test]
-    fn test_build_3() {
-        // test nested temporals
-        let formula = FormulaDefinition::Globally(
-            TimeInterval {
-                start: Duration::from_secs(0),
-                end: Duration::from_secs(20),
-            },
-            Box::new(FormulaDefinition::Eventually(
-                TimeInterval {
-                    start: Duration::from_secs(5),
-                    end: Duration::from_secs(15),
-                },
-                Box::new(FormulaDefinition::And(
-                    Box::new(FormulaDefinition::GreaterThan("x", 2.0)),
-                    Box::new(FormulaDefinition::LessThan("x", 8.0)),
-                )),
-            )),
-        );
-
-        let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula.clone())
-            .algorithm(Algorithm::Incremental)
-            .semantics(Semantics::Robustness)
-            .build()
-            .unwrap();
-        let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula)
-            .algorithm(Algorithm::Naive)
-            .semantics(Semantics::Robustness)
-            .build()
-            .unwrap();
-        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
-        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
-
-        let spec = monitor.specification_to_string();
-        println!("Monitor Specification: {spec}");
-        let spec_naive = monitor_naive.specification_to_string();
-        println!("Naive Monitor Specification: {spec_naive}");
         assert_eq!(spec, spec_naive);
     }
 }

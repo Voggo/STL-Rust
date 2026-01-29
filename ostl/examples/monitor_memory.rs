@@ -1,7 +1,9 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
+use ostl::stl::monitor::{
+    Algorithm, EagerSatisfaction, Robustness, Rosi, StlMonitor, StrictSatisfaction,
+};
 use std::env;
 use std::time::Duration;
 
@@ -114,18 +116,26 @@ fn parse_strategy(s: &str) -> Result<Algorithm, String> {
     }
 }
 
-fn parse_semantics(s: &str) -> Result<Semantics, String> {
+fn parse_semantics(s: &str) -> Result<SemanticChoice, String> {
     if s.eq_ignore_ascii_case("eager") {
-        Ok(Semantics::EagerSatisfaction)
+        Ok(SemanticChoice::Eager)
     } else if s.eq_ignore_ascii_case("strict") {
-        Ok(Semantics::StrictSatisfaction)
+        Ok(SemanticChoice::Strict)
     } else if s.eq_ignore_ascii_case("robustness") {
-        Ok(Semantics::Robustness)
+        Ok(SemanticChoice::Robustness)
     } else if s.eq_ignore_ascii_case("rosi") {
-        Ok(Semantics::Rosi)
+        Ok(SemanticChoice::Rosi)
     } else {
         Err(format!("unknown semantics: {s}"))
     }
+}
+
+#[derive(Debug)]
+enum SemanticChoice {
+    Eager,
+    Strict,
+    Robustness,
+    Rosi,
 }
 
 fn main() {
@@ -158,10 +168,10 @@ fn main() {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("{e}");
-                Semantics::StrictSatisfaction
+                SemanticChoice::Strict
             }
         },
-        None => Semantics::StrictSatisfaction,
+        None => SemanticChoice::Strict,
     };
 
     println!("Using algorithm: {algorithm:?}, semantics: {semantics:?}");
@@ -170,17 +180,51 @@ fn main() {
     let signal_size = 1000; // Size of the signal for benchmarking
     let signal = get_long_signal(signal_size);
 
-    // Create the monitor using args
-    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-        .formula(formula)
-        .algorithm(algorithm)
-        .semantics(semantics)
-        .build()
-        .unwrap();
-
-    // Run the monitor on the signal
-    for step in signal {
-        let _result = monitor.update(&step);
-        // For benchmarking purposes, we ignore the result
+    // Create the monitor using args - dispatch based on semantics
+    match semantics {
+        SemanticChoice::Strict => {
+            let mut monitor = StlMonitor::builder()
+                .formula(formula)
+                .algorithm(algorithm)
+                .semantics(StrictSatisfaction)
+                .build()
+                .unwrap();
+            for step in signal {
+                let _result = monitor.update(&step);
+            }
+        }
+        SemanticChoice::Eager => {
+            let mut monitor = StlMonitor::builder()
+                .formula(formula)
+                .algorithm(algorithm)
+                .semantics(EagerSatisfaction)
+                .build()
+                .unwrap();
+            for step in signal {
+                let _result = monitor.update(&step);
+            }
+        }
+        SemanticChoice::Robustness => {
+            let mut monitor = StlMonitor::builder()
+                .formula(formula)
+                .algorithm(algorithm)
+                .semantics(Robustness)
+                .build()
+                .unwrap();
+            for step in signal {
+                let _result = monitor.update(&step);
+            }
+        }
+        SemanticChoice::Rosi => {
+            let mut monitor = StlMonitor::builder()
+                .formula(formula)
+                .algorithm(algorithm)
+                .semantics(Rosi)
+                .build()
+                .unwrap();
+            for step in signal {
+                let _result = monitor.update(&step);
+            }
+        }
     }
 }

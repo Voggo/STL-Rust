@@ -4,7 +4,9 @@ mod tests {
     use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::formula_definition::FormulaDefinition;
-    use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
+    use ostl::stl::monitor::{
+        Algorithm, EagerSatisfaction, Robustness, Rosi, StlMonitor, StrictSatisfaction,
+    };
     use ostl::synchronizer::SynchronizationStrategy;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
@@ -559,14 +561,15 @@ mod tests {
 
     /// This helper function contains the actual test logic.
     /// It is called by the `rstest` runners below.
-    fn run_monitor_test<Y>(
+    fn run_monitor_test<Y, S>(
         formulas: Vec<FormulaDefinition>,
         signal: Vec<Step<f64>>,
         strategy: Algorithm,
-        semantics: Semantics,
+        semantics: S,
         expected: Vec<Vec<Step<Option<Y>>>>,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
+        S: ostl::stl::monitor::semantic_markers::SemanticType<Output = Y> + Copy,
     {
         for (i, formula) in formulas.into_iter().enumerate() {
             let mut monitor = StlMonitor::builder()
@@ -593,14 +596,14 @@ mod tests {
                 i,
                 monitor.specification_to_string(),
                 strategy,
-                semantics
+                S::as_enum()
             );
         }
     }
 
     #[rstest]
     // --- f64 Strict Cases ---
-    // These run with Semantics::Robustness and are tested against
+    // These run with Robustness and are tested against
     // both Naive and Incremental strategies.
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_f64_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_strict())]
@@ -609,20 +612,18 @@ mod tests {
     #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_f64_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_strict())]
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_f64_strict())]
-    fn test_f64_strict<Y>(
+    fn test_f64_strict(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[case] expected: Vec<Vec<Step<Option<f64>>>>,
         #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
-    ) where
-        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
-    {
-        run_monitor_test(formulas, signal, strategy, Semantics::Robustness, expected);
+    ) {
+        run_monitor_test(formulas, signal, strategy, Robustness, expected);
     }
 
     #[rstest]
     // --- bool Strict Cases ---
-    // These run with Semantics::StrictSatisfaction and are tested against
+    // These run with StrictSatisfaction and are tested against
     // both Naive and Incremental strategies.
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_strict())]
@@ -631,26 +632,18 @@ mod tests {
     #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_strict())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_strict())]
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_strict())]
-    fn test_bool_strict<Y>(
+    fn test_bool_strict(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[case] expected: Vec<Vec<Step<Option<bool>>>>,
         #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
-    ) where
-        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
-    {
-        run_monitor_test(
-            formulas,
-            signal,
-            strategy,
-            Semantics::StrictSatisfaction,
-            expected,
-        );
+    ) {
+        run_monitor_test(formulas, signal, strategy, StrictSatisfaction, expected);
     }
 
     #[rstest]
     // --- bool Eager Cases ---
-    // These run with Semantics::EagerSatisfaction and are tested *only*
+    // These run with EagerSatisfaction and are tested *only*
     // against the Incremental strategy (Naive+Eager is invalid).
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_eager())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_eager())]
@@ -661,32 +654,24 @@ mod tests {
     #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())]
     #[case::f10_s3(vec![formula_10()], signal_3(), exp_f10_s3_bool_eager())]
     #[case::f11_s3(vec![formula_11()], signal_3(), exp_f11_s3_bool_eager())]
-    fn test_bool_eager<Y>(
+    fn test_bool_eager(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
-        #[case] expected: Vec<Vec<Step<Option<Y>>>>,
+        #[case] expected: Vec<Vec<Step<Option<bool>>>>,
         #[values(Algorithm::Incremental)] strategy: Algorithm,
-    ) where
-        Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
-    {
-        run_monitor_test(
-            formulas,
-            signal,
-            strategy,
-            Semantics::EagerSatisfaction,
-            expected,
-        );
+    ) {
+        run_monitor_test(formulas, signal, strategy, EagerSatisfaction, expected);
     }
 
     #[rstest]
     fn test_f64_interval_robustness() {
         // Test that StlMonitor can be built with f64 interval robustness
-        let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+        let mut monitor = StlMonitor::builder()
             .formula(stl! {
                 (G[0,2] (x < 2)) and ((x > 0))
             })
+            .semantics(Rosi)
             .algorithm(Algorithm::Incremental)
-            .semantics(Semantics::Rosi)
             .build()
             .unwrap();
 
@@ -717,18 +702,18 @@ mod tests {
             .into_iter()
             .map(|formula| {
                 // Build an incremental monitor that emits RobustnessInterval outputs
-                let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+                let mut monitor = StlMonitor::builder()
                     .formula(formula.clone())
+                    .semantics(Rosi)
                     .algorithm(Algorithm::Incremental)
-                    .semantics(Semantics::Rosi)
                     .build()
                     .unwrap();
 
                 // build a robustness monitor for comparison
-                let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                let mut strict_monitor = StlMonitor::builder()
                     .formula(formula.clone())
+                    .semantics(Robustness)
                     .algorithm(Algorithm::Incremental)
-                    .semantics(Semantics::Robustness)
                     .build()
                     .unwrap();
 
@@ -785,10 +770,10 @@ mod tests {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
-                let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
+                let mut monitor = StlMonitor::builder()
                     .formula(formula)
+                    .semantics(Rosi)
                     .algorithm(Algorithm::Incremental)
-                    .semantics(Semantics::Rosi)
                     .build()
                     .unwrap();
 
@@ -900,32 +885,34 @@ mod tests {
     // ---
     // Test Runner for Build Failures
     // ---
-    #[rstest]
-    #[should_panic]
-    fn test_monitor_build_fails_f64_eager(
-        #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
-    ) {
-        // Eager mode + f64 robustness is an invalid combination
-        let _: StlMonitor<f64, f64> = StlMonitor::builder()
-            .formula(formula_1())
-            .algorithm(strategy)
-            .semantics(Semantics::EagerSatisfaction)
-            .build()
-            .unwrap();
-    }
 
     #[rstest]
     #[should_panic]
     fn test_monitor_build_fails_bool_naive_eager() {
         // Eager mode + Naive strategy is an invalid combination
-        let _: StlMonitor<f64, bool> = StlMonitor::builder()
+        let _ = StlMonitor::builder()
             .formula(formula_1())
             .algorithm(Algorithm::Naive)
-            .semantics(Semantics::EagerSatisfaction)
+            .semantics(EagerSatisfaction)
             .build()
             .unwrap();
     }
 
+    #[rstest]
+    #[should_panic]
+    fn test_monitor_build_fails_bool_rosi() {
+        // Eager mode + Naive strategy is an invalid combination
+        let _ = StlMonitor::builder()
+            .formula(formula_1())
+            .algorithm(Algorithm::Naive)
+            .semantics(Rosi)
+            .build()
+            .unwrap();
+    }
+
+    // ---
+    // Test Runner for Interpolation Strategies
+    // ---
     #[rstest]
     fn test_interpolation(
         #[values(
@@ -945,10 +932,10 @@ mod tests {
             .map(|i| Step::new("y", i as f64, Duration::from_secs(i)))
             .collect();
 
-        let mut monitor = StlMonitor::<f64, RobustnessInterval>::builder()
+        let mut monitor = StlMonitor::builder()
             .formula(stl! { (x > 0) && (y < 150) })
+            .semantics(Rosi)
             .algorithm(Algorithm::Incremental)
-            .semantics(Semantics::Rosi)
             .synchronization_strategy(interpolation_strategy)
             .build()
             .unwrap();
@@ -957,10 +944,6 @@ mod tests {
 
         for step in combine_and_sort_steps(vec![x_steps, y_steps]) {
             let output = monitor.update(&step);
-            // println!(
-            //     "Monitor output at {:?} with {:?}={:?}: \n {:?} \n",
-            //     &step.timestamp, step.signal, step.value, output
-            // );
             outputs.push(output.all_outputs());
         }
 
