@@ -1,3 +1,12 @@
+//! # OSTL - Online Signal Temporal Logic
+//!
+//! This crate provides tools for monitoring Signal Temporal Logic (STL) formulas.
+//!
+//! ## Example
+//! ```rust
+//! // your example code here
+//! ```
+
 // Enable use of ::ostl:: paths within this crate for the proc-macro
 extern crate self as ostl;
 
