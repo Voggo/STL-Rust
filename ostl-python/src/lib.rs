@@ -223,7 +223,7 @@ impl Formula {
     }
 
     fn __repr__(&self) -> String {
-        format!("Formula({})", self.inner.to_string())
+        format!("Formula({})", self.inner)
     }
 }
 
@@ -321,9 +321,9 @@ impl Monitor {
         };
 
         let interpolation_strategy = match interpolation {
-            "zoh" => ostl::synchronizer::InterpolationStrategy::ZeroOrderHold,
-            "linear" => ostl::synchronizer::InterpolationStrategy::Linear,
-            "none" => ostl::synchronizer::InterpolationStrategy::None,
+            "zoh" => InterpolationStrategy::ZeroOrderHold,
+            "linear" => InterpolationStrategy::Linear,
+            "none" => InterpolationStrategy::None,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                     "Invalid interpolation. Use 'zoh', 'linear', or 'none'",
@@ -340,7 +340,7 @@ impl Monitor {
                     .evaluation_mode(evaluation_mode)
                     .interpolation_strategy(interpolation_strategy)
                     .build()
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+                    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Qualitative(m),
                     semantics: semantics.to_string(),
@@ -362,7 +362,7 @@ impl Monitor {
                     .evaluation_mode(evaluation_mode)
                     .interpolation_strategy(interpolation_strategy)
                     .build()
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+                    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Quantitative(m),
                     semantics: semantics.to_string(),
@@ -378,7 +378,7 @@ impl Monitor {
                     .evaluation_mode(evaluation_mode)
                     .interpolation_strategy(interpolation_strategy)
                     .build()
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+                    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Rosi(m),
                     semantics: semantics.to_string(),
@@ -435,7 +435,7 @@ impl Monitor {
             InnerMonitor::Rosi(m) => {
                 let output = m.update(&step);
                 convert_output(py, output, |val| {
-                    PyTuple::new(py, &[val.0, val.1])
+                    PyTuple::new(py, [val.0, val.1])
                         .unwrap()
                         .into_any()
                         .unbind()
@@ -447,16 +447,16 @@ impl Monitor {
     fn __repr__(&self) -> String {
         match &self.inner {
             InnerMonitor::Qualitative(_) => format!(
-                "Monitor(semantics='qualitative', strategy='{}', mode='{}', interpolation='{}')",
-                self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
+                self.semantics, self.strategy, self.mode, self.interpolation
             ),
             InnerMonitor::Quantitative(_) => format!(
-                "Monitor(semantics='quantitative', strategy='{}', mode='{}', interpolation='{}')",
-                self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
+                self.semantics, self.strategy, self.mode, self.interpolation
             ),
             InnerMonitor::Rosi(_) => format!(
-                "Monitor(semantics='rosi', strategy='{}', mode='{}', interpolation='{}')",
-                self.strategy, self.mode, self.interpolation
+                "Monitor(semantics='{}', strategy='{}', mode='{}', interpolation='{}')",
+                self.semantics, self.strategy, self.mode, self.interpolation
             ),
         }
     }
