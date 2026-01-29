@@ -13,6 +13,7 @@ use crate::stl::operators::until_operator::Until;
 use crate::synchronizer::{Interpolatable, SynchronizationStrategy, Synchronizer};
 use std::any::TypeId;
 use std::fmt::Debug;
+use std::fmt::Display;
 use std::time::Duration;
 
 /// Defines the monitoring strategy.
@@ -35,7 +36,7 @@ pub enum EvaluationMode {
 ///
 /// This struct provides a mapping between the input step that triggered
 /// the evaluation and the resulting output steps from the monitor.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MonitorOutput<T, Y> {
     /// The signal name from the input step that triggered this evaluation
     pub input_signal: &'static str,
@@ -48,74 +49,35 @@ pub struct MonitorOutput<T, Y> {
     pub evaluations: Vec<SyncStepResult<T, Y>>,
 }
 
-impl<Y> Debug for MonitorOutput<f64, Y>
+impl<Y> Display for MonitorOutput<f64, Y>
 where
-    Y: Debug,
+    Y: Debug + Clone,
 {
+    /// Writes the finalized string representation of the MonitorOutput.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "MonitorOutput {{")?;
-        writeln!(
-            f,
-            "  input: signal=\"{}\", timestamp={:?}, value={}",
-            self.input_signal, self.input_timestamp, self.input_value
-        )?;
-        if self.evaluations.is_empty() {
-            writeln!(f, "  evaluations: (none)")?;
-        } else {
-            writeln!(f, "  evaluations:")?;
-            for (i, eval) in self.evaluations.iter().enumerate() {
-                let is_last = i == self.evaluations.len() - 1;
-                let prefix = if is_last { "└──" } else { "├──" };
-                let cont = if is_last { "   " } else { "│  " };
-                writeln!(
-                    f,
-                    "  {} sync_step: signal=\"{}\", timestamp={:?}, value={}",
-                    prefix, eval.sync_step.signal, eval.sync_step.timestamp, eval.sync_step.value
-                )?;
-                if eval.outputs.is_empty() {
-                    writeln!(f, "  {}     outputs: (none)", cont)?;
-                } else {
-                    writeln!(f, "  {}     outputs:", cont)?;
-                    for (j, output) in eval.outputs.iter().enumerate() {
-                        let out_is_last = j == eval.outputs.len() - 1;
-                        let out_prefix = if out_is_last {
-                            "└──"
-                        } else {
-                            "├──"
-                        };
-                        writeln!(
-                            f,
-                            "  {}       {} t={:?} → {:?}",
-                            cont, out_prefix, output.timestamp, output.value
-                        )?;
-                    }
-                }
-            }
+        let finalized = self.finalize();
+
+        if finalized.is_empty() {
+            return write!(f, "No verdicts available");
         }
-        write!(f, "}}")
+
+        for (i, step) in finalized.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "t={:?}: {:?}", step.timestamp, step.value)?;
+        }
+        Ok(())
     }
 }
 
 /// Represents the evaluation result for a single synchronized step.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SyncStepResult<T, Y> {
     /// The synchronized step that was evaluated (may be interpolated)
     pub sync_step: Step<T>,
     /// The output steps produced by evaluating this synchronized step
     pub outputs: Vec<Step<Option<Y>>>,
-}
-
-impl<Y> Debug for SyncStepResult<f64, Y>
-where
-    Y: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SyncStepResult {{ sync_step: {:?}, outputs: {:?} }}",
-            self.sync_step, self.outputs
-        )
-    }
 }
 
 impl<T, Y> SyncStepResult<T, Y> {
@@ -179,6 +141,21 @@ impl<T, Y> MonitorOutput<T, Y> {
         self.evaluations
             .iter()
             .flat_map(|e| e.outputs.clone())
+            .collect()
+    }
+
+    /// Finalizes the monitor output by collecting all outputs with latest verdict for each available timestamp.
+    pub fn finalize(&self) -> Vec<Step<Option<Y>>>
+    where
+        Y: Clone,
+    {
+        let mut latest_map = std::collections::BTreeMap::new();
+        for output in self.outputs_iter() {
+            latest_map.insert(output.timestamp, output.value.clone());
+        }
+        latest_map
+            .into_iter()
+            .map(|(ts, val)| Step::new(self.input_signal, val, ts))
             .collect()
     }
 }
