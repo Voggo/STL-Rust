@@ -33,38 +33,45 @@ import ostl_python.ostl_python as ostl
 # Define an STL formula: Always[0,5](x > 0.5)
 formula = ostl.Formula.always(0, 5, ostl.Formula.gt("x", 0.5))
 
-# Create a monitor with robustness semantics
-monitor = ostl.Monitor(formula, semantics="rosi")
+# Create a monitor with Rosi semantics
+monitor = ostl.Monitor(formula, semantics="Rosi")
 
 # Feed data and get verdicts
 result = monitor.update("x", 1.0, 0.0)
-print(result['verdicts'])
+for evaluation in result['evaluations']:
+    print(evaluation['outputs'])
 ```
 
 ## Features
 
 ### Multiple Semantics
 
-The library supports three types of monitoring semantics:
+The library supports four types of monitoring semantics:
 
-1. **Boolean** (`semantics="qualitative"`): Classic true/false evaluation
+1. **StrictSatisfaction** (`semantics="StrictSatisfaction"`): Boolean satisfaction with strict evaluation
    - Returns: `True` or `False`
+   - Waits for complete information before producing verdicts
 
-2. **Quantitative** (`semantics="quantitative"`): Robustness as a single value
+2. **EagerSatisfaction** (`semantics="EagerSatisfaction"`): Boolean satisfaction with eager evaluation
+   - Returns: `True` or `False`
+   - Produces verdicts as soon as possible
+
+3. **Robustness** (`semantics="Robustness"`, default): Quantitative robustness as a single value
    - Returns: Float value (positive = satisfied, negative = violated)
 
-3. **Robustness Interval** (`semantics="rosi"`): RoSI semantics
+4. **Rosi** (`semantics="Rosi"`): Robustness as an interval
    - Returns: Tuple `(min, max)` representing robustness interval
 
-### Monitoring Strategies
+### Monitoring Algorithms
 
-- **Incremental** (`strategy="incremental"`, default): Efficient online monitoring using sliding windows
-- **Naive** (`strategy="naive"`): Simple but less efficient approach
+- **Incremental** (`algorithm="Incremental"`, default): Efficient online monitoring using sliding windows
+- **Naive** (`algorithm="Naive"`): Simple but less efficient approach
 
-### Evaluation Modes
+### Signal Synchronization
 
-- **Eager** (`mode="eager"`): Produces verdicts as soon as possible (possible for RoSI and qualitative)
-- **Strict** (`mode="strict"`): Waits for complete information (possible for qualitative and quantitative)
+- **ZeroOrderHold** (`synchronization="ZeroOrderHold"`, default): Zero-order hold interpolation
+- **Linear** (`synchronization="Linear"`): Linear interpolation
+- **None** (`synchronization="None"`): No interpolation
 
 ## Formula Construction
 

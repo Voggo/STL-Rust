@@ -1,7 +1,9 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{Algorithm, MonitorOutput, Semantics, StlMonitor};
+use ostl::stl::monitor::{
+    Algorithm, EagerSatisfaction, MonitorOutput, Robustness, Rosi, StlMonitor, StrictSatisfaction,
+};
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
@@ -234,8 +236,9 @@ impl Formula {
 /// We need an enum to handle the different generics (bool, f64, RobustnessInterval)
 /// because Python types are dynamic but Rust types are static.
 enum InnerMonitor {
-    Qualitative(StlMonitor<f64, bool>),
-    Quantitative(StlMonitor<f64, f64>),
+    StrictSatisfaction(StlMonitor<f64, bool>),
+    EagerSatisfaction(StlMonitor<f64, bool>),
+    Robustness(StlMonitor<f64, f64>),
     Rosi(StlMonitor<f64, RobustnessInterval>),
 }
 
@@ -262,24 +265,24 @@ impl Monitor {
     ///     The STL formula to monitor
     /// semantics : str, optional
     ///     The output semantics:
-    ///     - "strict": boolean satisfaction with strict evaluation (default)
-    ///     - "eager": boolean satisfaction with eager evaluation
-    ///     - "robustness": quantitative robustness as a single float value
-    ///     - "rosi": robustness as an interval (min, max)
+    ///     - "StrictSatisfaction": boolean satisfaction with strict evaluation
+    ///     - "EagerSatisfaction": boolean satisfaction with eager evaluation
+    ///     - "Robustness": quantitative robustness as a single float value (default)
+    ///     - "Rosi": robustness as an interval (min, max)
     /// algorithm : str, optional
     ///     The monitoring algorithm:
-    ///     - "incremental": efficient incremental monitoring (default)
-    ///     - "naive": simple but less efficient
+    ///     - "Incremental": efficient incremental monitoring (default)
+    ///     - "Naive": simple but less efficient
     /// synchronization : str, optional
     ///     The signal synchronization method:
-    ///     - "zoh": zero-order hold (default)
-    ///     - "linear": linear interpolation
-    ///     - "none": no interpolation
+    ///     - "ZeroOrderHold": zero-order hold (default)
+    ///     - "Linear": linear interpolation
+    ///     - "None": no interpolation
     /// Returns:
     /// --------
     /// Monitor
     #[new]
-    #[pyo3(signature = (formula, semantics="strict", algorithm="incremental", synchronization="zoh"))]
+    #[pyo3(signature = (formula, semantics="Robustness", algorithm="Incremental", synchronization="ZeroOrderHold"))]
     fn new(
         formula: &Formula,
         semantics: &str,
@@ -288,76 +291,78 @@ impl Monitor {
     ) -> PyResult<Self> {
         // Parse algorithm
         let algo = match algorithm {
-            "incremental" => Algorithm::Incremental,
-            "naive" => Algorithm::Naive,
+            "Incremental" => Algorithm::Incremental,
+            "Naive" => Algorithm::Naive,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid algorithm. Use 'incremental' or 'naive'",
-                ));
-            }
-        };
-
-        // Parse semantics
-        let sem = match semantics {
-            "strict" => Semantics::StrictSatisfaction,
-            "eager" => Semantics::EagerSatisfaction,
-            "robustness" => Semantics::Robustness,
-            "rosi" => Semantics::Rosi,
-            _ => {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid semantics. Use 'strict', 'eager', 'robustness', or 'rosi'",
+                    "Invalid algorithm. Use 'Incremental' or 'Naive'",
                 ));
             }
         };
 
         let synchronization_strategy = match synchronization {
-            "zoh" => SynchronizationStrategy::ZeroOrderHold,
-            "linear" => SynchronizationStrategy::Linear,
-            "none" => SynchronizationStrategy::None,
+            "ZeroOrderHold" => SynchronizationStrategy::ZeroOrderHold,
+            "Linear" => SynchronizationStrategy::Linear,
+            "None" => SynchronizationStrategy::None,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid synchronization. Use 'zoh', 'linear', or 'none'",
+                    "Invalid synchronization. Use 'ZeroOrderHold', 'Linear', or 'None'",
                 ));
             }
         };
 
         // Build monitor based on semantics
-        match sem {
-            Semantics::StrictSatisfaction | Semantics::EagerSatisfaction => {
-                let m = StlMonitor::<f64, bool>::builder()
+        match semantics {
+            "StrictSatisfaction" => {
+                let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(sem)
+                    .semantics(StrictSatisfaction)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
-                    inner: InnerMonitor::Qualitative(m),
+                    inner: InnerMonitor::StrictSatisfaction(m),
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                 })
             }
-            Semantics::Robustness => {
-                let m = StlMonitor::<f64, f64>::builder()
+            "EagerSatisfaction" => {
+                let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(sem)
+                    .semantics(EagerSatisfaction)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
-                    inner: InnerMonitor::Quantitative(m),
+                    inner: InnerMonitor::EagerSatisfaction(m),
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                 })
             }
-            Semantics::Rosi => {
-                let m = StlMonitor::<f64, RobustnessInterval>::builder()
+            "Robustness" => {
+                let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(sem)
+                    .semantics(Robustness)
+                    .synchronization_strategy(synchronization_strategy)
+                    .build()
+                    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+                Ok(Monitor {
+                    inner: InnerMonitor::Robustness(m),
+                    semantics: semantics.to_string(),
+                    algorithm: algorithm.to_string(),
+                    synchronization: synchronization.to_string(),
+                })
+            }
+            "Rosi" => {
+                let m = StlMonitor::builder()
+                    .formula(formula.inner.clone())
+                    .algorithm(algo)
+                    .semantics(Rosi)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
@@ -368,6 +373,9 @@ impl Monitor {
                     synchronization: synchronization.to_string(),
                 })
             }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Invalid semantics. Use 'StrictSatisfaction', 'EagerSatisfaction', 'Robustness', or 'Rosi'",
+            )),
         }
     }
 
@@ -400,15 +408,17 @@ impl Monitor {
         let step = Step::new(sig_ref, value, Duration::from_secs_f64(timestamp));
 
         Python::attach(|py| match &mut self.inner {
-            InnerMonitor::Qualitative(m) => {
+            InnerMonitor::Robustness(m) => {
+                let output = m.update(&step);
+                convert_output(py, output, |val| {
+                    PyFloat::new(py, val).to_owned().into_any().unbind()
+                })
+            }
+            InnerMonitor::EagerSatisfaction(m) | InnerMonitor::StrictSatisfaction(m) => {
                 let output = m.update(&step);
                 convert_output(py, output, |val| {
                     PyBool::new(py, val).to_owned().into_any().unbind()
                 })
-            }
-            InnerMonitor::Quantitative(m) => {
-                let output = m.update(&step);
-                convert_output(py, output, |val| PyFloat::new(py, val).into_any().unbind())
             }
             InnerMonitor::Rosi(m) => {
                 let output = m.update(&step);
@@ -423,20 +433,10 @@ impl Monitor {
     }
 
     fn __repr__(&self) -> String {
-        match &self.inner {
-            InnerMonitor::Qualitative(_) => format!(
-                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
-                self.semantics, self.algorithm, self.synchronization
-            ),
-            InnerMonitor::Quantitative(_) => format!(
-                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
-                self.semantics, self.algorithm, self.synchronization
-            ),
-            InnerMonitor::Rosi(_) => format!(
-                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
-                self.semantics, self.algorithm, self.synchronization
-            ),
-        }
+        format!(
+            "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
+            self.semantics, self.algorithm, self.synchronization
+        )
     }
 }
 
@@ -471,12 +471,11 @@ where
         let mut outputs_list = Vec::new();
 
         for out_step in eval.outputs {
-            if let Some(val) = out_step.value {
-                let output_dict = PyDict::new(py);
-                output_dict.set_item("timestamp", out_step.timestamp.as_secs_f64())?;
-                output_dict.set_item("value", val_mapper(val))?;
-                outputs_list.push(output_dict);
-            }
+            let val = out_step.value;
+            let output_dict = PyDict::new(py);
+            output_dict.set_item("timestamp", out_step.timestamp.as_secs_f64())?;
+            output_dict.set_item("value", val_mapper(val))?;
+            outputs_list.push(output_dict);
         }
 
         eval_dict.set_item("outputs", outputs_list)?;
@@ -496,19 +495,19 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", "0.1.0")?;
     m.add("__doc__", "Online Signal Temporal Logic (STL) monitoring library.\n\n\
         This library provides efficient online monitoring of STL formulas with multiple semantics:\n\
-        - Boolean: classic true/false evaluation\n\
-        - Quantitative: robustness as a single float value\n\
-        - Robustness (RoSI): robustness as an interval (min, max)\n\n\
+        - StrictSatisfaction/EagerSatisfaction: true/false evaluation\n\
+        - Robustness: robustness as a single float value\n\
+        - Rosi: robustness as an interval (min, max)\n\n\
         Example:\n\
         --------\n\
         >>> import ostl_python\n\
         >>> # Create formula: Always[0,5](x > 0.5)\n\
         >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))\n\
-        >>> # Create monitor with robustness semantics\n\
-        >>> monitor = ostl_python.Monitor(phi, semantics='robustness')\n\
+        >>> # Create monitor with Robustness semantics\n\
+        >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
         >>> # Feed data\n\
         >>> result = monitor.update('x', 1.0, 0.0)\n\
-        >>> print(result['verdicts'])\n\
+        >>> print(result['evaluations'])\n\
     ")?;
 
     m.add_class::<Formula>()?;

@@ -9,7 +9,7 @@ phi = ostl.Formula.and_(
 print(f"Monitoring Formula: {phi}")
 
 # 2. Create the Monitor (using Robustness Semantics)
-monitor = ostl.Monitor(phi, semantics="rosi", mode="eager")
+monitor = ostl.Monitor(phi, semantics="robustness")
 
 vals = [
     ("x", 0.0, 0.0),

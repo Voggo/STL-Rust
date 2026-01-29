@@ -114,12 +114,12 @@ where
                 if IS_EAGER {
                     let l_ts = l.timestamp;
                     let l_val = l.value;
-                    if let Some(sc) = short_circuit_val {
-                        if l_val == sc {
-                            output_robustness.push(Step::new("output", sc, l_ts));
-                            *left_last_known = left_cache.pop_front().unwrap();
-                            continue;
-                        }
+                    if let Some(sc) = short_circuit_val
+                        && l_val == sc
+                    {
+                        output_robustness.push(Step::new("output", sc, l_ts));
+                        *left_last_known = left_cache.pop_front().unwrap();
+                        continue;
                     }
                 }
                 break;
@@ -129,12 +129,12 @@ where
                 if IS_EAGER {
                     let r_ts = r.timestamp;
                     let r_val = r.value;
-                    if let Some(sc) = short_circuit_val {
-                        if r_val == sc {
-                            output_robustness.push(Step::new("output", sc, r_ts));
-                            *right_last_known = right_cache.pop_front().unwrap();
-                            continue;
-                        }
+                    if let Some(sc) = short_circuit_val
+                        && r_val == sc
+                    {
+                        output_robustness.push(Step::new("output", sc, r_ts));
+                        *right_last_known = right_cache.pop_front().unwrap();
+                        continue;
                     }
                 }
                 break;

@@ -1,7 +1,7 @@
 use ostl::ring_buffer::Step;
 use ostl::stl;
-// use ostl::stl::core::RobustnessInterval;
-use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
+use ostl::stl::monitor::{Algorithm, StlMonitor, semantic_markers};
+// use ostl::synchronizer::SynchronizationStrategy;
 use std::time::Duration;
 
 fn main() {
@@ -15,15 +15,15 @@ fn main() {
     //     (F[0, 10]((F[0, 10](x > 0)) && (F[0, 10](x > 0)))) && (F[0, 10]((F[0, 10](x > 0)) && (F[0, 10](x > 0))))
     // );
 
-    println!("Formula Structure:\n{}", f.to_tree_string(2));
+    println!("Formula Structure:\\n{}", f.to_tree_string(2));
 
-    let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+    let mut monitor = StlMonitor::builder()
         .formula(f)
-        .semantics(Semantics::StrictSatisfaction)
-        .algorithm(Algorithm::Incremental)
-        .synchronization_strategy(ostl::synchronizer::SynchronizationStrategy::ZeroOrderHold)
+        .algorithm(Algorithm::Naive)
+        .semantics(semantic_markers::EagerSatisfaction)
         .build()
         .unwrap();
+
     let x = vec![
         Step::new("x", -1.0, Duration::from_secs(0)),
         Step::new("y", -2.0, Duration::from_secs(0)),

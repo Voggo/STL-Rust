@@ -2,16 +2,16 @@
 Online Signal Temporal Logic (STL) monitoring library.
 
 This library provides efficient online monitoring of STL formulas with multiple semantics:
-- Qualitative: classic true/false evaluation
-- Quantitative: robustness as a single float value
-- RoSI: robustness as an interval (min, max)
+- StrictSatisfaction/EagerSatisfaction: classic true/false evaluation
+- Robustness: robustness as a single float value
+- Rosi: robustness as an interval (min, max)
 
 Example:
     >>> import ostl_python
     >>> # Create formula: Always[0,5](x > 0.5)
     >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))
-    >>> # Create monitor with RoSI semantics
-    >>> monitor = ostl_python.Monitor(phi, semantics='rosi')
+    >>> # Create monitor with Rosi semantics
+    >>> monitor = ostl_python.Monitor(phi, semantics='Rosi')
     >>> # Feed data
     >>> result = monitor.update('x', 1.0, 0.0)
     >>> for eval in result['evaluations']:
@@ -276,25 +276,24 @@ class Formula:
         """Return detailed representation of the formula."""
         ...
 
-SemanticsType = Literal["qualitative", "quantitative", "rosi"]
-StrategyType = Literal["incremental", "naive"]
-ModeType = Literal["eager", "strict"]
-InterpolationType = Literal["zoh", "linear", "none"]
+SemanticsType = Literal["StrictSatisfaction", "EagerSatisfaction", "Robustness", "Rosi"]
+AlgorithmType = Literal["Incremental", "Naive"]
+SynchronizationType = Literal["ZeroOrderHold", "Linear", "None"]
 
 class Monitor:
     """
     Online STL monitor.
 
     Monitors signal traces against an STL formula and produces verdicts.
-    Supports multiple semantics (qualitative, quantitative, rosi), strategies
-    (incremental, naive), and evaluation modes (eager, strict).
+    Supports multiple semantics (StrictSatisfaction, EagerSatisfaction, Robustness, Rosi),
+    algorithms (Incremental, Naive), and synchronization strategies (ZeroOrderHold, Linear, None).
 
     The monitor processes signals incrementally and produces verdicts when
     sufficient information is available.
 
     Example:
         >>> phi = Formula.always(0, 5, Formula.gt('x', 0.5))
-        >>> monitor = Monitor(phi, semantics='rosi')
+        >>> monitor = Monitor(phi, semantics='Rosi')
         >>> for t in range(10):
         ...     result = monitor.update('x', 0.8, float(t))
         ...     for eval in result['evaluations']:
@@ -305,10 +304,9 @@ class Monitor:
     def __init__(
         self,
         formula: Formula,
-        semantics: SemanticsType = "qualitative",
-        strategy: StrategyType = "incremental",
-        mode: ModeType | None = None,
-        interpolation: InterpolationType = "zoh",
+        semantics: SemanticsType = "Robustness",
+        algorithm: AlgorithmType = "Incremental",
+        synchronization: SynchronizationType = "ZeroOrderHold",
     ) -> None:
         """
         Create a new STL monitor.
@@ -316,39 +314,35 @@ class Monitor:
         Args:
             formula: The STL formula to monitor
             semantics: Output semantics. Options:
-                - "qualitative": Returns True/False (classic propositional evaluation)
-                - "quantitative": Returns float robustness value (+ = satisfied, - = violated)
-                - "rosi": Returns (min, max) robustness interval (RoSI semantics)
-            strategy: Monitoring strategy. Options:
-                - "incremental": Efficient online monitoring with sliding windows (recommended)
-                - "naive": Simple baseline implementation (slower but easier to understand)
-            mode: Evaluation mode. Options:
-                - "eager": Produce verdicts as soon as possible (default for rosi)
-                - "strict": Wait for complete information (default for qualitative/quantitative)
-                - None: Auto-select based on semantics
-            interpolation: Signal interpolation method. Options:
-                - "zoh": Zero-order hold (default)
-                - "linear": Linear interpolation
-                - "none": No interpolation
+                - "StrictSatisfaction": Returns True/False with strict evaluation
+                - "EagerSatisfaction": Returns True/False with eager evaluation
+                - "Robustness": Returns float robustness value (+ = satisfied, - = violated, default)
+                - "Rosi": Returns (min, max) robustness interval
+            algorithm: Monitoring algorithm. Options:
+                - "Incremental": Efficient online monitoring with sliding windows (default)
+                - "Naive": Simple baseline implementation
+            synchronization: Signal synchronization method. Options:
+                - "ZeroOrderHold": Zero-order hold (default)
+                - "Linear": Linear interpolation
+                - "None": No interpolation
 
         Raises:
-            ValueError: If invalid semantics, strategy, or mode is specified
-            ValueError: If eager mode is used with quantitative semantics (not supported)
+            ValueError: If invalid semantics, algorithm, or synchronization is specified
+            ValueError: If Naive algorithm is used with EagerSatisfaction (not supported)
 
         Note:
-            - Quantitative semantics does not support eager evaluation mode
-                        - For single-signal formulas, signal synchronization is automatically disabled
-                            for better performance
+            - For single-signal formulas, signal synchronization is automatically disabled
+              for better performance
 
         Example:
-            >>> # Qualitative monitoring with strict mode
-            >>> m1 = Monitor(phi, semantics="qualitative", strategy="incremental")
+            >>> # StrictSatisfaction monitoring
+            >>> m1 = Monitor(phi, semantics="StrictSatisfaction", algorithm="Incremental")
             >>>
-            >>> # Quantitative robustness
-            >>> m2 = Monitor(phi, semantics="quantitative")
+            >>> # Robustness (quantitative)
+            >>> m2 = Monitor(phi, semantics="Robustness")
             >>>
-            >>> # RoSI intervals with eager evaluation
-            >>> m3 = Monitor(phi, semantics="rosi", mode="eager")
+            >>> # Rosi intervals with eager evaluation
+            >>> m3 = Monitor(phi, semantics="Rosi")
         """
         ...
 
