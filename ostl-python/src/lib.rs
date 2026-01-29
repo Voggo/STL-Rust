@@ -471,12 +471,11 @@ where
         let mut outputs_list = Vec::new();
 
         for out_step in eval.outputs {
-            if let Some(val) = out_step.value {
-                let output_dict = PyDict::new(py);
-                output_dict.set_item("timestamp", out_step.timestamp.as_secs_f64())?;
-                output_dict.set_item("value", val_mapper(val))?;
-                outputs_list.push(output_dict);
-            }
+            let val = out_step.value;
+            let output_dict = PyDict::new(py);
+            output_dict.set_item("timestamp", out_step.timestamp.as_secs_f64())?;
+            output_dict.set_item("value", val_mapper(val))?;
+            outputs_list.push(output_dict);
         }
 
         eval_dict.set_item("outputs", outputs_list)?;
