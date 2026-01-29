@@ -264,68 +264,68 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="Eager evaluation mode is not supported"):
             ostl.Monitor(formula, semantics="quantitative", mode="eager")
 
-    def test_invalid_interpolation(self):
-        """Test that invalid interpolation raises ValueError."""
+    def test_invalid_synchronization(self):
+        """Test that invalid synchronization raises ValueError."""
         formula = ostl.Formula.gt("x", 5.0)
 
-        with pytest.raises(ValueError, match="Invalid interpolation"):
-            ostl.Monitor(formula, semantics="qualitative", interpolation="invalid")
+        with pytest.raises(ValueError, match="Invalid synchronization"):
+            ostl.Monitor(formula, semantics="qualitative", synchronization="invalid")
 
 
-class TestInterpolationStrategies:
-    """Test that all interpolation strategies can be created."""
+class TestsynchronizationStrategies:
+    """Test that all synchronization strategies can be created."""
 
-    def test_zoh_interpolation(self):
-        """Test zero-order hold interpolation."""
+    def test_zoh_synchronization(self):
+        """Test zero-order hold synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="zoh")
+        monitor = ostl.Monitor(formula, semantics="qualitative", synchronization="zoh")
         assert monitor is not None
         assert "zoh" in repr(monitor)
 
-    def test_linear_interpolation(self):
-        """Test linear interpolation."""
+    def test_linear_synchronization(self):
+        """Test linear synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="linear")
+        monitor = ostl.Monitor(formula, semantics="qualitative", synchronization="linear")
         assert monitor is not None
         assert "linear" in repr(monitor)
 
-    def test_none_interpolation(self):
-        """Test no interpolation."""
+    def test_none_synchronization(self):
+        """Test no synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="none")
+        monitor = ostl.Monitor(formula, semantics="qualitative", synchronization="none")
         assert monitor is not None
         assert "none" in repr(monitor)
 
-    def test_interpolation_with_quantitative(self):
-        """Test interpolation strategies work with quantitative semantics."""
+    def test_synchronization_with_quantitative(self):
+        """Test synchronization strategies work with quantitative semantics."""
         formula = ostl.Formula.gt("x", 5.0)
 
         monitor_zoh = ostl.Monitor(
-            formula, semantics="quantitative", interpolation="zoh"
+            formula, semantics="quantitative", synchronization="zoh"
         )
         assert monitor_zoh is not None
 
         monitor_linear = ostl.Monitor(
-            formula, semantics="quantitative", interpolation="linear"
+            formula, semantics="quantitative", synchronization="linear"
         )
         assert monitor_linear is not None
 
         monitor_none = ostl.Monitor(
-            formula, semantics="quantitative", interpolation="none"
+            formula, semantics="quantitative", synchronization="none"
         )
         assert monitor_none is not None
 
-    def test_interpolation_with_rosi(self):
-        """Test interpolation strategies work with rosi semantics."""
+    def test_synchronization_with_rosi(self):
+        """Test synchronization strategies work with rosi semantics."""
         formula = ostl.Formula.gt("x", 5.0)
 
-        monitor_zoh = ostl.Monitor(formula, semantics="rosi", interpolation="zoh")
+        monitor_zoh = ostl.Monitor(formula, semantics="rosi", synchronization="zoh")
         assert monitor_zoh is not None
 
-        monitor_linear = ostl.Monitor(formula, semantics="rosi", interpolation="linear")
+        monitor_linear = ostl.Monitor(formula, semantics="rosi", synchronization="linear")
         assert monitor_linear is not None
 
-        monitor_none = ostl.Monitor(formula, semantics="rosi", interpolation="none")
+        monitor_none = ostl.Monitor(formula, semantics="rosi", synchronization="none")
         assert monitor_none is not None
 
 
