@@ -154,6 +154,19 @@ mod tests {
     fn formula_9() -> FormulaDefinition {
         stl! {F[0, 10](G[0, 10](F[0, 10](G[0, 10](x > 0))))}
     }
+
+    #[fixture]
+    #[once]
+    fn formula_10() -> FormulaDefinition {
+        stl! {x<-1 U[0,4](x>-1)}
+    }
+
+    #[fixture]
+    #[once]
+    fn formula_11() -> FormulaDefinition {
+        stl! {x<8 U[0,4] (x>5)}
+    }
+
     // ---
     // Signal Fixtures
     // ---
@@ -510,6 +523,42 @@ mod tests {
         ]
     }
 
+    fn exp_f10_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        vec![
+            vec![Step::new("output", Some(false), Duration::from_secs(0))],
+            vec![Step::new("output", Some(false), Duration::from_secs(1))],
+            vec![Step::new("output", Some(false), Duration::from_secs(2))],
+            vec![Step::new("output", Some(false), Duration::from_secs(3))],
+            vec![Step::new("output", Some(false), Duration::from_secs(4))],
+            vec![Step::new("output", Some(false), Duration::from_secs(5))],
+            vec![Step::new("output", Some(false), Duration::from_secs(6))]
+        ]
+    }
+
+    fn exp_f11_s3_bool_eager() -> Vec<Vec<Step<Option<bool>>>> {
+        vec![
+            vec![],
+            vec![
+                Step::new("output", Some(true), Duration::from_secs(0)),
+                Step::new("output", Some(true), Duration::from_secs(1)),
+            ],
+            vec![],
+            vec![],
+            vec![
+                Step::new("output", Some(false), Duration::from_secs(2)),
+                Step::new("output", Some(false), Duration::from_secs(3)),
+                Step::new("output", Some(false), Duration::from_secs(4)),
+            ],
+            vec![],
+            vec![
+                Step::new("output", Some(true), Duration::from_secs(5)),
+                Step::new("output", Some(true), Duration::from_secs(6)),
+                
+            ],
+        ]
+    }
+
+
     /// This helper function contains the actual test logic.
     /// It is called by the `rstest` runners below.
     fn run_monitor_test<Y>(
@@ -608,7 +657,9 @@ mod tests {
     #[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_bool_eager())]
     #[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_eager())]
     #[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_eager())]
-    #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())] // TODO: Add eager expected for f8_s4
+    #[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_eager())]
+    #[case::f10_s3(vec![formula_10()], signal_3(), exp_f10_s3_bool_eager())]
+    #[case::f11_s3(vec![formula_11()], signal_3(), exp_f11_s3_bool_eager())]
     fn test_bool_eager<Y>(
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
