@@ -98,13 +98,13 @@ class TestMonitorCreation:
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula)
         assert monitor is not None
-        assert "boolean" in repr(monitor)
+        assert "qualitative" in repr(monitor)
 
     def test_boolean_monitor_incremental_eager(self):
         """Test boolean monitor with explicit parameters."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor_eager = ostl.Monitor(
-            formula, semantics="boolean", strategy="incremental", mode="eager"
+            formula, semantics="qualitative", strategy="incremental", mode="eager"
         )
         assert monitor_eager is not None
 
@@ -112,14 +112,14 @@ class TestMonitorCreation:
         """Test boolean monitor with incremental strategy and strict mode."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor_strict = ostl.Monitor(
-            formula, semantics="boolean", strategy="incremental", mode="strict"
+            formula, semantics="qualitative", strategy="incremental", mode="strict"
         )
         assert monitor_strict is not None
 
     def test_boolean_monitor_naive(self):
         """Test boolean monitor with naive strategy."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="boolean", strategy="naive")
+        monitor = ostl.Monitor(formula, semantics="qualitative", strategy="naive")
         assert monitor is not None
 
     def test_quantitative_monitor(self):
@@ -132,14 +132,14 @@ class TestMonitorCreation:
     def test_robustness_monitor(self):
         """Test robustness interval monitor."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="robustness")
+        monitor = ostl.Monitor(formula, semantics="rosi")
         assert monitor is not None
-        assert "robustness" in repr(monitor)
+        assert "rosi" in repr(monitor)
 
     def test_robustness_monitor_eager(self):
         """Test robustness monitor with eager mode."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="robustness", mode="eager")
+        monitor = ostl.Monitor(formula, semantics="rosi", mode="eager")
         assert monitor is not None
 
 
@@ -149,7 +149,7 @@ class TestMonitorUpdate:
     def test_boolean_update(self):
         """Test boolean monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result = monitor.update("x", 10.0, 0.0)
 
@@ -193,7 +193,7 @@ class TestMonitorUpdate:
     def test_robustness_update(self):
         """Test robustness monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="robustness")
+        monitor = ostl.Monitor(formula, semantics="rosi")
 
         result = monitor.update("x", 10.0, 0.0)
 
@@ -212,7 +212,7 @@ class TestMonitorUpdate:
     def test_multiple_updates(self):
         """Test multiple sequential updates."""
         formula = ostl.Formula.always(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         for t in range(5):
             result = monitor.update("x", 10.0, float(t))
@@ -224,7 +224,7 @@ class TestMonitorUpdate:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result1 = monitor.update("x", 10.0, 0.0)
         assert result1["input_signal"] == "x"
@@ -248,14 +248,14 @@ class TestErrorHandling:
         formula = ostl.Formula.gt("x", 5.0)
 
         with pytest.raises(ValueError, match="Invalid strategy"):
-            ostl.Monitor(formula, semantics="boolean", strategy="invalid")
+            ostl.Monitor(formula, semantics="qualitative", strategy="invalid")
 
     def test_invalid_mode(self):
         """Test that invalid mode raises ValueError."""
         formula = ostl.Formula.gt("x", 5.0)
 
         with pytest.raises(ValueError, match="Invalid mode"):
-            ostl.Monitor(formula, semantics="boolean", mode="invalid")
+            ostl.Monitor(formula, semantics="qualitative", mode="invalid")
 
     def test_eager_mode_with_quantitative(self):
         """Test that eager mode with quantitative semantics raises error."""
@@ -264,6 +264,70 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="Eager evaluation mode is not supported"):
             ostl.Monitor(formula, semantics="quantitative", mode="eager")
 
+    def test_invalid_interpolation(self):
+        """Test that invalid interpolation raises ValueError."""
+        formula = ostl.Formula.gt("x", 5.0)
+
+        with pytest.raises(ValueError, match="Invalid interpolation"):
+            ostl.Monitor(formula, semantics="qualitative", interpolation="invalid")
+
+
+class TestInterpolationStrategies:
+    """Test that all interpolation strategies can be created."""
+
+    def test_zoh_interpolation(self):
+        """Test zero-order hold interpolation."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="zoh")
+        assert monitor is not None
+        assert "zoh" in repr(monitor)
+
+    def test_linear_interpolation(self):
+        """Test linear interpolation."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="linear")
+        assert monitor is not None
+        assert "linear" in repr(monitor)
+
+    def test_none_interpolation(self):
+        """Test no interpolation."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="qualitative", interpolation="none")
+        assert monitor is not None
+        assert "none" in repr(monitor)
+
+    def test_interpolation_with_quantitative(self):
+        """Test interpolation strategies work with quantitative semantics."""
+        formula = ostl.Formula.gt("x", 5.0)
+
+        monitor_zoh = ostl.Monitor(
+            formula, semantics="quantitative", interpolation="zoh"
+        )
+        assert monitor_zoh is not None
+
+        monitor_linear = ostl.Monitor(
+            formula, semantics="quantitative", interpolation="linear"
+        )
+        assert monitor_linear is not None
+
+        monitor_none = ostl.Monitor(
+            formula, semantics="quantitative", interpolation="none"
+        )
+        assert monitor_none is not None
+
+    def test_interpolation_with_rosi(self):
+        """Test interpolation strategies work with rosi semantics."""
+        formula = ostl.Formula.gt("x", 5.0)
+
+        monitor_zoh = ostl.Monitor(formula, semantics="rosi", interpolation="zoh")
+        assert monitor_zoh is not None
+
+        monitor_linear = ostl.Monitor(formula, semantics="rosi", interpolation="linear")
+        assert monitor_linear is not None
+
+        monitor_none = ostl.Monitor(formula, semantics="rosi", interpolation="none")
+        assert monitor_none is not None
+
 
 class TestTemporalFormulas:
     """Test temporal formulas produce correct structure."""
@@ -271,7 +335,7 @@ class TestTemporalFormulas:
     def test_always_produces_verdicts(self):
         """Test that Always formula eventually produces verdicts."""
         formula = ostl.Formula.always(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         # Feed data points
         results = []
@@ -286,7 +350,7 @@ class TestTemporalFormulas:
     def test_eventually_produces_verdicts(self):
         """Test that Eventually formula produces verdicts."""
         formula = ostl.Formula.eventually(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         results = []
         for t in range(5):
@@ -301,7 +365,7 @@ class TestTemporalFormulas:
         f1 = ostl.Formula.gt("x", 0.0)
         f2 = ostl.Formula.gt("x", 10.0)
         formula = ostl.Formula.until(0.0, 3.0, f1, f2)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         results = []
         # Start with low value, then high
@@ -324,7 +388,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("x", 15.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         # Value in range should satisfy
         result = monitor.update("x", 10.0, 0.0)
@@ -335,7 +399,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 100.0)
         f2 = ostl.Formula.lt("x", 5.0)
         formula = ostl.Formula.or_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result = monitor.update("x", 2.0, 0.0)
         assert result is not None
@@ -344,7 +408,7 @@ class TestBooleanOperators:
         """Test NOT operator."""
         f = ostl.Formula.gt("x", 5.0)
         formula = ostl.Formula.not_(f)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result = monitor.update("x", 2.0, 0.0)
         assert result is not None
@@ -354,7 +418,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.implies(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result = monitor.update("x", 10.0, 0.0)
         assert result is not None
@@ -366,7 +430,7 @@ class TestEvaluationStructure:
     def test_evaluation_has_sync_step_info(self):
         """Test that evaluations include sync step information."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="boolean")
+        monitor = ostl.Monitor(formula, semantics="qualitative")
 
         result = monitor.update("x", 10.0, 0.0)
 
@@ -388,7 +452,7 @@ class TestEvaluationStructure:
     def test_output_structure(self):
         """Test that outputs have correct structure."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="robustness")
+        monitor = ostl.Monitor(formula, semantics="rosi")
 
         result = monitor.update("x", 10.0, 0.0)
 

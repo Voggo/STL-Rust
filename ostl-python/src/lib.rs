@@ -2,6 +2,7 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{EvaluationMode, MonitorOutput, MonitoringStrategy, StlMonitor};
+use ostl::synchronizer::InterpolationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
 use std::time::Duration;
@@ -32,7 +33,7 @@ impl Formula {
     /// Formula.gt('x', 0.5)  # x > 0.5
     /// ```
     #[staticmethod]
-    #[pyo3(text_signature = "(signal, value)")]
+    // #[pyo3(text_signature = "(signal, value)")]
     fn gt(signal: String, value: f64) -> Self {
         // Leak the string to get &'static str required by ostl
         let sig_ref = Box::leak(signal.into_boxed_str());
@@ -233,9 +234,9 @@ impl Formula {
 /// We need an enum to handle the different generics (bool, f64, RobustnessInterval)
 /// because Python types are dynamic but Rust types are static.
 enum InnerMonitor {
-    Boolean(StlMonitor<f64, bool>),
+    Qualitative(StlMonitor<f64, bool>),
     Quantitative(StlMonitor<f64, f64>),
-    Robustness(StlMonitor<f64, RobustnessInterval>),
+    Rosi(StlMonitor<f64, RobustnessInterval>),
 }
 
 // SAFETY: StlMonitor and its operators are designed to be used from a single thread.
@@ -246,6 +247,10 @@ unsafe impl Sync for InnerMonitor {}
 #[pyclass]
 struct Monitor {
     inner: InnerMonitor,
+    semantics: String,
+    strategy: String,
+    mode: String,
+    interpolation: String,
 }
 
 #[pymethods]
@@ -258,9 +263,9 @@ impl Monitor {
     ///     The STL formula to monitor
     /// semantics : str, optional
     ///     The output semantics:
-    ///     - "boolean": returns True/False (default)
+    ///     - "qualitative": returns True/False (default)
     ///     - "quantitative": returns robustness as a single float value
-    ///     - "robustness": returns robustness as an interval (min, max)
+    ///     - "rosi": returns robustness as an interval (min, max)
     /// strategy : str, optional
     ///     The monitoring strategy:
     ///     - "incremental": efficient incremental monitoring (default)
@@ -268,14 +273,23 @@ impl Monitor {
     /// mode : str, optional
     ///     The evaluation mode:
     ///     - "eager": produces verdicts as soon as possible (default for robustness)
-    ///     - "strict": waits for complete information (default for boolean/quantitative)
+    ///     - "strict": waits for complete information (default for qualitative/quantitative)
+    /// interpolation : str, optional
+    ///     The signal interpolation method:
+    ///     - "zoh": zero-order hold (default)
+    ///     - "linear": linear interpolation
+    ///     - "none": no interpolation
+    /// Returns:
+    /// --------
+    /// Monitor
     #[new]
-    #[pyo3(signature = (formula, semantics="boolean", strategy="incremental", mode=None))]
+    #[pyo3(signature = (formula, semantics="qualitative", strategy="incremental", mode=None, interpolation="zoh"))]
     fn new(
         formula: &Formula,
         semantics: &str,
         strategy: &str,
         mode: Option<&str>,
+        interpolation: &str,
     ) -> PyResult<Self> {
         // Parse strategy
         let monitoring_strategy = match strategy {
@@ -289,7 +303,7 @@ impl Monitor {
         };
 
         // Determine default evaluation mode based on semantics
-        let default_mode = if semantics == "boolean" || semantics == "quantitative" {
+        let default_mode = if semantics == "qualitative" || semantics == "quantitative" {
             "strict"
         } else {
             "eager"
@@ -306,17 +320,33 @@ impl Monitor {
             }
         };
 
+        let interpolation_strategy = match interpolation {
+            "zoh" => ostl::synchronizer::InterpolationStrategy::ZeroOrderHold,
+            "linear" => ostl::synchronizer::InterpolationStrategy::Linear,
+            "none" => ostl::synchronizer::InterpolationStrategy::None,
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Invalid interpolation. Use 'zoh', 'linear', or 'none'",
+                ));
+            }
+        };
+
         // Build monitor based on semantics
         match semantics {
-            "boolean" => {
+            "qualitative" => {
                 let m = StlMonitor::<f64, bool>::builder()
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
+                    .interpolation_strategy(interpolation_strategy)
                     .build()
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
                 Ok(Monitor {
-                    inner: InnerMonitor::Boolean(m),
+                    inner: InnerMonitor::Qualitative(m),
+                    semantics: semantics.to_string(),
+                    strategy: strategy.to_string(),
+                    mode: mode_str.to_string(),
+                    interpolation: interpolation.to_string(),
                 })
             }
             "quantitative" => {
@@ -330,25 +360,35 @@ impl Monitor {
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
+                    .interpolation_strategy(interpolation_strategy)
                     .build()
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
                 Ok(Monitor {
                     inner: InnerMonitor::Quantitative(m),
+                    semantics: semantics.to_string(),
+                    strategy: strategy.to_string(),
+                    mode: mode_str.to_string(),
+                    interpolation: interpolation.to_string(),
                 })
             }
-            "robustness" => {
+            "rosi" => {
                 let m = StlMonitor::<f64, RobustnessInterval>::builder()
                     .formula(formula.inner.clone())
                     .strategy(monitoring_strategy)
                     .evaluation_mode(evaluation_mode)
+                    .interpolation_strategy(interpolation_strategy)
                     .build()
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
                 Ok(Monitor {
-                    inner: InnerMonitor::Robustness(m),
+                    inner: InnerMonitor::Rosi(m),
+                    semantics: semantics.to_string(),
+                    strategy: strategy.to_string(),
+                    mode: mode_str.to_string(),
+                    interpolation: interpolation.to_string(),
                 })
             }
             _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Invalid semantics. Use 'boolean', 'quantitative', or 'robustness'",
+                "Invalid semantics. Use 'qualitative', 'quantitative', or 'rosi'",
             )),
         }
     }
@@ -382,7 +422,7 @@ impl Monitor {
         let step = Step::new(sig_ref, value, Duration::from_secs_f64(timestamp));
 
         Python::attach(|py| match &mut self.inner {
-            InnerMonitor::Boolean(m) => {
+            InnerMonitor::Qualitative(m) => {
                 let output = m.update(&step);
                 convert_output(py, output, |val| {
                     PyBool::new(py, val).to_owned().into_any().unbind()
@@ -392,7 +432,7 @@ impl Monitor {
                 let output = m.update(&step);
                 convert_output(py, output, |val| PyFloat::new(py, val).into_any().unbind())
             }
-            InnerMonitor::Robustness(m) => {
+            InnerMonitor::Rosi(m) => {
                 let output = m.update(&step);
                 convert_output(py, output, |val| {
                     PyTuple::new(py, &[val.0, val.1])
@@ -406,9 +446,18 @@ impl Monitor {
 
     fn __repr__(&self) -> String {
         match &self.inner {
-            InnerMonitor::Boolean(_) => "Monitor(semantics='boolean')".to_string(),
-            InnerMonitor::Quantitative(_) => "Monitor(semantics='quantitative')".to_string(),
-            InnerMonitor::Robustness(_) => "Monitor(semantics='robustness')".to_string(),
+            InnerMonitor::Qualitative(_) => format!(
+                "Monitor(semantics='qualitative', strategy='{}', mode='{}', interpolation='{}')",
+                self.strategy, self.mode, self.interpolation
+            ),
+            InnerMonitor::Quantitative(_) => format!(
+                "Monitor(semantics='quantitative', strategy='{}', mode='{}', interpolation='{}')",
+                self.strategy, self.mode, self.interpolation
+            ),
+            InnerMonitor::Rosi(_) => format!(
+                "Monitor(semantics='rosi', strategy='{}', mode='{}', interpolation='{}')",
+                self.strategy, self.mode, self.interpolation
+            ),
         }
     }
 }
