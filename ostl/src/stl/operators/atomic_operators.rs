@@ -33,7 +33,7 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let value = step.value.clone().into();
 
         // filter by signal if this operator has specific signals (True/False have none)
@@ -51,7 +51,7 @@ where
 
         vec![Step {
             signal: "output",
-            value: Some(result),
+            value: result,
             timestamp: step.timestamp,
         }]
     }
@@ -106,14 +106,14 @@ mod tests {
         let robustness = atomic.update(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", 5.0, Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 8.0, Duration::from_secs(6));
         let robustness2 = atomic.update(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new("output", -2.0, Duration::from_secs(6))]
         );
     }
 
@@ -125,14 +125,14 @@ mod tests {
         let robustness = atomic.update(&step1);
         assert_eq!(
             robustness,
-            vec![Step::new("output", Some(5.0), Duration::from_secs(5))]
+            vec![Step::new("output", 5.0, Duration::from_secs(5))]
         );
 
         let step2 = Step::new("x", 12.0, Duration::from_secs(6));
         let robustness2 = atomic.update(&step2);
         assert_eq!(
             robustness2,
-            vec![Step::new("output", Some(-2.0), Duration::from_secs(6))]
+            vec![Step::new("output", -2.0, Duration::from_secs(6))]
         );
     }
 
@@ -144,11 +144,7 @@ mod tests {
         let robustness = atomic.update(&step);
         assert_eq!(
             robustness,
-            vec![Step::new(
-                "output",
-                Some(f64::INFINITY),
-                Duration::from_secs(5)
-            )]
+            vec![Step::new("output", f64::INFINITY, Duration::from_secs(5))]
         );
     }
 
@@ -162,7 +158,7 @@ mod tests {
             robustness,
             vec![Step::new(
                 "output",
-                Some(f64::NEG_INFINITY),
+                f64::NEG_INFINITY,
                 Duration::from_secs(5)
             )]
         );

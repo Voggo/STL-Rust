@@ -37,13 +37,13 @@ where
         self.max_lookahead
     }
 
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let operand_updates = self.operand.update(step);
 
-        let output_robustness: Vec<Step<Option<Y>>> = operand_updates
+        let output_robustness: Vec<Step<Y>> = operand_updates
             .into_iter()
             .map(|step| {
-                let negated_value = step.value.map(Y::not);
+                let negated_value = Y::not(step.value);
                 Step {
                     signal: "output",
                     value: negated_value,
@@ -87,7 +87,7 @@ mod tests {
         let robustness = not.update(&step);
         assert_eq!(
             robustness,
-            vec![Step::new("output", Some(-5.0), Duration::from_secs(5))]
+            vec![Step::new("output", -5.0, Duration::from_secs(5))]
         );
     }
 

@@ -341,7 +341,7 @@ fn main() {
                     monitor.specification_to_string(),
                     out.signal
                 ),
-                value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
+                value: Some(if out.value { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
             outputs.push(entry);
@@ -353,7 +353,7 @@ fn main() {
                     monitor_eventually.specification_to_string(),
                     out.signal
                 ),
-                value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
+                value: Some(if out.value { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
             outputs.push(entry);

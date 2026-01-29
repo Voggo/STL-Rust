@@ -31,7 +31,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
     ) -> Self
     where
         T: Clone + 'static,
-        C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+        C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + left.get_max_lookahead().max(right.get_max_lookahead());
@@ -50,9 +50,9 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
     }
 
     /// Helper to add a step to a cache, handling ROSI update-or-add semantics
-    fn add_to_cache<const ROSI: bool>(cache: &mut C, step: Step<Option<Y>>)
+    fn add_to_cache<const ROSI: bool>(cache: &mut C, step: Step<Y>)
     where
-        C: RingBufferTrait<Value = Option<Y>>,
+        C: RingBufferTrait<Value = Y>,
         Y: Clone,
     {
         if ROSI {
@@ -69,7 +69,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
     for Until<T, C, Y, IS_EAGER, IS_ROSI>
 where
     T: Clone + 'static,
-    C: RingBufferTrait<Value = Option<Y>> + Clone + 'static,
+    C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + std::fmt::Debug,
 {
     type Output = Y;
@@ -77,7 +77,7 @@ where
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
     }
-    fn update(&mut self, step: &Step<T>) -> Vec<Step<Option<Self::Output>>> {
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let mut output_robustness = Vec::new();
 
         // 1. Populate caches with results from children operators
@@ -163,13 +163,12 @@ where
                     Some(step) => step,
                     None => break,
                 };
-                left_cache_t_prime_min =
-                    Y::and(left_cache_t_prime_min, left_step.value.clone().unwrap());
+                left_cache_t_prime_min = Y::and(left_cache_t_prime_min, left_step.value.clone());
                 let robustness_phi_left = left_cache_t_prime_min.clone();
 
                 // 2. Get rho_psi(t') - the right operand at t'
                 let robustness_psi_right = match right_cache_iter.next() {
-                    Some(val) => val.value.clone().unwrap(),
+                    Some(val) => val.value.clone(),
                     None => Y::unknown(),
                 };
 
@@ -228,7 +227,7 @@ where
             }
 
             if let Some(val) = final_value {
-                output_robustness.push(Step::new("output", Some(val), t_eval));
+                output_robustness.push(Step::new("output", val, t_eval));
             }
 
             if remove_task {
@@ -307,7 +306,7 @@ mod tests {
 
         let globally = Globally::<
             f64,
-            RingBuffer<Option<RobustnessInterval>>,
+            RingBuffer<RobustnessInterval>,
             RobustnessInterval,
             false,
             true,
@@ -315,25 +314,20 @@ mod tests {
 
         let eventually = Eventually::<
             f64,
-            RingBuffer<Option<RobustnessInterval>>,
+            RingBuffer<RobustnessInterval>,
             RobustnessInterval,
             false,
             true,
         >::new(interval_2, Box::new(atomic_right), None, None);
 
-        let mut until = Until::<
-            f64,
-            RingBuffer<Option<RobustnessInterval>>,
-            RobustnessInterval,
-            false,
-            true,
-        >::new(
-            interval,
-            Box::new(globally),
-            Box::new(eventually),
-            None,
-            None,
-        );
+        let mut until =
+            Until::<f64, RingBuffer<RobustnessInterval>, RobustnessInterval, false, true>::new(
+                interval,
+                Box::new(globally),
+                Box::new(eventually),
+                None,
+                None,
+            );
         println!("Until operator: {}", until);
 
         let signals = vec![
@@ -377,20 +371,20 @@ mod tests {
         };
         let atomic_left = Atomic::<f64>::new_greater_than("x", 2.0);
         let atomic_right = Atomic::<f64>::new_greater_than("x", 8.0);
-        let mut globally = Globally::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+        let mut globally = Globally::<f64, RingBuffer<f64>, f64, true, false>::new(
             interval,
             Box::new(atomic_left.clone()),
             None,
             None,
         );
-        let mut eventually = Eventually::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+        let mut eventually = Eventually::<f64, RingBuffer<f64>, f64, true, false>::new(
             interval,
             Box::new(atomic_right.clone()),
             None,
             None,
         );
 
-        let mut until = Until::<f64, RingBuffer<Option<f64>>, f64, true, false>::new(
+        let mut until = Until::<f64, RingBuffer<f64>, f64, true, false>::new(
             interval,
             Box::new(globally.clone()),
             Box::new(eventually.clone()),
@@ -439,20 +433,20 @@ mod tests {
         };
         let atomic_left = Atomic::<bool>::new_greater_than("x", 2.0);
         let atomic_right = Atomic::<bool>::new_greater_than("x", 8.0);
-        let mut globally = Globally::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+        let mut globally = Globally::<f64, RingBuffer<bool>, bool, true, false>::new(
             interval,
             Box::new(atomic_left.clone()),
             None,
             None,
         );
-        let mut eventually = Eventually::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+        let mut eventually = Eventually::<f64, RingBuffer<bool>, bool, true, false>::new(
             interval,
             Box::new(atomic_right.clone()),
             None,
             None,
         );
 
-        let mut until = Until::<f64, RingBuffer<Option<bool>>, bool, true, false>::new(
+        let mut until = Until::<f64, RingBuffer<bool>, bool, true, false>::new(
             interval,
             Box::new(globally.clone()),
             Box::new(eventually.clone()),
@@ -498,7 +492,7 @@ mod tests {
         };
         let atomic_left = Atomic::<bool>::new_less_than("x", 10.0);
         let atomic_right = Atomic::<bool>::new_greater_than("x", 5.0);
-        let mut until = Until::<f64, RingBuffer<Option<bool>>, bool, false, false>::new(
+        let mut until = Until::<f64, RingBuffer<bool>, bool, false, false>::new(
             interval,
             Box::new(atomic_left),
             Box::new(atomic_right),
@@ -516,9 +510,9 @@ mod tests {
             .collect();
 
         let expected_outputs = [
-            Step::new("output", Some(false), Duration::from_secs(0)),
-            Step::new("output", Some(true), Duration::from_secs(2)),
-            Step::new("output", Some(true), Duration::from_secs(4)),
+            Step::new("output", false, Duration::from_secs(0)),
+            Step::new("output", true, Duration::from_secs(2)),
+            Step::new("output", true, Duration::from_secs(4)),
         ];
 
         let mut all_outputs = Vec::new();
@@ -543,7 +537,7 @@ mod tests {
         };
         let atomic_left = Atomic::<bool>::new_greater_than("x", 5.0);
         let atomic_right = Atomic::<bool>::new_less_than("y", 10.0);
-        let mut until = Until::<f64, RingBuffer<Option<bool>>, bool, false, false>::new(
+        let mut until = Until::<f64, RingBuffer<bool>, bool, false, false>::new(
             interval,
             Box::new(atomic_left),
             Box::new(atomic_right),

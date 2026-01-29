@@ -78,12 +78,12 @@ pub struct SyncStepResult<T, Y> {
     /// The synchronized step that was evaluated (may be interpolated)
     pub sync_step: Step<T>,
     /// The output steps produced by evaluating this synchronized step
-    pub outputs: Vec<Step<Option<Y>>>,
+    pub outputs: Vec<Step<Y>>,
 }
 
 impl<T, Y> SyncStepResult<T, Y> {
     /// Creates a new SyncStepResult.
-    pub fn new(sync_step: Step<T>, outputs: Vec<Step<Option<Y>>>) -> Self {
+    pub fn new(sync_step: Step<T>, outputs: Vec<Step<Y>>) -> Self {
         SyncStepResult { sync_step, outputs }
     }
 
@@ -123,19 +123,19 @@ impl<T, Y> MonitorOutput<T, Y> {
     }
 
     /// Returns an iterator over all output steps (flattened across all evaluations).
-    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Option<Y>>> {
+    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Y>> {
         self.evaluations.iter().flat_map(|e| e.outputs.iter())
     }
 
     /// Returns the latest verdict for requested timestamp, if any.
-    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Option<Y>>> {
+    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Y>> {
         self.outputs_iter()
             .filter(|s| s.timestamp == timestamp)
             .last()
     }
 
     /// Collects all outputs into a flat vector.
-    pub fn all_outputs(&self) -> Vec<Step<Option<Y>>>
+    pub fn all_outputs(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
     {
@@ -146,7 +146,7 @@ impl<T, Y> MonitorOutput<T, Y> {
     }
 
     /// Finalizes the monitor output by collecting all outputs with latest verdict for each available timestamp.
-    pub fn finalize(&self) -> Vec<Step<Option<Y>>>
+    pub fn finalize(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
     {
@@ -378,14 +378,14 @@ where
     let is_rosi = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
 
     // We use `$( $arg:expr ),*` to capture arguments as a list.
-    // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
+    // We explicitly define <T, RingBuffer<Y>, Y...> to allow passing 'None' for caches.
     macro_rules! dispatch_operator {
         ($OpType:ident, $( $arg:expr ),* ) => {
             match (is_eager, is_rosi) {
-                (true, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, true>::new( $( $arg ),* )),
-                (true, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, true, false>::new( $( $arg ),* )),
-                (false, true) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, true>::new( $( $arg ),* )),
-                (false, false) => Box::new($OpType::<T, RingBuffer<Option<Y>>, Y, false, false>::new( $( $arg ),* )),
+                (true, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, true>::new( $( $arg ),* )),
+                (true, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, false>::new( $( $arg ),* )),
+                (false, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, true>::new( $( $arg ),* )),
+                (false, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, false>::new( $( $arg ),* )),
             }
         };
     }
