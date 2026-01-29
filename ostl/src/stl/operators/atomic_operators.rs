@@ -1,11 +1,8 @@
 use crate::ring_buffer::Step;
-use crate::stl::core::{
-    RobustnessSemantics, SignalIdentifier, StlOperatorTrait
-};
+use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait};
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::time::Duration;
-
 
 #[derive(Clone)]
 pub enum Atomic<Y> {
@@ -170,13 +167,13 @@ mod tests {
             )]
         );
     }
-    
+
     #[test]
     fn atomic_signal_identifiers() {
         let mut atomic_gt = Atomic::<f64>::new_greater_than("x", 10.0);
         let ids_gt = atomic_gt.get_signal_identifiers();
         assert_eq!(ids_gt.len(), 1);
-        assert!(ids_gt.contains("x"));  
+        assert!(ids_gt.contains("x"));
         let mut atomic_lt = Atomic::<f64>::new_less_than("y", 5.0);
         let ids_lt = atomic_lt.get_signal_identifiers();
         assert_eq!(ids_lt.len(), 1);
@@ -186,6 +183,6 @@ mod tests {
         assert_eq!(ids_true.len(), 0);
         let mut atomic_false = Atomic::<f64>::new_false();
         let ids_false = atomic_false.get_signal_identifiers();
-        assert_eq!(ids_false.len(), 0);     
+        assert_eq!(ids_false.len(), 0);
     }
 }

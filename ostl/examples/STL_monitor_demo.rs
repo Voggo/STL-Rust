@@ -1,9 +1,9 @@
 use ostl::ring_buffer::Step;
 
-use ostl::stl::core::{TimeInterval};
+use ostl::stl::core::TimeInterval;
 
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 use ostl::stl::formula_definition::FormulaDefinition;
+use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
 
 use rand::rng;
 use rand::rngs::ThreadRng;
@@ -66,24 +66,23 @@ impl SignalStepGenerator {
 
     fn next_step(&mut self) -> Step<f64> {
         // If an anomaly is scheduled and time has been reached, update distribution once
-        if !self.anomaly_applied {
-            if let Some(at) = self.anomaly_at {
-                if self.current_time >= at {
-                    // compute new parameters
-                    let new_mean = self.original_mean + self.anomaly_mean_shift;
-                    let new_std = (self.original_std * self.anomaly_std_multiplier).max(1e-12);
-                    self.normal_dist = Normal::new(new_mean, new_std).unwrap();
-                    self.anomaly_applied = true;
-                    println!(
-                        "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
-                        self.current_time,
-                        new_mean,
-                        self.anomaly_mean_shift,
-                        new_std,
-                        self.anomaly_std_multiplier
-                    );
-                }
-            }
+        if !self.anomaly_applied
+            && let Some(at) = self.anomaly_at
+            && self.current_time >= at
+        {
+            // compute new parameters
+            let new_mean = self.original_mean + self.anomaly_mean_shift;
+            let new_std = (self.original_std * self.anomaly_std_multiplier).max(1e-12);
+            self.normal_dist = Normal::new(new_mean, new_std).unwrap();
+            self.anomaly_applied = true;
+            println!(
+                "Anomaly applied at {:?}: mean -> {:.3} (shift {:.3}), std -> {:.3} (mult {:.3})",
+                self.current_time,
+                new_mean,
+                self.anomaly_mean_shift,
+                new_std,
+                self.anomaly_std_multiplier
+            );
         }
 
         let value = self.normal_dist.sample(&mut self.rng);
@@ -304,8 +303,6 @@ fn main() {
         timestamp_secs: f64,
     }
 
-    
-
     let mut signal_generator_x = SignalStepGenerator::new(
         "x",
         0.0,
@@ -339,7 +336,11 @@ fn main() {
         for out in result_x.outputs_iter() {
             let entry = OutputEntry {
                 // prefix signal name so the plot can distinguish monitors
-                signal: format!("spec1_/{}/{}", monitor.specification_to_string(), out.signal),
+                signal: format!(
+                    "spec1_/{}/{}",
+                    monitor.specification_to_string(),
+                    out.signal
+                ),
                 value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
@@ -347,7 +348,11 @@ fn main() {
         }
         for out in result_evt.outputs_iter() {
             let entry = OutputEntry {
-                signal: format!("spec2_/{}/{}", monitor_eventually.specification_to_string(), out.signal),
+                signal: format!(
+                    "spec2_/{}/{}",
+                    monitor_eventually.specification_to_string(),
+                    out.signal
+                ),
                 value: out.value.map(|v| if v { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };

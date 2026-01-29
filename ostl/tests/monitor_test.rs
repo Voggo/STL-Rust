@@ -534,8 +534,7 @@ mod tests {
                 let output = monitor.update(&step);
                 println!(
                     "Step at {:?}, Monitor Output: {:?}",
-                    step.timestamp,
-                    &output
+                    step.timestamp, &output
                 );
                 all_results.push(output.all_outputs());
             }
@@ -647,7 +646,9 @@ mod tests {
             let output = monitor.update(&s);
             println!(
                 "Monitor output at {:?} with input: {:?}: \n {:?} \n",
-                &s.timestamp, s.value, output.all_outputs()
+                &s.timestamp,
+                s.value,
+                output.all_outputs()
             );
         }
     }
@@ -677,21 +678,19 @@ mod tests {
                 signal
                     .iter()
                     .flat_map(|s| {
-                        let rosi_output = monitor.update(&s);
-                        let strict_output = strict_monitor.update(&s);
+                        let rosi_output = monitor.update(s);
+                        let strict_output = strict_monitor.update(s);
                         let rosi_outputs = rosi_output.all_outputs();
                         let strict_outputs = strict_output.all_outputs();
 
                         // Validate strict vs RoSI for the first (final) strict step, if present
-                        if let Some(strict_step) = strict_outputs.first() {
-                            if let Some(strict_val) = strict_step.value {
+                        if let Some(strict_step) = strict_outputs.first() &&
+                             let Some(strict_val) = strict_step.value {
                                 let rosi_step = rosi_outputs
                                     .iter()
                                     .find(|step| step.timestamp == strict_step.timestamp)
-                                    .expect(&format!(
-                                        "No RoSI step found for timestamp {:?} at input step {:?}",
-                                        strict_step.timestamp, s.timestamp
-                                    ));
+                                    .unwrap_or_else(|| panic!("No RoSI step found for timestamp {:?} at input step {:?}",
+                                        strict_step.timestamp, s.timestamp));
                                 if let Some(rosi_iv) = rosi_step.value {
                                     assert_eq!(
                                         strict_val, rosi_iv.0,
@@ -705,8 +704,6 @@ mod tests {
                                     );
                                 }
                             }
-                        }
-
                         rosi_outputs.into_iter()
                     })
                     .collect()
@@ -909,7 +906,7 @@ mod tests {
         // Check that we have outputs for all timestamps appearing in both x_steps and y_steps
         // note that '0' is excluded since y_steps starts at t=1
         // and '100' is excluded since y_steps ends at t=99
-        let expected_timestamps: Vec<Duration> = (1..100).map(|i| Duration::from_secs(i)).collect();
+        let expected_timestamps: Vec<Duration> = (1..100).map(Duration::from_secs).collect();
         let output_timestamps: Vec<Duration> = outputs
             .iter()
             .flat_map(|steps| steps.iter().map(|s| s.timestamp))
