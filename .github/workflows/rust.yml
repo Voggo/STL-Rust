@@ -6,7 +6,6 @@ on:
     paths:
       - "ostl/**"
       - "ostl-python/**"
-      - "simple_signal_app/**"
       - "Cargo.toml"
       - ".github/workflows/rust.yml"
   pull_request:
@@ -14,7 +13,6 @@ on:
     paths:
       - "ostl/**"
       - "ostl-python/**"
-      - "simple_signal_app/**"
       - "Cargo.toml"
       - ".github/workflows/rust.yml"
 
@@ -65,10 +63,6 @@ jobs:
 
       - name: Run tests (ostl-python)
         working-directory: ./ostl-python
-        run: cargo test --verbose
-
-      - name: Run tests (simple_signal_app)
-        working-directory: ./simple_signal_app
         run: cargo test --verbose
 
   fmt:
