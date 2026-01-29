@@ -1,7 +1,7 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::{RobustnessInterval, TimeInterval};
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{EvaluationMode, MonitorOutput, MonitoringStrategy, StlMonitor};
+use ostl::stl::monitor::{Algorithm, MonitorOutput, Semantics, StlMonitor};
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
@@ -248,8 +248,7 @@ unsafe impl Sync for InnerMonitor {}
 struct Monitor {
     inner: InnerMonitor,
     semantics: String,
-    strategy: String,
-    mode: String,
+    algorithm: String,
     synchronization: String,
 }
 
@@ -263,17 +262,14 @@ impl Monitor {
     ///     The STL formula to monitor
     /// semantics : str, optional
     ///     The output semantics:
-    ///     - "qualitative": returns True/False (default)
-    ///     - "quantitative": returns robustness as a single float value
-    ///     - "rosi": returns robustness as an interval (min, max)
-    /// strategy : str, optional
-    ///     The monitoring strategy:
+    ///     - "strict": boolean satisfaction with strict evaluation (default)
+    ///     - "eager": boolean satisfaction with eager evaluation
+    ///     - "robustness": quantitative robustness as a single float value
+    ///     - "rosi": robustness as an interval (min, max)
+    /// algorithm : str, optional
+    ///     The monitoring algorithm:
     ///     - "incremental": efficient incremental monitoring (default)
     ///     - "naive": simple but less efficient
-    /// mode : str, optional
-    ///     The evaluation mode:
-    ///     - "eager": produces verdicts as soon as possible (default for robustness)
-    ///     - "strict": waits for complete information (default for qualitative/quantitative)
     /// synchronization : str, optional
     ///     The signal synchronization method:
     ///     - "zoh": zero-order hold (default)
@@ -283,39 +279,33 @@ impl Monitor {
     /// --------
     /// Monitor
     #[new]
-    #[pyo3(signature = (formula, semantics="qualitative", strategy="incremental", mode=None, synchronization="zoh"))]
+    #[pyo3(signature = (formula, semantics="strict", algorithm="incremental", synchronization="zoh"))]
     fn new(
         formula: &Formula,
         semantics: &str,
-        strategy: &str,
-        mode: Option<&str>,
+        algorithm: &str,
         synchronization: &str,
     ) -> PyResult<Self> {
-        // Parse strategy
-        let monitoring_strategy = match strategy {
-            "incremental" => MonitoringStrategy::Incremental,
-            "naive" => MonitoringStrategy::Naive,
+        // Parse algorithm
+        let algo = match algorithm {
+            "incremental" => Algorithm::Incremental,
+            "naive" => Algorithm::Naive,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid strategy. Use 'incremental' or 'naive'",
+                    "Invalid algorithm. Use 'incremental' or 'naive'",
                 ));
             }
         };
 
-        // Determine default evaluation mode based on semantics
-        let default_mode = if semantics == "qualitative" || semantics == "quantitative" {
-            "strict"
-        } else {
-            "eager"
-        };
-
-        let mode_str = mode.unwrap_or(default_mode);
-        let evaluation_mode = match mode_str {
-            "eager" => EvaluationMode::Eager,
-            "strict" => EvaluationMode::Strict,
+        // Parse semantics
+        let sem = match semantics {
+            "strict" => Semantics::StrictSatisfaction,
+            "eager" => Semantics::EagerSatisfaction,
+            "robustness" => Semantics::Robustness,
+            "rosi" => Semantics::Rosi,
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid mode. Use 'eager' or 'strict'",
+                    "Invalid semantics. Use 'strict', 'eager', 'robustness', or 'rosi'",
                 ));
             }
         };
@@ -332,64 +322,52 @@ impl Monitor {
         };
 
         // Build monitor based on semantics
-        match semantics {
-            "qualitative" => {
+        match sem {
+            Semantics::StrictSatisfaction | Semantics::EagerSatisfaction => {
                 let m = StlMonitor::<f64, bool>::builder()
                     .formula(formula.inner.clone())
-                    .strategy(monitoring_strategy)
-                    .evaluation_mode(evaluation_mode)
+                    .algorithm(algo)
+                    .semantics(sem)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Qualitative(m),
                     semantics: semantics.to_string(),
-                    strategy: strategy.to_string(),
-                    mode: mode_str.to_string(),
+                    algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                 })
             }
-            "quantitative" => {
-                // Quantitative doesn't support Eager mode
-                if evaluation_mode == EvaluationMode::Eager {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "Eager evaluation mode is not supported for quantitative semantics. Use 'strict' mode.",
-                    ));
-                }
+            Semantics::Robustness => {
                 let m = StlMonitor::<f64, f64>::builder()
                     .formula(formula.inner.clone())
-                    .strategy(monitoring_strategy)
-                    .evaluation_mode(evaluation_mode)
+                    .algorithm(algo)
+                    .semantics(sem)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Quantitative(m),
                     semantics: semantics.to_string(),
-                    strategy: strategy.to_string(),
-                    mode: mode_str.to_string(),
+                    algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                 })
             }
-            "rosi" => {
+            Semantics::Rosi => {
                 let m = StlMonitor::<f64, RobustnessInterval>::builder()
                     .formula(formula.inner.clone())
-                    .strategy(monitoring_strategy)
-                    .evaluation_mode(evaluation_mode)
+                    .algorithm(algo)
+                    .semantics(sem)
                     .synchronization_strategy(synchronization_strategy)
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
                     inner: InnerMonitor::Rosi(m),
                     semantics: semantics.to_string(),
-                    strategy: strategy.to_string(),
-                    mode: mode_str.to_string(),
+                    algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                 })
             }
-            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Invalid semantics. Use 'qualitative', 'quantitative', or 'rosi'",
-            )),
         }
     }
 
@@ -447,16 +425,16 @@ impl Monitor {
     fn __repr__(&self) -> String {
         match &self.inner {
             InnerMonitor::Qualitative(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
-                self.semantics, self.strategy, self.mode, self.synchronization
+                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
+                self.semantics, self.algorithm, self.synchronization
             ),
             InnerMonitor::Quantitative(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
-                self.semantics, self.strategy, self.mode, self.synchronization
+                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
+                self.semantics, self.algorithm, self.synchronization
             ),
             InnerMonitor::Rosi(_) => format!(
-                "Monitor(semantics='{}', strategy='{}', mode='{}', synchronization='{}')",
-                self.semantics, self.strategy, self.mode, self.synchronization
+                "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
+                self.semantics, self.algorithm, self.synchronization
             ),
         }
     }

@@ -4,7 +4,7 @@ mod tests {
     use ostl::stl;
     use ostl::stl::core::{RobustnessInterval, RobustnessSemantics};
     use ostl::stl::formula_definition::FormulaDefinition;
-    use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+    use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
     use ostl::synchronizer::SynchronizationStrategy;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
@@ -562,8 +562,8 @@ mod tests {
     fn run_monitor_test<Y>(
         formulas: Vec<FormulaDefinition>,
         signal: Vec<Step<f64>>,
-        strategy: MonitoringStrategy,
-        evaluation_mode: EvaluationMode,
+        strategy: Algorithm,
+        semantics: Semantics,
         expected: Vec<Vec<Step<Option<Y>>>>,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
@@ -571,8 +571,8 @@ mod tests {
         for (i, formula) in formulas.into_iter().enumerate() {
             let mut monitor = StlMonitor::builder()
                 .formula(formula.clone())
-                .strategy(strategy)
-                .evaluation_mode(evaluation_mode)
+                .algorithm(strategy)
+                .semantics(semantics)
                 .build()
                 .unwrap();
 
@@ -589,18 +589,18 @@ mod tests {
             assert_eq!(
                 all_results,
                 expected,
-                "Test failed for formula at index {} ({}) with strategy {:?} and mode {:?}",
+                "Test failed for formula at index {} ({}) with algorithm {:?} and semantics {:?}",
                 i,
                 monitor.specification_to_string(),
                 strategy,
-                evaluation_mode
+                semantics
             );
         }
     }
 
     #[rstest]
     // --- f64 Strict Cases ---
-    // These run with EvaluationMode::Strict and are tested against
+    // These run with Semantics::Robustness and are tested against
     // both Naive and Incremental strategies.
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_f64_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_strict())]
@@ -613,17 +613,16 @@ mod tests {
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] expected: Vec<Vec<Step<Option<Y>>>>,
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
-        strategy: MonitoringStrategy,
+        #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        run_monitor_test(formulas, signal, strategy, EvaluationMode::Strict, expected);
+        run_monitor_test(formulas, signal, strategy, Semantics::Robustness, expected);
     }
 
     #[rstest]
     // --- bool Strict Cases ---
-    // These run with EvaluationMode::Strict and are tested against
+    // These run with Semantics::StrictSatisfaction and are tested against
     // both Naive and Incremental strategies.
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_strict())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_strict())]
@@ -636,17 +635,22 @@ mod tests {
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] expected: Vec<Vec<Step<Option<Y>>>>,
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
-        strategy: MonitoringStrategy,
+        #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        run_monitor_test(formulas, signal, strategy, EvaluationMode::Strict, expected);
+        run_monitor_test(
+            formulas,
+            signal,
+            strategy,
+            Semantics::StrictSatisfaction,
+            expected,
+        );
     }
 
     #[rstest]
     // --- bool Eager Cases ---
-    // These run with EvaluationMode::Eager and are tested *only*
+    // These run with Semantics::EagerSatisfaction and are tested *only*
     // against the Incremental strategy (Naive+Eager is invalid).
     #[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_eager())]
     #[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_eager())]
@@ -661,11 +665,17 @@ mod tests {
         #[case] formulas: Vec<FormulaDefinition>,
         #[case] signal: Vec<Step<f64>>,
         #[case] expected: Vec<Vec<Step<Option<Y>>>>,
-        #[values(MonitoringStrategy::Incremental)] strategy: MonitoringStrategy,
+        #[values(Algorithm::Incremental)] strategy: Algorithm,
     ) where
         Y: RobustnessSemantics + 'static + Copy + Debug + PartialEq,
     {
-        run_monitor_test(formulas, signal, strategy, EvaluationMode::Eager, expected);
+        run_monitor_test(
+            formulas,
+            signal,
+            strategy,
+            Semantics::EagerSatisfaction,
+            expected,
+        );
     }
 
     #[rstest]
@@ -675,8 +685,8 @@ mod tests {
             .formula(stl! {
                 (G[0,2] (x < 2)) and ((x > 0))
             })
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Eager)
+            .algorithm(Algorithm::Incremental)
+            .semantics(Semantics::Rosi)
             .build()
             .unwrap();
 
@@ -706,19 +716,19 @@ mod tests {
         let all_rosi_outputs: Vec<Vec<Step<Option<RobustnessInterval>>>> = formulas
             .into_iter()
             .map(|formula| {
-                // Build an incremental, eager monitor that emits RobustnessInterval outputs
+                // Build an incremental monitor that emits RobustnessInterval outputs
                 let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
                     .formula(formula.clone())
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Eager)
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(Semantics::Rosi)
                     .build()
                     .unwrap();
 
-                // build a strict monitor for comparison
+                // build a robustness monitor for comparison
                 let mut strict_monitor: StlMonitor<f64, f64> = StlMonitor::builder()
                     .formula(formula.clone())
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Strict)
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(Semantics::Robustness)
                     .build()
                     .unwrap();
 
@@ -777,8 +787,8 @@ mod tests {
             .map(|formula| {
                 let mut monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
                     .formula(formula)
-                    .strategy(MonitoringStrategy::Incremental)
-                    .evaluation_mode(EvaluationMode::Eager)
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(Semantics::Rosi)
                     .build()
                     .unwrap();
 
@@ -893,14 +903,13 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn test_monitor_build_fails_f64_eager(
-        #[values(MonitoringStrategy::Naive, MonitoringStrategy::Incremental)]
-        strategy: MonitoringStrategy,
+        #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
     ) {
         // Eager mode + f64 robustness is an invalid combination
         let _: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula_1())
-            .strategy(strategy)
-            .evaluation_mode(EvaluationMode::Eager)
+            .algorithm(strategy)
+            .semantics(Semantics::EagerSatisfaction)
             .build()
             .unwrap();
     }
@@ -911,8 +920,8 @@ mod tests {
         // Eager mode + Naive strategy is an invalid combination
         let _: StlMonitor<f64, bool> = StlMonitor::builder()
             .formula(formula_1())
-            .strategy(MonitoringStrategy::Naive)
-            .evaluation_mode(EvaluationMode::Eager)
+            .algorithm(Algorithm::Naive)
+            .semantics(Semantics::EagerSatisfaction)
             .build()
             .unwrap();
     }
@@ -938,8 +947,8 @@ mod tests {
 
         let mut monitor = StlMonitor::<f64, RobustnessInterval>::builder()
             .formula(stl! { (x > 0) && (y < 150) })
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Eager)
+            .algorithm(Algorithm::Incremental)
+            .semantics(Semantics::Rosi)
             .synchronization_strategy(interpolation_strategy)
             .build()
             .unwrap();

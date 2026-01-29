@@ -1,7 +1,7 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
 use std::env;
 use std::time::Duration;
 
@@ -104,23 +104,27 @@ fn print_usage(program: &str) {
     eprintln!("  {program} naive eager");
 }
 
-fn parse_strategy(s: &str) -> Result<MonitoringStrategy, String> {
+fn parse_strategy(s: &str) -> Result<Algorithm, String> {
     if s.eq_ignore_ascii_case("naive") {
-        Ok(MonitoringStrategy::Naive)
+        Ok(Algorithm::Naive)
     } else if s.eq_ignore_ascii_case("incremental") {
-        Ok(MonitoringStrategy::Incremental)
+        Ok(Algorithm::Incremental)
     } else {
         Err(format!("unknown strategy: {s}"))
     }
 }
 
-fn parse_eval_mode(s: &str) -> Result<EvaluationMode, String> {
+fn parse_semantics(s: &str) -> Result<Semantics, String> {
     if s.eq_ignore_ascii_case("eager") {
-        Ok(EvaluationMode::Eager)
+        Ok(Semantics::EagerSatisfaction)
     } else if s.eq_ignore_ascii_case("strict") {
-        Ok(EvaluationMode::Strict)
+        Ok(Semantics::StrictSatisfaction)
+    } else if s.eq_ignore_ascii_case("robustness") {
+        Ok(Semantics::Robustness)
+    } else if s.eq_ignore_ascii_case("rosi") {
+        Ok(Semantics::Rosi)
     } else {
-        Err(format!("unknown evaluation mode: {s}"))
+        Err(format!("unknown semantics: {s}"))
     }
 }
 
@@ -129,38 +133,38 @@ fn main() {
     let program = args.next().unwrap_or_else(|| "monitor_memory".to_string());
 
     // Positional args:
-    //   1) strategy (default: naive)
-    //   2) evaluation_mode (default: eager)
-    let strategy_arg = args.next();
-    let eval_mode_arg = args.next();
+    //   1) algorithm (default: naive)
+    //   2) semantics (default: strict)
+    let algorithm_arg = args.next();
+    let semantics_arg = args.next();
 
     if args.len() < 2 {
         print_usage(&program);
     }
 
-    let strategy = match strategy_arg {
+    let algorithm = match algorithm_arg {
         Some(s) => match parse_strategy(&s) {
             Ok(st) => st,
             Err(e) => {
                 eprintln!("{e}");
-                MonitoringStrategy::Naive
+                Algorithm::Naive
             }
         },
-        None => MonitoringStrategy::Naive,
+        None => Algorithm::Naive,
     };
 
-    let evaluation_mode = match eval_mode_arg {
-        Some(s) => match parse_eval_mode(&s) {
+    let semantics = match semantics_arg {
+        Some(s) => match parse_semantics(&s) {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("{e}");
-                EvaluationMode::Strict
+                Semantics::StrictSatisfaction
             }
         },
-        None => EvaluationMode::Strict,
+        None => Semantics::StrictSatisfaction,
     };
 
-    println!("Using strategy: {strategy:?}, evaluation_mode: {evaluation_mode:?}");
+    println!("Using algorithm: {algorithm:?}, semantics: {semantics:?}");
 
     let formula = formula_1();
     let signal_size = 1000; // Size of the signal for benchmarking
@@ -169,8 +173,8 @@ fn main() {
     // Create the monitor using args
     let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
         .formula(formula)
-        .strategy(strategy)
-        .evaluation_mode(evaluation_mode)
+        .algorithm(algorithm)
+        .semantics(semantics)
         .build()
         .unwrap();
 

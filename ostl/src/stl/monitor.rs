@@ -18,18 +18,19 @@ use std::time::Duration;
 
 /// Defines the monitoring strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum MonitoringStrategy {
+pub enum Algorithm {
     Naive,
     #[default]
     Incremental,
 }
 
-/// Defines the evaluation mode
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum EvaluationMode {
-    Eager,
+pub enum Semantics {
+    Rosi,
     #[default]
-    Strict,
+    Robustness,
+    StrictSatisfaction,
+    EagerSatisfaction,
 }
 
 /// Represents the output of a single monitor update operation.
@@ -201,8 +202,8 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
 /// The Builder pattern struct for StlMonitor.
 pub struct StlMonitorBuilder<T, Y> {
     formula: Option<FormulaDefinition>,
-    strategy: MonitoringStrategy,
-    evaluation_mode: EvaluationMode,
+    algorithm: Algorithm,
+    semantics: Semantics,
     synchronization_strategy: SynchronizationStrategy,
     _phantom: std::marker::PhantomData<(T, Y)>,
 }
@@ -211,8 +212,8 @@ impl<T, Y> Default for StlMonitorBuilder<T, Y> {
     fn default() -> Self {
         Self {
             formula: None,
-            strategy: MonitoringStrategy::default(),
-            evaluation_mode: EvaluationMode::default(),
+            algorithm: Algorithm::default(),
+            semantics: Semantics::default(),
             synchronization_strategy: SynchronizationStrategy::default(),
             _phantom: std::marker::PhantomData,
         }
@@ -230,14 +231,15 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         self
     }
 
-    /// Configures the monitoring strategy (Naive or Incremental).
-    pub fn strategy(mut self, strategy: MonitoringStrategy) -> Self {
-        self.strategy = strategy;
+    /// Configures the monitoring algorithm (Naive or Incremental).
+    pub fn algorithm(mut self, algorithm: Algorithm) -> Self {
+        self.algorithm = algorithm;
         self
     }
-    /// Configures the evaluation mode (Eager or Strict).
-    pub fn evaluation_mode(mut self, mode: EvaluationMode) -> Self {
-        self.evaluation_mode = mode;
+
+    /// Configures the semantics (output type and evaluation mode).
+    pub fn semantics(mut self, semantics: Semantics) -> Self {
+        self.semantics = semantics;
         self
     }
 
@@ -268,22 +270,28 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             .clone()
             .ok_or("Formula definition is required")?;
 
-        // Factory pattern: Build the correct operator tree based on the strategy
-        let root_operator = match (self.strategy, self.evaluation_mode, identifier) {
-            (_, EvaluationMode::Eager, "f64") => {
-                return Err("Eager evaluation mode is not supported for f64 output type");
-            }
-            (MonitoringStrategy::Incremental, _, _) => {
+        // Validate semantics matches output type Y
+        match (self.semantics, identifier) {
+            (Semantics::Rosi, "RobustnessInterval") => {}
+            (Semantics::Robustness, "f64") => {}
+            (Semantics::StrictSatisfaction | Semantics::EagerSatisfaction, "bool") => {}
+            _ => return Err("Semantics does not match output type Y"),
+        }
+
+        // Factory pattern: Build the correct operator tree based on the algorithm and semantics
+        let root_operator = match (self.algorithm, self.semantics) {
+            (Algorithm::Incremental, _) => {
                 let mut root_operator =
-                    build_incremental_operator::<T, Y>(formula_def.clone(), self.evaluation_mode);
+                    build_incremental_operator::<T, Y>(formula_def.clone(), self.semantics);
                 root_operator.get_signal_identifiers();
                 root_operator
             }
-            (MonitoringStrategy::Naive, EvaluationMode::Strict, _) => {
-                self.build_naive_operator(formula_def.clone(), self.evaluation_mode)
-            }
-            (_, _, _) => {
-                return Err("Chosen strategy and evaluation mode combination is not supported");
+            (
+                Algorithm::Naive,
+                Semantics::StrictSatisfaction | Semantics::Robustness | Semantics::Rosi,
+            ) => self.build_naive_operator(formula_def.clone(), self.semantics),
+            (Algorithm::Naive, Semantics::EagerSatisfaction) => {
+                return Err("Naive algorithm does not support eager evaluation");
             }
         };
 
@@ -308,7 +316,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
     fn build_naive_operator(
         &self,
         formula: FormulaDefinition,
-        _mode: EvaluationMode, // Note: mode isn't used by naive, but we keep it for signature consistency
+        _semantics: Semantics, // Note: semantics isn't used by naive directly, but we keep it for consistency
     ) -> Box<dyn StlOperatorTrait<T, Output = Y>>
     where
         T: Into<f64> + Copy + 'static,
@@ -359,14 +367,14 @@ fn build_naive_formula(formula: FormulaDefinition) -> StlOperator {
 
 fn build_incremental_operator<T, Y>(
     formula: FormulaDefinition,
-    mode: EvaluationMode,
+    semantics: Semantics,
 ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>>
 where
     T: Into<f64> + Copy + 'static,
     Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
 {
     // Determine configuration flags
-    let is_eager = matches!(mode, EvaluationMode::Eager);
+    let is_eager = matches!(semantics, Semantics::EagerSatisfaction);
     let is_rosi = TypeId::of::<Y>() == TypeId::of::<RobustnessInterval>();
 
     // We use `$( $arg:expr ),*` to capture arguments as a list.
@@ -390,42 +398,42 @@ where
         FormulaDefinition::False => Box::new(Atomic::new_false()),
 
         FormulaDefinition::Not(op) => {
-            let child = build_incremental_operator(*op, mode);
+            let child = build_incremental_operator(*op, semantics);
             Box::new(Not::new(child))
         }
 
         // --- Group B: Optimized Operators (Uses dispatch macro) ---
         FormulaDefinition::And(l, r) => {
-            let left = build_incremental_operator(*l, mode);
-            let right = build_incremental_operator(*r, mode);
+            let left = build_incremental_operator(*l, semantics);
+            let right = build_incremental_operator(*r, semantics);
             dispatch_operator!(And, left, right, None, None)
         }
 
         FormulaDefinition::Or(l, r) => {
-            let left = build_incremental_operator(*l, mode);
-            let right = build_incremental_operator(*r, mode);
+            let left = build_incremental_operator(*l, semantics);
+            let right = build_incremental_operator(*r, semantics);
             dispatch_operator!(Or, left, right, None, None)
         }
 
         FormulaDefinition::Implies(l, r) => {
-            let not_left = Box::new(Not::new(build_incremental_operator(*l, mode)));
-            let right = build_incremental_operator(*r, mode);
+            let not_left = Box::new(Not::new(build_incremental_operator(*l, semantics)));
+            let right = build_incremental_operator(*r, semantics);
             dispatch_operator!(Or, not_left, right, None, None)
         }
 
         FormulaDefinition::Eventually(i, op) => {
-            let child = build_incremental_operator(*op, mode);
+            let child = build_incremental_operator(*op, semantics);
             dispatch_operator!(Eventually, i, child, None, None)
         }
 
         FormulaDefinition::Globally(i, op) => {
-            let child = build_incremental_operator(*op, mode);
+            let child = build_incremental_operator(*op, semantics);
             dispatch_operator!(Globally, i, child, None, None)
         }
 
         FormulaDefinition::Until(i, l, r) => {
-            let left = build_incremental_operator(*l, mode);
-            let right = build_incremental_operator(*r, mode);
+            let left = build_incremental_operator(*l, semantics);
+            let right = build_incremental_operator(*r, semantics);
             dispatch_operator!(Until, i, left, right, None, None)
         }
     }
@@ -435,7 +443,7 @@ where
 mod tests {
     use super::*;
     use crate::stl::core::TimeInterval;
-    use crate::stl::monitor::{MonitoringStrategy, StlMonitor};
+    use crate::stl::monitor::{Algorithm, StlMonitor};
     use std::time::Duration;
 
     #[test]
@@ -453,20 +461,20 @@ mod tests {
 
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Incremental)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
 
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Naive)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
 
-        // assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
-        // assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
+        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
+        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
 
         let spec = monitor.specification_to_string();
         println!("Monitor Specification: {spec}");
@@ -490,20 +498,20 @@ mod tests {
 
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Incremental)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
 
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Naive)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
 
-        // assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
-        // assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
+        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
+        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
 
         let spec = monitor.specification_to_string();
         println!("Monitor Specification: {spec}");
@@ -536,18 +544,18 @@ mod tests {
 
         let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula.clone())
-            .strategy(MonitoringStrategy::Incremental)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Incremental)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
         let monitor_naive: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
-            .strategy(MonitoringStrategy::Naive)
-            .evaluation_mode(EvaluationMode::Strict)
+            .algorithm(Algorithm::Naive)
+            .semantics(Semantics::Robustness)
             .build()
             .unwrap();
-        // assert_eq!(monitor.strategy, MonitoringStrategy::Incremental);
-        // assert_eq!(monitor_naive.strategy, MonitoringStrategy::Naive);
+        // assert_eq!(monitor.algorithm, Algorithm::Incremental);
+        // assert_eq!(monitor_naive.algorithm, Algorithm::Naive);
 
         let spec = monitor.specification_to_string();
         println!("Monitor Specification: {spec}");

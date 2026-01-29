@@ -4,7 +4,7 @@ use criterion::{
 };
 use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessInterval;
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -94,8 +94,8 @@ fn benchmark_monitors(c: &mut Criterion) {
             //             || {
             //                 let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             //                     .formula(formula.clone())
-            //                     .strategy(MonitoringStrategy::Incremental)
-            //                     .evaluation_mode(EvaluationMode::Strict)
+            //                     .algorithm(Algorithm::Incremental)
+            //                     .semantics(Semantics::StrictSatisfaction)
             //                     .build()
             //                     .unwrap();
             //                 (monitor, signal.clone())
@@ -120,8 +120,8 @@ fn benchmark_monitors(c: &mut Criterion) {
                         || {
                             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
                                 .formula(formula.clone())
-                                .strategy(MonitoringStrategy::Incremental)
-                                .evaluation_mode(EvaluationMode::Strict)
+                                .algorithm(Algorithm::Incremental)
+                                .semantics(Semantics::Robustness)
                                 .build()
                                 .unwrap();
                             (monitor, signal.clone())
@@ -147,8 +147,8 @@ fn benchmark_monitors(c: &mut Criterion) {
             //                 || {
             //                     let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             //                         .formula(formula.clone())
-            //                         .strategy(MonitoringStrategy::Naive)
-            //                         .evaluation_mode(EvaluationMode::Strict)
+            //                         .algorithm(Algorithm::Naive)
+            //                         .semantics(Semantics::StrictSatisfaction)
             //                         .build()
             //                         .unwrap();
             //                     (monitor, signal.clone())
@@ -172,8 +172,8 @@ fn benchmark_monitors(c: &mut Criterion) {
             //                 || {
             //                     let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             //                         .formula(formula.clone())
-            //                         .strategy(MonitoringStrategy::Naive)
-            //                         .evaluation_mode(EvaluationMode::Strict)
+            //                         .algorithm(Algorithm::Naive)
+            //                         .semantics(Semantics::Robustness)
             //                         .build()
             //                         .unwrap();
             //                     (monitor, signal.clone())
@@ -198,8 +198,8 @@ fn benchmark_monitors(c: &mut Criterion) {
             //             || {
             //                 let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             //                     .formula(formula.clone())
-            //                     .strategy(MonitoringStrategy::Incremental)
-            //                     .evaluation_mode(EvaluationMode::Eager)
+            //                     .algorithm(Algorithm::Incremental)
+            //                     .semantics(Semantics::EagerSatisfaction)
             //                     .build()
             //                     .unwrap();
             //                 (monitor, signal.clone())
@@ -224,8 +224,8 @@ fn benchmark_monitors(c: &mut Criterion) {
                             let monitor: StlMonitor<f64, RobustnessInterval> =
                                 StlMonitor::builder()
                                     .formula(formula.clone())
-                                    .strategy(MonitoringStrategy::Incremental)
-                                    .evaluation_mode(EvaluationMode::Eager)
+                                    .algorithm(Algorithm::Incremental)
+                                    .semantics(Semantics::Rosi)
                                     .build()
                                     .unwrap();
                             (monitor, signal.clone())

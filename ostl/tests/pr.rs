@@ -4,7 +4,7 @@ mod tests {
     use ostl::ring_buffer::Step;
     use ostl::stl::{
         core::{RobustnessSemantics, TimeInterval},
-        monitor::{FormulaDefinition, MonitoringStrategy, StlMonitor},
+        monitor::{Algorithm, FormulaDefinition, StlMonitor},
     };
     use proptest::prelude::*;
     use std::fmt::{Debug, Display};

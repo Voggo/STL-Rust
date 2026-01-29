@@ -1,7 +1,7 @@
 use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessInterval;
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
+use ostl::stl::monitor::{Algorithm, Semantics, StlMonitor};
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -78,15 +78,15 @@ fn evaluate_formula(
     // Build monitors
     let mut monitor_rosi: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
         .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Eager)
+        .algorithm(Algorithm::Incremental)
+        .semantics(Semantics::Rosi)
         .build()
         .expect("Failed to build monitor");
 
     let mut monitor_strict: StlMonitor<f64, f64> = StlMonitor::builder()
         .formula(formula.clone())
-        .strategy(MonitoringStrategy::Incremental)
-        .evaluation_mode(EvaluationMode::Strict)
+        .algorithm(Algorithm::Incremental)
+        .semantics(Semantics::Robustness)
         .build()
         .expect("Failed to build monitor");
 
