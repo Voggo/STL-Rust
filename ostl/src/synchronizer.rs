@@ -5,17 +5,12 @@ use std::time::Duration;
 
 use crate::ring_buffer::Step;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum InterpolationStrategy {
-    None,        // No interpolation
+    None, // No interpolation
+    #[default]
     ZeroOrderHold, // formula: v = v0
-    Linear,        // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
-}
-
-impl Default for InterpolationStrategy {
-    fn default() -> Self {
-        Self::ZeroOrderHold
-    }
+    Linear, // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
 }
 
 pub trait Interpolatable:
@@ -51,7 +46,6 @@ where
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
     pub fn evaluate(&mut self, current_step: Step<T>) {
-
         if self.strategy == InterpolationStrategy::None {
             self.pending.push_back(current_step);
             return;

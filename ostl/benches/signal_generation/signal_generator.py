@@ -51,7 +51,7 @@ if __name__ == '__main__':
     SAMPLING_RATE = 1  # Hz
     START_FREQUENCY = 0.1   # Hz
     END_FREQUENCY = 0.0001   # Hz
-    OUTPUT_FILENAME = f'signal_{DURATION}.csv'
+    OUTPUT_FILENAME = f'signals/signal_{DURATION}.csv'
     # ---------------------
 
     generate_chirp_signal(DURATION, SAMPLING_RATE, START_FREQUENCY, END_FREQUENCY, OUTPUT_FILENAME)

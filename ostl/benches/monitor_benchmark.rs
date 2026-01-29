@@ -1,12 +1,14 @@
 // In benches/monitor_benchmark.rs
-use criterion::{Criterion, Throughput, criterion_group, criterion_main, PlotConfiguration, AxisScale};
+use criterion::{
+    AxisScale, Criterion, PlotConfiguration, Throughput, criterion_group, criterion_main,
+};
 use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessInterval;
 use ostl::stl::monitor::{EvaluationMode, MonitoringStrategy, StlMonitor};
-use std::time::Duration;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::time::Duration;
 
 // in order to get a json file with all the needed info do:
 // Install it: cargo install cargo-criterion
@@ -25,11 +27,11 @@ where
         if let Ok(value_str) = line {
             // we split the line by the comma and take the second element
             let columns: Vec<&str> = value_str.split(',').collect();
-            if columns.len() == 2 {
-                if let Ok(val) = columns[1].trim().parse::<f64>() {
-                    let t = Duration::from_secs_f64(i as f64);
-                    signal.push(Step::new("x", val, t));
-                }
+            if columns.len() == 2
+                && let Ok(val) = columns[1].trim().parse::<f64>()
+            {
+                let t = Duration::from_secs_f64(i as f64);
+                signal.push(Step::new("x", val, t));
             }
         }
     }
@@ -70,11 +72,10 @@ fn benchmark_monitors(c: &mut Criterion) {
             .unwrap();
         let spec_str = temp.specification_to_string();
         let formula_name = format!("{}: {}", id, spec_str);
-        
 
         let mut group = c.benchmark_group(&formula_name);
         group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-        
+
         // Increase sample size for better statistical significance
         group.sample_size(50);
         // Increase measurement time
@@ -117,7 +118,7 @@ fn benchmark_monitors(c: &mut Criterion) {
                 |b, signal| {
                     b.iter_batched(
                         || {
-                             let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                            let monitor: StlMonitor<f64, f64> = StlMonitor::builder()
                                 .formula(formula.clone())
                                 .strategy(MonitoringStrategy::Incremental)
                                 .evaluation_mode(EvaluationMode::Strict)
@@ -220,12 +221,13 @@ fn benchmark_monitors(c: &mut Criterion) {
                 |b, signal| {
                     b.iter_batched(
                         || {
-                             let monitor: StlMonitor<f64, RobustnessInterval> = StlMonitor::builder()
-                                .formula(formula.clone())
-                                .strategy(MonitoringStrategy::Incremental)
-                                .evaluation_mode(EvaluationMode::Eager)
-                                .build()
-                                .unwrap();
+                            let monitor: StlMonitor<f64, RobustnessInterval> =
+                                StlMonitor::builder()
+                                    .formula(formula.clone())
+                                    .strategy(MonitoringStrategy::Incremental)
+                                    .evaluation_mode(EvaluationMode::Eager)
+                                    .build()
+                                    .unwrap();
                             (monitor, signal.clone())
                         },
                         |(mut monitor, signal)| {

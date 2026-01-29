@@ -174,10 +174,7 @@ where
                 };
 
                 // 3. Eager falsification check: if phi has become false, short-circuit
-                // if we do weak until we have to add this check as well: && robustness_psi_right != Y::atomic_true()
-                if IS_EAGER
-                    && robustness_phi_left == Y::atomic_false()
-                    && t_max_combined >= t_eval
+                if IS_EAGER && robustness_phi_left == Y::atomic_false() && t_max_combined >= t_eval
                 {
                     falsified = true;
                     max_robustness_vec.push(Y::atomic_false());
