@@ -273,6 +273,16 @@ where
     T: Into<f64> + Copy + Interpolatable + 'static,
     Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
 {
+    /// Initializes the operator by collecting signal identifiers and preparing internal state.
+    /// This is called automatically during the build process for incremental operators.
+    fn initialize_operator(
+        &self,
+        mut operator: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>> {
+        operator.get_signal_identifiers();
+        operator
+    }
+
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str> {
         let identifier: &'static str = if TypeId::of::<Y>() == TypeId::of::<bool>() {
             "bool"
@@ -298,10 +308,9 @@ where
 
         let root_operator = match (self.algorithm, self.semantics) {
             (Algorithm::Incremental, _) => {
-                let mut root_operator =
+                let operator =
                     build_incremental_operator::<T, Y>(formula_def.clone(), self.semantics);
-                root_operator.get_signal_identifiers();
-                root_operator
+                self.initialize_operator(operator)
             }
             (Algorithm::Naive, Semantics::StrictSatisfaction | Semantics::Robustness) => {
                 self.build_naive_operator(formula_def.clone(), self.semantics)
