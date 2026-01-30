@@ -23,6 +23,14 @@ use syn::{Expr, Ident, LitBool, Result, Token, bracketed, parenthesized};
 /// - `signal <= value` - Signal less than or equal to value (sugar for `!(signal > value)`)
 /// - `signal == value` - Signal equal to value (sugar for `(signal >= value) && (signal <= value)`)
 ///
+/// ## Variable Predicates
+/// Use `$variable` syntax to reference runtime variables that can be updated at runtime:
+/// - `signal > $threshold` - Signal greater than runtime variable `threshold`
+/// - `signal < $limit` - Signal less than runtime variable `limit`
+/// - `signal >= $min` - Signal greater than or equal to runtime variable `min`
+/// - `signal <= $max` - Signal less than or equal to runtime variable `max`
+/// - `signal == $target` - Signal equal to runtime variable `target`
+///
 /// ## Unary Operators
 /// - `!(sub)` or `not(sub)` - Negation
 /// - `G[start, end](sub)` or `globally[start, end](sub)` - Globally
@@ -50,6 +58,9 @@ use syn::{Expr, Ident, LitBool, Result, Token, bracketed, parenthesized};
 /// // Without parentheses using operator precedence
 /// let formula = stl!(x > 0 && y < 10);
 /// let formula = stl!(G[0, 5](x > 0 && y < 10));
+/// // With runtime variables
+/// let formula = stl!(G[0, 5](signal > $threshold));
+/// let formula = stl!(x > 5 && y < $limit);
 /// ```
 #[proc_macro]
 pub fn stl(input: TokenStream) -> TokenStream {
@@ -67,12 +78,24 @@ fn parse_stl_formula(input: TokenStream2) -> Result<TokenStream2> {
     Ok(formula.to_token_stream())
 }
 
+/// Represents a predicate value - either a constant expression or a variable reference
+enum PredicateValue {
+    /// A constant expression (e.g., `5`, `threshold`, `(x + 1)`)
+    Const(Expr),
+    /// A variable reference using $ syntax (e.g., `$threshold`)
+    Var(Ident),
+}
+
 /// Represents a parsed STL formula.
 enum StlFormula {
     True,
     False,
     GreaterThan(Ident, Expr),
     LessThan(Ident, Expr),
+    /// Variable-based greater-than: signal > $variable
+    GreaterThanVar(Ident, Ident),
+    /// Variable-based less-than: signal < $variable
+    LessThanVar(Ident, Ident),
     Not(Box<StlFormula>),
     And(Box<StlFormula>, Box<StlFormula>),
     Or(Box<StlFormula>, Box<StlFormula>),
@@ -103,6 +126,20 @@ impl StlFormula {
                 let signal_str = signal.to_string();
                 quote! {
                     ::ostl::stl::formula_definition::FormulaDefinition::LessThan(#signal_str, #val as f64)
+                }
+            }
+            StlFormula::GreaterThanVar(signal, var) => {
+                let signal_str = signal.to_string();
+                let var_str = var.to_string();
+                quote! {
+                    ::ostl::stl::formula_definition::FormulaDefinition::GreaterThanVar(#signal_str, #var_str)
+                }
+            }
+            StlFormula::LessThanVar(signal, var) => {
+                let signal_str = signal.to_string();
+                let var_str = var.to_string();
+                quote! {
+                    ::ostl::stl::formula_definition::FormulaDefinition::LessThanVar(#signal_str, #var_str)
                 }
             }
             StlFormula::Not(sub) => {
@@ -724,12 +761,12 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
     // Parse comparison operator
     if fork.peek(Token![>]) && !fork.peek(Token![>=]) {
         fork.parse::<Token![>]>()?;
-        let val: Expr = parse_predicate_value(&fork).map_err(|_| {
+        let val = parse_predicate_value(&fork).map_err(|_| {
             syn::Error::new(
                 fork.span(),
                 format!(
                     "invalid value after '>' in predicate\n  \
-                    help: expected a numeric value, e.g., `{} > 5` or `{} > threshold`",
+                    help: expected a numeric value, e.g., `{} > 5` or `{} > $threshold`",
                     signal_str, signal_str
                 ),
             )
@@ -738,19 +775,22 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Commit the parse
         input.parse::<Ident>()?;
         input.parse::<Token![>]>()?;
-        let _: Expr = parse_predicate_value(input)?;
+        let _: PredicateValue = parse_predicate_value(input)?;
 
-        return Ok(StlFormula::GreaterThan(signal, val));
+        return match val {
+            PredicateValue::Const(expr) => Ok(StlFormula::GreaterThan(signal, expr)),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::GreaterThanVar(signal, var_ident)),
+        };
     }
 
     if fork.peek(Token![<]) && !fork.peek(Token![<=]) {
         fork.parse::<Token![<]>()?;
-        let val: Expr = parse_predicate_value(&fork).map_err(|_| {
+        let val = parse_predicate_value(&fork).map_err(|_| {
             syn::Error::new(
                 fork.span(),
                 format!(
                     "invalid value after '<' in predicate\n  \
-                    help: expected a numeric value, e.g., `{} < 5` or `{} < threshold`",
+                    help: expected a numeric value, e.g., `{} < 5` or `{} < $threshold`",
                     signal_str, signal_str
                 ),
             )
@@ -759,19 +799,22 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Commit the parse
         input.parse::<Ident>()?;
         input.parse::<Token![<]>()?;
-        let _: Expr = parse_predicate_value(input)?;
+        let _: PredicateValue = parse_predicate_value(input)?;
 
-        return Ok(StlFormula::LessThan(signal, val));
+        return match val {
+            PredicateValue::Const(expr) => Ok(StlFormula::LessThan(signal, expr)),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::LessThanVar(signal, var_ident)),
+        };
     }
 
     if fork.peek(Token![>=]) {
         fork.parse::<Token![>=]>()?;
-        let val: Expr = parse_predicate_value(&fork).map_err(|_| {
+        let val = parse_predicate_value(&fork).map_err(|_| {
             syn::Error::new(
                 fork.span(),
                 format!(
                     "invalid value after '>=' in predicate\n  \
-                    help: expected a numeric value, e.g., `{} >= 5` or `{} >= threshold`",
+                    help: expected a numeric value, e.g., `{} >= 5` or `{} >= $threshold`",
                     signal_str, signal_str
                 ),
             )
@@ -780,20 +823,27 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Commit the parse
         input.parse::<Ident>()?;
         input.parse::<Token![>=]>()?;
-        let _: Expr = parse_predicate_value(input)?;
+        let _: PredicateValue = parse_predicate_value(input)?;
 
         // >= is sugar for !(signal < val)
-        return Ok(StlFormula::Not(Box::new(StlFormula::LessThan(signal, val))));
+        return match val {
+            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::LessThan(
+                signal, expr,
+            )))),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(
+                StlFormula::LessThanVar(signal, var_ident),
+            ))),
+        };
     }
 
     if fork.peek(Token![<=]) {
         fork.parse::<Token![<=]>()?;
-        let val: Expr = parse_predicate_value(&fork).map_err(|_| {
+        let val = parse_predicate_value(&fork).map_err(|_| {
             syn::Error::new(
                 fork.span(),
                 format!(
                     "invalid value after '<=' in predicate\n  \
-                    help: expected a numeric value, e.g., `{} <= 5` or `{} <= threshold`",
+                    help: expected a numeric value, e.g., `{} <= 5` or `{} <= $threshold`",
                     signal_str, signal_str
                 ),
             )
@@ -802,22 +852,27 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Commit the parse
         input.parse::<Ident>()?;
         input.parse::<Token![<=]>()?;
-        let _: Expr = parse_predicate_value(input)?;
+        let _: PredicateValue = parse_predicate_value(input)?;
 
         // <= is sugar for !(signal > val)
-        return Ok(StlFormula::Not(Box::new(StlFormula::GreaterThan(
-            signal, val,
-        ))));
+        return match val {
+            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::GreaterThan(
+                signal, expr,
+            )))),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(
+                StlFormula::GreaterThanVar(signal, var_ident),
+            ))),
+        };
     }
 
     if fork.peek(Token![==]) {
         fork.parse::<Token![==]>()?;
-        let val: Expr = parse_predicate_value(&fork).map_err(|_| {
+        let val = parse_predicate_value(&fork).map_err(|_| {
             syn::Error::new(
                 fork.span(),
                 format!(
                     "invalid value after '==' in predicate\n  \
-                    help: expected a numeric value, e.g., `{} == 5` or `{} == threshold`",
+                    help: expected a numeric value, e.g., `{} == 5` or `{} == $threshold`",
                     signal_str, signal_str
                 ),
             )
@@ -826,13 +881,26 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Commit the parse
         input.parse::<Ident>()?;
         input.parse::<Token![==]>()?;
-        let _: Expr = parse_predicate_value(input)?;
+        let _: PredicateValue = parse_predicate_value(input)?;
 
         // == is sugar for (signal >= val) && (signal <= val)
         // Which is: !(signal < val) && !(signal > val)
-        let gte = StlFormula::Not(Box::new(StlFormula::LessThan(signal.clone(), val.clone())));
-        let lte = StlFormula::Not(Box::new(StlFormula::GreaterThan(signal, val)));
-        return Ok(StlFormula::And(Box::new(gte), Box::new(lte)));
+        return match val {
+            PredicateValue::Const(expr) => {
+                let gte =
+                    StlFormula::Not(Box::new(StlFormula::LessThan(signal.clone(), expr.clone())));
+                let lte = StlFormula::Not(Box::new(StlFormula::GreaterThan(signal, expr)));
+                Ok(StlFormula::And(Box::new(gte), Box::new(lte)))
+            }
+            PredicateValue::Var(var_ident) => {
+                let gte = StlFormula::Not(Box::new(StlFormula::LessThanVar(
+                    signal.clone(),
+                    var_ident.clone(),
+                )));
+                let lte = StlFormula::Not(Box::new(StlFormula::GreaterThanVar(signal, var_ident)));
+                Ok(StlFormula::And(Box::new(gte), Box::new(lte)))
+            }
+        };
     }
 
     Err(syn::Error::new(
@@ -846,27 +914,48 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
 }
 
 /// Parse a predicate value - stops at binary operators to avoid consuming them
-fn parse_predicate_value(input: ParseStream) -> Result<Expr> {
+/// Returns either a constant expression or a variable reference ($var)
+fn parse_predicate_value(input: ParseStream) -> Result<PredicateValue> {
     // We need to parse a numeric literal or expression, but stop before binary STL operators
     // Use syn's expression parsing but be careful with what we consume
+
+    // Check for variable reference with $ prefix: $threshold
+    if input.peek(Token![$]) {
+        input.parse::<Token![$]>()?;
+        if !input.peek(Ident) {
+            return Err(syn::Error::new(
+                input.span(),
+                "expected identifier after '$'\n  \
+                help: variable references should be written as `$variable_name`, e.g., `x > $threshold`",
+            ));
+        }
+        let var_ident: Ident = input.parse()?;
+        return Ok(PredicateValue::Var(var_ident));
+    }
 
     // Check for negative numbers: -5, -3.14, etc.
     if input.peek(Token![-]) {
         let neg: Token![-] = input.parse()?;
         if input.peek(syn::LitInt) {
             let lit: syn::LitInt = input.parse()?;
-            return Ok(syn::parse_quote_spanned!(neg.span=> -#lit));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -#lit),
+            ));
         }
         if input.peek(syn::LitFloat) {
             let lit: syn::LitFloat = input.parse()?;
-            return Ok(syn::parse_quote_spanned!(neg.span=> -#lit));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -#lit),
+            ));
         }
         // Parenthesized negative expression
         if input.peek(syn::token::Paren) {
             let content;
             parenthesized!(content in input);
             let inner: Expr = content.parse()?;
-            return Ok(syn::parse_quote_spanned!(neg.span=> -(#inner)));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -(#inner)),
+            ));
         }
         return Err(syn::Error::new(
             neg.span,
@@ -878,18 +967,18 @@ fn parse_predicate_value(input: ParseStream) -> Result<Expr> {
     // Simple literals
     if input.peek(syn::LitInt) {
         let lit: syn::LitInt = input.parse()?;
-        return Ok(Expr::Lit(syn::ExprLit {
+        return Ok(PredicateValue::Const(Expr::Lit(syn::ExprLit {
             attrs: vec![],
             lit: syn::Lit::Int(lit),
-        }));
+        })));
     }
 
     if input.peek(syn::LitFloat) {
         let lit: syn::LitFloat = input.parse()?;
-        return Ok(Expr::Lit(syn::ExprLit {
+        return Ok(PredicateValue::Const(Expr::Lit(syn::ExprLit {
             attrs: vec![],
             lit: syn::Lit::Float(lit),
-        }));
+        })));
     }
 
     // Parenthesized expression for the value
@@ -903,7 +992,7 @@ fn parse_predicate_value(input: ParseStream) -> Result<Expr> {
             ));
         }
         let inner: Expr = content.parse()?;
-        return Ok(syn::parse_quote!((#inner)));
+        return Ok(PredicateValue::Const(syn::parse_quote!((#inner))));
     }
 
     // Variable reference (identifier)
@@ -935,16 +1024,16 @@ fn parse_predicate_value(input: ParseStream) -> Result<Expr> {
             ));
         }
 
-        return Ok(Expr::Path(syn::ExprPath {
+        return Ok(PredicateValue::Const(Expr::Path(syn::ExprPath {
             attrs: vec![],
             qself: None,
             path: ident.into(),
-        }));
+        })));
     }
 
     Err(syn::Error::new(
         input.span(),
-        "expected a value (number, variable, or parenthesized expression)\n  \
-        help: valid values include: `5`, `3.14`, `-10`, `threshold`, `(x + 1)`",
+        "expected a value (number, variable, $var reference, or parenthesized expression)\n  \
+        help: valid values include: `5`, `3.14`, `-10`, `threshold`, `$threshold`, `(x + 1)`",
     ))
 }

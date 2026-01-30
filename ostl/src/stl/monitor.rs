@@ -186,6 +186,7 @@ impl<T, Y> MonitorOutput<T, Y> {
 pub struct StlMonitor<T: Clone + Interpolatable, Y> {
     root_operator: Box<dyn StlOperatorTrait<T, Output = Y>>,
     synchronizer: Synchronizer<T>,
+    variables: Variables,
 }
 
 /// Entry point for the builder.
@@ -197,6 +198,7 @@ impl StlMonitor<f64, f64> {
             algorithm: Algorithm::default(),
             semantics: Semantics::Robustness, // Default, but will be overwritten if semantics() is called
             synchronization_strategy: SynchronizationStrategy::default(),
+            variables: Variables::new(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -223,7 +225,15 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
     pub fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
         self.root_operator.get_signal_identifiers()
     }
+
+    /// Get a reference to the variables context used by this monitor.
+    /// This allows reading and updating variable values at runtime.
+    pub fn get_variables(&self) -> Variables {
+        self.variables.clone()
+    }
 }
+
+use crate::stl::core::Variables;
 
 /// The Builder pattern struct for StlMonitor.
 pub struct StlMonitorBuilder<T, Y> {
@@ -232,6 +242,7 @@ pub struct StlMonitorBuilder<T, Y> {
     /// We store the enum value for logic, and use Y for type safety
     semantics: Semantics,
     synchronization_strategy: SynchronizationStrategy,
+    variables: Variables,
     _phantom: std::marker::PhantomData<(T, Y)>,
 }
 
@@ -254,6 +265,27 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
         self
     }
 
+    /// Sets the variables context for formulas that use variable thresholds.
+    ///
+    /// Variables can be updated at runtime via the returned context.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let vars = Variables::new();
+    /// vars.set("threshold", 5.0);
+    /// let monitor = StlMonitor::builder()
+    ///     .formula(parse_stl("x > $threshold").unwrap())
+    ///     .variables(vars.clone())
+    ///     .build()
+    ///     .unwrap();
+    /// // Later: vars.set("threshold", 10.0);
+    /// ```
+    pub fn variables(mut self, vars: Variables) -> Self {
+        self.variables = vars;
+        self
+    }
+
     /// Applies the semantics, switching the Builder's generic type `Y` to match the semantics.
     /// This allows inference of the output type (bool, f64, RobustnessInterval).
     pub fn semantics<S: semantic_markers::SemanticType>(
@@ -265,6 +297,7 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
             algorithm: self.algorithm,
             semantics: S::as_enum(),
             synchronization_strategy: self.synchronization_strategy,
+            variables: self.variables,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -312,8 +345,11 @@ where
 
         let root_operator = match (self.algorithm, self.semantics) {
             (Algorithm::Incremental, _) => {
-                let operator =
-                    build_incremental_operator::<T, Y>(formula_def.clone(), self.semantics);
+                let operator = build_incremental_operator::<T, Y>(
+                    formula_def.clone(),
+                    self.semantics,
+                    self.variables.clone(),
+                );
                 self.initialize_operator(operator)
             }
             (Algorithm::Naive, Semantics::StrictSatisfaction | Semantics::Robustness) => {
@@ -336,6 +372,7 @@ where
         Ok(StlMonitor {
             root_operator,
             synchronizer,
+            variables: self.variables.clone(),
         })
     }
 
@@ -362,6 +399,11 @@ fn build_naive_formula(formula: FormulaDefinition) -> StlOperator {
     match formula {
         FormulaDefinition::GreaterThan(s, c) => StlOperator::GreaterThan(s, c),
         FormulaDefinition::LessThan(s, c) => StlOperator::LessThan(s, c),
+        FormulaDefinition::GreaterThanVar(_, _) | FormulaDefinition::LessThanVar(_, _) => {
+            panic!(
+                "Variable predicates are not supported in the naive algorithm. Use Algorithm::Incremental instead."
+            )
+        }
         FormulaDefinition::True => StlOperator::True,
         FormulaDefinition::False => StlOperator::False,
         FormulaDefinition::And(l, r) => StlOperator::And(
@@ -394,6 +436,7 @@ fn build_naive_formula(formula: FormulaDefinition) -> StlOperator {
 fn build_incremental_operator<T, Y>(
     formula: FormulaDefinition,
     semantics: Semantics,
+    variables: Variables,
 ) -> Box<dyn StlOperatorAndSignalIdentifier<T, Y>>
 where
     T: Into<f64> + Copy + 'static,
@@ -419,45 +462,55 @@ where
     match formula {
         FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
         FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
+        FormulaDefinition::GreaterThanVar(s, var) => {
+            Box::new(Atomic::new_greater_than_var(s, var, variables.clone()))
+        }
+        FormulaDefinition::LessThanVar(s, var) => {
+            Box::new(Atomic::new_less_than_var(s, var, variables.clone()))
+        }
         FormulaDefinition::True => Box::new(Atomic::new_true()),
         FormulaDefinition::False => Box::new(Atomic::new_false()),
 
         FormulaDefinition::Not(op) => {
-            let child = build_incremental_operator(*op, semantics);
+            let child = build_incremental_operator(*op, semantics, variables);
             Box::new(Not::new(child))
         }
 
         FormulaDefinition::And(l, r) => {
-            let left = build_incremental_operator(*l, semantics);
-            let right = build_incremental_operator(*r, semantics);
+            let left = build_incremental_operator(*l, semantics, variables.clone());
+            let right = build_incremental_operator(*r, semantics, variables);
             dispatch_operator!(And, left, right, None, None)
         }
 
         FormulaDefinition::Or(l, r) => {
-            let left = build_incremental_operator(*l, semantics);
-            let right = build_incremental_operator(*r, semantics);
+            let left = build_incremental_operator(*l, semantics, variables.clone());
+            let right = build_incremental_operator(*r, semantics, variables);
             dispatch_operator!(Or, left, right, None, None)
         }
 
         FormulaDefinition::Implies(l, r) => {
-            let not_left = Box::new(Not::new(build_incremental_operator(*l, semantics)));
-            let right = build_incremental_operator(*r, semantics);
+            let not_left = Box::new(Not::new(build_incremental_operator(
+                *l,
+                semantics,
+                variables.clone(),
+            )));
+            let right = build_incremental_operator(*r, semantics, variables);
             dispatch_operator!(Or, not_left, right, None, None)
         }
 
         FormulaDefinition::Eventually(i, op) => {
-            let child = build_incremental_operator(*op, semantics);
+            let child = build_incremental_operator(*op, semantics, variables);
             dispatch_operator!(Eventually, i, child, None, None)
         }
 
         FormulaDefinition::Globally(i, op) => {
-            let child = build_incremental_operator(*op, semantics);
+            let child = build_incremental_operator(*op, semantics, variables);
             dispatch_operator!(Globally, i, child, None, None)
         }
 
         FormulaDefinition::Until(i, l, r) => {
-            let left = build_incremental_operator(*l, semantics);
-            let right = build_incremental_operator(*r, semantics);
+            let left = build_incremental_operator(*l, semantics, variables.clone());
+            let right = build_incremental_operator(*r, semantics, variables);
             dispatch_operator!(Until, i, left, right, None, None)
         }
     }
@@ -532,5 +585,123 @@ mod tests {
         assert!(inc_ids.contains("x"));
         assert!(inc_ids.contains("y"));
         assert_eq!(spec, spec_naive);
+    }
+
+    #[test]
+    fn test_monitor_with_variables() {
+        use crate::stl::parse_stl;
+
+        // Parse a formula with a variable threshold
+        let formula = parse_stl("x > $threshold").unwrap();
+
+        // Create variables and set the threshold
+        let variables = Variables::new();
+        variables.set("threshold", 5.0);
+
+        // Build monitor with variables
+        let mut monitor = StlMonitor::builder()
+            .formula(formula)
+            .semantics(StrictSatisfaction)
+            .algorithm(Algorithm::Incremental)
+            .variables(variables.clone())
+            .build()
+            .unwrap();
+
+        // Test with value above threshold
+        let step = Step::new("x", 10.0, Duration::from_secs(1));
+        let output = monitor.update(&step);
+        let verdicts = output.finalize();
+        assert_eq!(verdicts.len(), 1);
+        assert!(verdicts[0].value);
+
+        // Update the threshold
+        variables.set("threshold", 15.0);
+
+        // Now the same value should be below threshold
+        let step2 = Step::new("x", 10.0, Duration::from_secs(2));
+        let output2 = monitor.update(&step2);
+        let verdicts2 = output2.finalize();
+        assert_eq!(verdicts2.len(), 1);
+        assert!(!verdicts2[0].value);
+    }
+
+    #[test]
+    fn test_monitor_with_variables_robustness() {
+        use crate::stl::parse_stl;
+
+        // Parse a formula with a variable threshold
+        let formula = parse_stl("x > $threshold").unwrap();
+
+        // Create variables and set the threshold
+        let variables = Variables::new();
+        variables.set("threshold", 5.0);
+
+        // Build monitor with robustness semantics
+        let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+            .formula(formula)
+            .semantics(Robustness)
+            .algorithm(Algorithm::Incremental)
+            .variables(variables.clone())
+            .build()
+            .unwrap();
+
+        // Test with value 10, threshold 5: robustness = 10 - 5 = 5
+        let step = Step::new("x", 10.0, Duration::from_secs(1));
+        let output = monitor.update(&step);
+        let verdicts = output.finalize();
+        assert_eq!(verdicts.len(), 1);
+        assert_eq!(verdicts[0].value, 5.0);
+
+        // Update the threshold to 15
+        variables.set("threshold", 15.0);
+
+        // Now robustness = 10 - 15 = -5
+        let step2 = Step::new("x", 10.0, Duration::from_secs(2));
+        let output2 = monitor.update(&step2);
+        let verdicts2 = output2.finalize();
+        assert_eq!(verdicts2.len(), 1);
+        assert_eq!(verdicts2[0].value, -5.0);
+    }
+
+    #[test]
+    fn test_monitor_get_variables() {
+        use crate::stl::parse_stl;
+
+        let formula = parse_stl("x > $A && y < $B").unwrap();
+        let variables = Variables::new();
+        variables.set("A", 1.0);
+        variables.set("B", 2.0);
+
+        let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            .formula(formula)
+            .semantics(StrictSatisfaction)
+            .algorithm(Algorithm::Incremental)
+            .variables(variables)
+            .build()
+            .unwrap();
+
+        // Get variables back from monitor
+        let vars = monitor.get_variables();
+        assert_eq!(vars.get("A"), Some(1.0));
+        assert_eq!(vars.get("B"), Some(2.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Variable predicates are not supported in the naive algorithm")]
+    fn test_variables_not_supported_in_naive() {
+        use crate::stl::parse_stl;
+
+        let formula = parse_stl("x > $threshold").unwrap();
+        let variables = Variables::new();
+        variables.set("threshold", 5.0);
+
+        // This should panic because naive algorithm doesn't support variables
+        let _monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+            .formula(formula)
+            .semantics(StrictSatisfaction)
+            .algorithm(Algorithm::Naive)
+            .variables(variables)
+            .build()
+            .unwrap();
     }
 }
