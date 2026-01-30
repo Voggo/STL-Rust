@@ -3,16 +3,9 @@
 #
 #    maturin generate-ci github
 #
-name: CI
+name: Build Python Wheels
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    tags:
-      - '*'
-  pull_request:
   workflow_dispatch:
 
 permissions:
