@@ -827,8 +827,12 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
 
         // >= is sugar for !(signal < val)
         return match val {
-            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::LessThan(signal, expr)))),
-            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(StlFormula::LessThanVar(signal, var_ident)))),
+            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::LessThan(
+                signal, expr,
+            )))),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(
+                StlFormula::LessThanVar(signal, var_ident),
+            ))),
         };
     }
 
@@ -852,8 +856,12 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
 
         // <= is sugar for !(signal > val)
         return match val {
-            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::GreaterThan(signal, expr)))),
-            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(StlFormula::GreaterThanVar(signal, var_ident)))),
+            PredicateValue::Const(expr) => Ok(StlFormula::Not(Box::new(StlFormula::GreaterThan(
+                signal, expr,
+            )))),
+            PredicateValue::Var(var_ident) => Ok(StlFormula::Not(Box::new(
+                StlFormula::GreaterThanVar(signal, var_ident),
+            ))),
         };
     }
 
@@ -879,12 +887,16 @@ fn try_parse_predicate(input: ParseStream) -> Result<StlFormula> {
         // Which is: !(signal < val) && !(signal > val)
         return match val {
             PredicateValue::Const(expr) => {
-                let gte = StlFormula::Not(Box::new(StlFormula::LessThan(signal.clone(), expr.clone())));
+                let gte =
+                    StlFormula::Not(Box::new(StlFormula::LessThan(signal.clone(), expr.clone())));
                 let lte = StlFormula::Not(Box::new(StlFormula::GreaterThan(signal, expr)));
                 Ok(StlFormula::And(Box::new(gte), Box::new(lte)))
             }
             PredicateValue::Var(var_ident) => {
-                let gte = StlFormula::Not(Box::new(StlFormula::LessThanVar(signal.clone(), var_ident.clone())));
+                let gte = StlFormula::Not(Box::new(StlFormula::LessThanVar(
+                    signal.clone(),
+                    var_ident.clone(),
+                )));
                 let lte = StlFormula::Not(Box::new(StlFormula::GreaterThanVar(signal, var_ident)));
                 Ok(StlFormula::And(Box::new(gte), Box::new(lte)))
             }
@@ -926,18 +938,24 @@ fn parse_predicate_value(input: ParseStream) -> Result<PredicateValue> {
         let neg: Token![-] = input.parse()?;
         if input.peek(syn::LitInt) {
             let lit: syn::LitInt = input.parse()?;
-            return Ok(PredicateValue::Const(syn::parse_quote_spanned!(neg.span=> -#lit)));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -#lit),
+            ));
         }
         if input.peek(syn::LitFloat) {
             let lit: syn::LitFloat = input.parse()?;
-            return Ok(PredicateValue::Const(syn::parse_quote_spanned!(neg.span=> -#lit)));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -#lit),
+            ));
         }
         // Parenthesized negative expression
         if input.peek(syn::token::Paren) {
             let content;
             parenthesized!(content in input);
             let inner: Expr = content.parse()?;
-            return Ok(PredicateValue::Const(syn::parse_quote_spanned!(neg.span=> -(#inner))));
+            return Ok(PredicateValue::Const(
+                syn::parse_quote_spanned!(neg.span=> -(#inner)),
+            ));
         }
         return Err(syn::Error::new(
             neg.span,
