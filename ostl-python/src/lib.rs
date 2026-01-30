@@ -7,7 +7,8 @@ use ostl::stl::monitor::{
 use ostl::stl::parse_stl;
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyList, PyTuple};
+use std::fmt::Debug;
 use std::time::Duration;
 
 // -----------------------------------------------------------------------------
@@ -297,7 +298,257 @@ impl Formula {
 }
 
 // -----------------------------------------------------------------------------
-// 3. Monitor Wrapper
+// 3. MonitorOutput Wrapper
+// -----------------------------------------------------------------------------
+
+/// We need an enum to hold the different output types since Python is dynamic
+/// but Rust types are static.
+#[derive(Clone)]
+enum InnerMonitorOutput {
+    Bool(MonitorOutput<f64, bool>),
+    Float(MonitorOutput<f64, f64>),
+    Interval(MonitorOutput<f64, RobustnessInterval>),
+}
+
+/// A wrapper around the Rust MonitorOutput that provides idiomatic Display and Debug formatting.
+///
+/// This class wraps the output from a monitor update, preserving access to both
+/// the structured data (via `to_dict()`) and the Rust Display/Debug formatting
+/// (via `__str__()` and `__repr__()`).
+///
+/// The string representation shows verdicts in the format:
+/// ```
+/// t={timestamp}: {value}
+/// ```
+///
+/// For multiple verdicts, they are shown on separate lines.
+/// If no verdicts are available, it shows "No verdicts available".
+#[pyclass(name = "MonitorOutput")]
+#[derive(Clone)]
+struct PyMonitorOutput {
+    inner: InnerMonitorOutput,
+}
+
+#[pymethods]
+impl PyMonitorOutput {
+    /// Convert the monitor output to a dictionary.
+    ///
+    /// Returns a dictionary containing:
+    /// - 'input_signal': the signal name
+    /// - 'input_timestamp': the input timestamp
+    /// - 'input_value': the input value
+    /// - 'evaluations': list of evaluation dictionaries, each containing:
+    ///     - 'sync_step_signal': signal name of the synchronized step
+    ///     - 'sync_step_timestamp': timestamp of the synchronized step
+    ///     - 'sync_step_value': value of the synchronized step
+    ///     - 'outputs': list of output dictionaries with:
+    ///         - 'timestamp': when the verdict is for
+    ///         - 'value': the verdict value (bool, float, or tuple depending on semantics)
+    fn to_dict(&self) -> PyResult<Py<PyAny>> {
+        Python::attach(|py| match &self.inner {
+            InnerMonitorOutput::Bool(output) => convert_output_to_dict(py, output.clone(), |val| {
+                PyBool::new(py, val).to_owned().into_any().unbind()
+            }),
+            InnerMonitorOutput::Float(output) => {
+                convert_output_to_dict(py, output.clone(), |val| {
+                    PyFloat::new(py, val).to_owned().into_any().unbind()
+                })
+            }
+            InnerMonitorOutput::Interval(output) => {
+                convert_output_to_dict(py, output.clone(), |val| {
+                    PyTuple::new(py, [val.0, val.1])
+                        .unwrap()
+                        .into_any()
+                        .unbind()
+                })
+            }
+        })
+    }
+
+    /// Get the input signal name.
+    #[getter]
+    fn input_signal(&self) -> &'static str {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.input_signal,
+            InnerMonitorOutput::Float(o) => o.input_signal,
+            InnerMonitorOutput::Interval(o) => o.input_signal,
+        }
+    }
+
+    /// Get the input timestamp in seconds.
+    #[getter]
+    fn input_timestamp(&self) -> f64 {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.input_timestamp.as_secs_f64(),
+            InnerMonitorOutput::Float(o) => o.input_timestamp.as_secs_f64(),
+            InnerMonitorOutput::Interval(o) => o.input_timestamp.as_secs_f64(),
+        }
+    }
+
+    /// Get the input value.
+    #[getter]
+    fn input_value(&self) -> f64 {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.input_value,
+            InnerMonitorOutput::Float(o) => o.input_value,
+            InnerMonitorOutput::Interval(o) => o.input_value,
+        }
+    }
+
+    /// Check if there are any outputs.
+    fn has_outputs(&self) -> bool {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.has_outputs(),
+            InnerMonitorOutput::Float(o) => o.has_outputs(),
+            InnerMonitorOutput::Interval(o) => o.has_outputs(),
+        }
+    }
+
+    /// Get the total number of outputs.
+    fn total_outputs(&self) -> usize {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.total_outputs(),
+            InnerMonitorOutput::Float(o) => o.total_outputs(),
+            InnerMonitorOutput::Interval(o) => o.total_outputs(),
+        }
+    }
+
+    /// Check if the evaluations list is empty.
+    fn is_empty(&self) -> bool {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.is_empty(),
+            InnerMonitorOutput::Float(o) => o.is_empty(),
+            InnerMonitorOutput::Interval(o) => o.is_empty(),
+        }
+    }
+
+    /// Get the finalized verdicts as a list of (timestamp, value) tuples.
+    ///
+    /// This returns the latest verdict for each unique timestamp,
+    /// matching the behavior of Rust's `finalize()` method.
+    fn finalize(&self) -> PyResult<Py<PyList>> {
+        Python::attach(|py| {
+            let list = match &self.inner {
+                InnerMonitorOutput::Bool(o) => {
+                    let verdicts = o.finalize();
+                    let items: Vec<_> = verdicts
+                        .iter()
+                        .map(|step| {
+                            PyTuple::new(
+                                py,
+                                [
+                                    step.timestamp
+                                        .as_secs_f64()
+                                        .into_pyobject(py)
+                                        .unwrap()
+                                        .into_any(),
+                                    PyBool::new(py, step.value).to_owned().into_any(),
+                                ],
+                            )
+                            .unwrap()
+                        })
+                        .collect();
+                    PyList::new(py, items).unwrap()
+                }
+                InnerMonitorOutput::Float(o) => {
+                    let verdicts = o.finalize();
+                    let items: Vec<_> = verdicts
+                        .iter()
+                        .map(|step| {
+                            PyTuple::new(
+                                py,
+                                [
+                                    step.timestamp
+                                        .as_secs_f64()
+                                        .into_pyobject(py)
+                                        .unwrap()
+                                        .into_any(),
+                                    PyFloat::new(py, step.value).to_owned().into_any(),
+                                ],
+                            )
+                            .unwrap()
+                        })
+                        .collect();
+                    PyList::new(py, items).unwrap()
+                }
+                InnerMonitorOutput::Interval(o) => {
+                    let verdicts = o.finalize();
+                    let items: Vec<_> = verdicts
+                        .iter()
+                        .map(|step| {
+                            let interval = PyTuple::new(py, [step.value.0, step.value.1]).unwrap();
+                            PyTuple::new(
+                                py,
+                                [
+                                    step.timestamp
+                                        .as_secs_f64()
+                                        .into_pyobject(py)
+                                        .unwrap()
+                                        .into_any(),
+                                    interval.into_any(),
+                                ],
+                            )
+                            .unwrap()
+                        })
+                        .collect();
+                    PyList::new(py, items).unwrap()
+                }
+            };
+            Ok(list.unbind())
+        })
+    }
+
+    /// Returns the Display representation of the MonitorOutput.
+    ///
+    /// This uses the Rust Display implementation which formats verdicts as:
+    /// ```
+    /// t={timestamp}: {value}
+    /// ```
+    ///
+    /// For multiple verdicts, they are shown on separate lines.
+    /// If no verdicts are available, returns "No verdicts available".
+    fn __str__(&self) -> String {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => format_monitor_output(o),
+            InnerMonitorOutput::Float(o) => format!("{}", o),
+            InnerMonitorOutput::Interval(o) => format_monitor_output(o),
+        }
+    }
+
+    /// Returns the Debug representation of the MonitorOutput.
+    ///
+    /// This uses the Rust Debug implementation which shows the full
+    /// internal structure of the MonitorOutput.
+    fn __repr__(&self) -> String {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => format!("{:?}", o),
+            InnerMonitorOutput::Float(o) => format!("{:?}", o),
+            InnerMonitorOutput::Interval(o) => format!("{:?}", o),
+        }
+    }
+}
+
+/// Helper function to format MonitorOutput using the same logic as Rust's Display impl.
+/// This is needed because Display is only implemented for MonitorOutput<f64, Y>.
+fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> String {
+    let finalized = output.finalize();
+
+    if finalized.is_empty() {
+        return "No verdicts available".to_string();
+    }
+
+    let mut result = String::new();
+    for (i, step) in finalized.iter().enumerate() {
+        if i > 0 {
+            result.push('\n');
+        }
+        result.push_str(&format!("t={:?}: {:?}", step.timestamp, step.value));
+    }
+    result
+}
+
+// -----------------------------------------------------------------------------
+// 4. Monitor Wrapper
 // -----------------------------------------------------------------------------
 
 /// We need an enum to handle the different generics (bool, f64, RobustnessInterval)
@@ -459,44 +710,36 @@ impl Monitor {
     ///
     /// Returns:
     /// --------
-    /// dict
-    ///     A dictionary containing:
-    ///     - 'input_signal': the signal name
-    ///     - 'input_timestamp': the input timestamp
-    ///     - 'evaluations': list of evaluation dictionaries, each containing:
-    ///         - 'sync_step_signal': signal name of the synchronized step
-    ///         - 'sync_step_timestamp': timestamp of the synchronized step
-    ///         - 'sync_step_value': value of the synchronized step
-    ///         - 'outputs': list of output dictionaries with:
-    ///             - 'timestamp': when the verdict is for
-    ///             - 'value': the verdict value (bool, float, or tuple depending on semantics)
-    fn update(&mut self, signal: String, value: f64, timestamp: f64) -> PyResult<Py<PyAny>> {
+    /// MonitorOutput
+    ///     An object containing the monitor output with:
+    ///     - Display/Debug formatting via __str__() and __repr__()
+    ///     - Structured data access via to_dict() method
+    ///     - Properties: input_signal, input_timestamp, input_value
+    ///     - Methods: has_outputs(), total_outputs(), is_empty(), finalize()
+    fn update(&mut self, signal: String, value: f64, timestamp: f64) -> PyMonitorOutput {
         let sig_ref = Box::leak(signal.into_boxed_str());
         let step = Step::new(sig_ref, value, Duration::from_secs_f64(timestamp));
 
-        Python::attach(|py| match &mut self.inner {
+        match &mut self.inner {
             InnerMonitor::Robustness(m) => {
                 let output = m.update(&step);
-                convert_output(py, output, |val| {
-                    PyFloat::new(py, val).to_owned().into_any().unbind()
-                })
+                PyMonitorOutput {
+                    inner: InnerMonitorOutput::Float(output),
+                }
             }
             InnerMonitor::EagerSatisfaction(m) | InnerMonitor::StrictSatisfaction(m) => {
                 let output = m.update(&step);
-                convert_output(py, output, |val| {
-                    PyBool::new(py, val).to_owned().into_any().unbind()
-                })
+                PyMonitorOutput {
+                    inner: InnerMonitorOutput::Bool(output),
+                }
             }
             InnerMonitor::Rosi(m) => {
                 let output = m.update(&step);
-                convert_output(py, output, |val| {
-                    PyTuple::new(py, [val.0, val.1])
-                        .unwrap()
-                        .into_any()
-                        .unbind()
-                })
+                PyMonitorOutput {
+                    inner: InnerMonitorOutput::Interval(output),
+                }
             }
-        })
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -508,7 +751,7 @@ impl Monitor {
 }
 
 /// Helper function to convert Rust MonitorOutput to a Python Dictionary
-fn convert_output<Y, F>(
+fn convert_output_to_dict<Y, F>(
     py: Python,
     output: MonitorOutput<f64, Y>,
     val_mapper: F,
@@ -519,6 +762,7 @@ where
     let dict = PyDict::new(py);
     dict.set_item("input_signal", output.input_signal)?;
     dict.set_item("input_timestamp", output.input_timestamp.as_secs_f64())?;
+    dict.set_item("input_value", output.input_value)?;
 
     // Preserve the structure of individual evaluations/sync steps
     let mut evaluations_list = Vec::new();
@@ -573,8 +817,11 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         >>> # Create monitor with Robustness semantics\n\
         >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
         >>> # Feed data\n\
-        >>> result = monitor.update('x', 1.0, 0.0)\n\
-        >>> print(result['evaluations'])\n\n\
+        >>> output = monitor.update('x', 1.0, 0.0)\n\
+        >>> # Print using Rust's Display formatting\n\
+        >>> print(output)\n\
+        >>> # Access structured data\n\
+        >>> print(output.to_dict())\n\n\
         Example using Formula builder methods:\n\
         --------------------------------------\n\
         >>> import ostl_python\n\
@@ -583,12 +830,15 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         >>> # Create monitor with Robustness semantics\n\
         >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
         >>> # Feed data\n\
-        >>> result = monitor.update('x', 1.0, 0.0)\n\
-        >>> print(result['evaluations'])\n\
+        >>> output = monitor.update('x', 1.0, 0.0)\n\
+        >>> # Use __str__ and __repr__ for Rust-style formatting\n\
+        >>> print(str(output))  # Display format\n\
+        >>> print(repr(output)) # Debug format\n\
     ")?;
 
     m.add_function(wrap_pyfunction!(py_parse_formula, m)?)?;
     m.add_class::<Formula>()?;
+    m.add_class::<PyMonitorOutput>()?;
     m.add_class::<Monitor>()?;
 
     Ok(())

@@ -26,5 +26,6 @@ for var, t, val in vals:
     result = monitor.update(var, val, t)
 
     # 4. Print results
-    print(f"Input t={t:.1f}, {var}={val:.2f} -> Produced Verdicts:")
-    print(json.dumps(result["evaluations"], indent=4))
+    print(f"Input t={t:.1f}, {var}={val:.2f}")
+    print(result)
+    print("------\n")
