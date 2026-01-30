@@ -2,12 +2,28 @@ import json
 from ostl_python import ostl_python as ostl
 import numpy as np
 
-phi = ostl.parse_formula("G[0,4](x > 0.5) U[0,3] (y < -0.5)")
+
+# from ostl_python import Variables, parse_formula, Monitor
+
+# vars = Variables()
+# vars.set("threshold", 5.0)
+
+# formula = parse_formula("x > $threshold")
+# monitor = Monitor(formula, semantics="Robustness", variables=vars)
+
+# # Update threshold at runtime
+# vars.set("threshold", 10.0)
+
+vars = ostl.Variables()
+vars.set("threshold", 0.5)
+phi = ostl.parse_formula("G[0,4](x > $threshold) U[0,3] (x < $threshold)")
 
 print(f"Monitoring Formula: {phi}")
 
 # 2. Create the Monitor (using Robustness Semantics)
-monitor = ostl.Monitor(phi, semantics="Rosi")
+monitor = ostl.Monitor(
+    phi, semantics="Rosi", synchronization="ZeroOrderHold", variables=vars
+)
 # Get signal identifiers used in the formula
 signal_ids = monitor.get_signal_identifiers()
 print(f"Signal Identifiers in the formula: {signal_ids}")
@@ -26,6 +42,12 @@ vals = [
 ]
 
 for var, t, val in vals:
+
+    if t == 3.0:
+        # Update threshold at runtime
+        vars.set("threshold", 0.6)
+        print(f"Updated threshold to {vars.get('threshold')} at time {t}")
+
     # 3. Feed input to the Monitor
     result = monitor.update(var, val, t)
 

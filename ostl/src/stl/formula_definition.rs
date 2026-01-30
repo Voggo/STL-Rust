@@ -3,10 +3,19 @@ use crate::stl::core::{SignalIdentifier, TimeInterval};
 use std::fmt::Display;
 
 /// An enum representing the definition of an STL formula.
+///
+/// Predicates can use either constant values (e.g., `x > 5.0`) or variables
+/// (e.g., `x > A` where `A` is a named variable that can be updated at runtime).
 #[derive(Clone, Debug, PartialEq)]
 pub enum FormulaDefinition {
+    /// Signal greater than a constant: signal > value
     GreaterThan(&'static str, f64),
+    /// Signal less than a constant: signal < value
     LessThan(&'static str, f64),
+    /// Signal greater than a variable: signal > var_name
+    GreaterThanVar(&'static str, &'static str),
+    /// Signal less than a variable: signal < var_name
+    LessThanVar(&'static str, &'static str),
     True,
     False,
     And(Box<FormulaDefinition>, Box<FormulaDefinition>),
@@ -51,6 +60,8 @@ impl Display for FormulaDefinition {
                 FormulaDefinition::Implies(f1, f2) => format!("({f1}) → ({f2})"),
                 FormulaDefinition::GreaterThan(s, val) => format!("{s} > {val}"),
                 FormulaDefinition::LessThan(s, val) => format!("{s} < {val}"),
+                FormulaDefinition::GreaterThanVar(s, var) => format!("{s} > ${var}"),
+                FormulaDefinition::LessThanVar(s, var) => format!("{s} < ${var}"),
             }
         )
     }
@@ -64,7 +75,10 @@ impl SignalIdentifier for FormulaDefinition {
             signals: &mut std::collections::HashSet<&'static str>,
         ) {
             match node {
-                FormulaDefinition::GreaterThan(s, _) | FormulaDefinition::LessThan(s, _) => {
+                FormulaDefinition::GreaterThan(s, _)
+                | FormulaDefinition::LessThan(s, _)
+                | FormulaDefinition::GreaterThanVar(s, _)
+                | FormulaDefinition::LessThanVar(s, _) => {
                     signals.insert(*s);
                 }
                 FormulaDefinition::True | FormulaDefinition::False => {}
@@ -92,6 +106,44 @@ impl SignalIdentifier for FormulaDefinition {
 }
 
 impl FormulaDefinition {
+    /// Collects all variable identifiers used in the formula.
+    pub fn get_variable_identifiers(&self) -> std::collections::HashSet<&'static str> {
+        let mut variables = std::collections::HashSet::new();
+        fn collect_variables(
+            node: &FormulaDefinition,
+            variables: &mut std::collections::HashSet<&'static str>,
+        ) {
+            match node {
+                FormulaDefinition::GreaterThanVar(_, var)
+                | FormulaDefinition::LessThanVar(_, var) => {
+                    variables.insert(*var);
+                }
+                FormulaDefinition::GreaterThan(_, _)
+                | FormulaDefinition::LessThan(_, _)
+                | FormulaDefinition::True
+                | FormulaDefinition::False => {}
+                FormulaDefinition::Not(f) => {
+                    collect_variables(f, variables);
+                }
+                FormulaDefinition::And(f1, f2)
+                | FormulaDefinition::Or(f1, f2)
+                | FormulaDefinition::Implies(f1, f2) => {
+                    collect_variables(f1, variables);
+                    collect_variables(f2, variables);
+                }
+                FormulaDefinition::Eventually(_, f) | FormulaDefinition::Globally(_, f) => {
+                    collect_variables(f, variables);
+                }
+                FormulaDefinition::Until(_, f1, f2) => {
+                    collect_variables(f1, variables);
+                    collect_variables(f2, variables);
+                }
+            }
+        }
+        collect_variables(self, &mut variables);
+        variables
+    }
+
     pub fn to_tree_string(&self, indent: usize) -> String {
         // Produce a tree-like multi-line representation using characters similar to `tree`:
         // ├──  branch
@@ -124,6 +176,8 @@ impl FormulaDefinition {
                 FormulaDefinition::Implies(_, _) => "Implies".to_string(),
                 FormulaDefinition::GreaterThan(s, val) => format!("{} > {}", s, val),
                 FormulaDefinition::LessThan(s, val) => format!("{} < {}", s, val),
+                FormulaDefinition::GreaterThanVar(s, var) => format!("{} > ${}", s, var),
+                FormulaDefinition::LessThanVar(s, var) => format!("{} < ${}", s, var),
             }
         }
 
@@ -175,11 +229,13 @@ impl FormulaDefinition {
                 FormulaDefinition::Eventually(_, child) | FormulaDefinition::Globally(_, child) => {
                     write_node(child, &child_prefix, false, true, out);
                 }
-                // leaves: True, False, GreaterThan, LessThan - nothing to do
+                // leaves: True, False, GreaterThan, LessThan, GreaterThanVar, LessThanVar - nothing to do
                 FormulaDefinition::True
                 | FormulaDefinition::False
                 | FormulaDefinition::GreaterThan(_, _)
-                | FormulaDefinition::LessThan(_, _) => {}
+                | FormulaDefinition::LessThan(_, _)
+                | FormulaDefinition::GreaterThanVar(_, _)
+                | FormulaDefinition::LessThanVar(_, _) => {}
             }
         }
 

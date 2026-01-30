@@ -806,5 +806,223 @@ class TestMonitorGetSignalIdentifiers:
         assert len(signals) == 2
 
 
+class TestVariables:
+    """Test the Variables class for runtime variable support."""
+
+    def test_create_variables(self):
+        """Test creating an empty Variables object."""
+        vars = ostl.Variables()
+        assert vars is not None
+        assert len(vars.names()) == 0
+
+    def test_set_and_get(self):
+        """Test setting and getting variable values."""
+        vars = ostl.Variables()
+        vars.set("threshold", 5.0)
+        assert vars.get("threshold") == 5.0
+        assert vars.get("nonexistent") is None
+
+    def test_contains(self):
+        """Test checking if a variable exists."""
+        vars = ostl.Variables()
+        vars.set("x", 1.0)
+        assert vars.contains("x") == True
+        assert vars.contains("y") == False
+
+    def test_names(self):
+        """Test getting all variable names."""
+        vars = ostl.Variables()
+        vars.set("a", 1.0)
+        vars.set("b", 2.0)
+        vars.set("c", 3.0)
+        names = vars.names()
+        assert len(names) == 3
+        assert "a" in names
+        assert "b" in names
+        assert "c" in names
+
+    def test_remove(self):
+        """Test removing a variable."""
+        vars = ostl.Variables()
+        vars.set("x", 5.0)
+        removed = vars.remove("x")
+        assert removed == 5.0
+        assert vars.get("x") is None
+        assert vars.remove("nonexistent") is None
+
+    def test_clear(self):
+        """Test clearing all variables."""
+        vars = ostl.Variables()
+        vars.set("a", 1.0)
+        vars.set("b", 2.0)
+        vars.clear()
+        assert len(vars.names()) == 0
+
+    def test_update_value(self):
+        """Test updating an existing variable's value."""
+        vars = ostl.Variables()
+        vars.set("x", 5.0)
+        assert vars.get("x") == 5.0
+        vars.set("x", 10.0)
+        assert vars.get("x") == 10.0
+
+    def test_str_representation(self):
+        """Test string representation of Variables."""
+        vars = ostl.Variables()
+        assert "Variables" in str(vars)
+        vars.set("x", 5.0)
+        assert "x" in str(vars)
+        assert "5" in str(vars)
+
+
+class TestVariableFormulas:
+    """Test formulas with variable predicates."""
+
+    def test_parse_formula_with_variable_dollar(self):
+        """Test parsing a formula with $ variable syntax."""
+        formula = ostl.parse_formula("x > $threshold")
+        assert formula is not None
+        assert "threshold" in str(formula)
+
+    def test_parse_formula_with_variable_plain(self):
+        """Test parsing a formula with plain variable syntax."""
+        formula = ostl.parse_formula("x > A")
+        assert formula is not None
+        assert "A" in str(formula)
+
+    def test_formula_gt_var(self):
+        """Test creating a greater-than-variable formula programmatically."""
+        formula = ostl.Formula.gt_var("x", "threshold")
+        assert formula is not None
+        assert "x" in str(formula)
+        assert "threshold" in str(formula)
+
+    def test_formula_lt_var(self):
+        """Test creating a less-than-variable formula programmatically."""
+        formula = ostl.Formula.lt_var("y", "limit")
+        assert formula is not None
+        assert "y" in str(formula)
+        assert "limit" in str(formula)
+
+
+class TestMonitorWithVariables:
+    """Test monitors with variable predicates."""
+
+    def test_monitor_with_variables_strict(self):
+        """Test a monitor with variables using strict satisfaction."""
+        vars = ostl.Variables()
+        vars.set("threshold", 5.0)
+
+        formula = ostl.parse_formula("x > $threshold")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="StrictSatisfaction",
+            algorithm="Incremental",
+            variables=vars
+        )
+
+        # Value above threshold should be True
+        output = monitor.update("x", 10.0, 1.0)
+        verdicts = output.finalize()
+        assert len(verdicts) == 1
+        # finalize returns (timestamp, value) tuples
+        assert verdicts[0][1] == True
+
+        # Update threshold
+        vars.set("threshold", 15.0)
+
+        # Same value now below threshold should be False
+        output2 = monitor.update("x", 10.0, 2.0)
+        verdicts2 = output2.finalize()
+        assert len(verdicts2) == 1
+        assert verdicts2[0][1] == False
+
+    def test_monitor_with_variables_robustness(self):
+        """Test a monitor with variables using robustness semantics."""
+        vars = ostl.Variables()
+        vars.set("threshold", 5.0)
+
+        formula = ostl.parse_formula("x > $threshold")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="Robustness",
+            algorithm="Incremental",
+            variables=vars
+        )
+
+        # Robustness = 10 - 5 = 5
+        output = monitor.update("x", 10.0, 1.0)
+        verdicts = output.finalize()
+        assert len(verdicts) == 1
+        # finalize returns (timestamp, value) tuples
+        assert verdicts[0][1] == 5.0
+
+        # Update threshold
+        vars.set("threshold", 15.0)
+
+        # Robustness = 10 - 15 = -5
+        output2 = monitor.update("x", 10.0, 2.0)
+        verdicts2 = output2.finalize()
+        assert len(verdicts2) == 1
+        assert verdicts2[0][1] == -5.0
+
+    def test_get_variables_from_monitor(self):
+        """Test getting variables from a monitor."""
+        vars = ostl.Variables()
+        vars.set("A", 1.0)
+        vars.set("B", 2.0)
+
+        formula = ostl.parse_formula("x > $A && y < $B")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="StrictSatisfaction",
+            variables=vars
+        )
+
+        # Get variables back
+        retrieved_vars = monitor.get_variables()
+        assert retrieved_vars.get("A") == 1.0
+        assert retrieved_vars.get("B") == 2.0
+
+    def test_variables_in_temporal_formula(self):
+        """Test variables inside temporal operators."""
+        vars = ostl.Variables()
+        vars.set("limit", 5.0)
+
+        formula = ostl.parse_formula("F[0, 2](x > $limit)")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="Robustness",
+            variables=vars
+        )
+
+        # Feed some data points
+        output = monitor.update("x", 3.0, 0.0)  # Below threshold
+        output = monitor.update("x", 7.0, 1.0)  # Above threshold
+        output = monitor.update("x", 4.0, 2.0)
+        output = monitor.update("x", 4.0, 3.0)
+
+        # Should have verdicts
+        assert output.has_outputs()
+
+    def test_variables_not_supported_in_naive(self):
+        """Test that variables are not supported in naive algorithm."""
+        vars = ostl.Variables()
+        vars.set("threshold", 5.0)
+
+        formula = ostl.parse_formula("x > $threshold")
+
+        # PanicException is raised when variables are used with the naive algorithm
+        with pytest.raises(BaseException) as exc_info:
+            monitor = ostl.Monitor(
+                formula,
+                semantics="StrictSatisfaction",
+                algorithm="Naive",
+                variables=vars
+            )
+        # Check that the error message mentions naive or variable
+        assert "naive" in str(exc_info.value).lower() or "Variable" in str(exc_info.value)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

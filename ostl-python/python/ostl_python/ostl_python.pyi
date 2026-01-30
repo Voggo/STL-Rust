@@ -50,6 +50,12 @@ def parse_formula(formula_str: str) -> "Formula":
             - ``signal >= value`` - Signal greater than or equal
             - ``signal <= value`` - Signal less than or equal
 
+        Variable Predicates (for runtime-updateable thresholds):
+            - ``signal > $variable`` - Signal greater than variable
+            - ``signal < $variable`` - Signal less than variable
+            - ``signal >= $variable`` - Signal greater than or equal to variable
+            - ``signal <= $variable`` - Signal less than or equal to variable
+
         Boolean Constants:
             - ``true`` - Always true
             - ``false`` - Always false
@@ -83,6 +89,9 @@ def parse_formula(formula_str: str) -> "Formula":
         >>> f = parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
         >>> # Using keyword syntax
         >>> f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
+        >>> # Using variables for runtime-updateable thresholds
+        >>> f = parse_formula("G[0, 10](x > $threshold)")
+        >>> f = parse_formula("x > $min && x < $max")
     """
     ...
 
@@ -120,6 +129,146 @@ class MonitorOutputDict(TypedDict):
     evaluations: List[EvaluationDict]
     """List of evaluations, one for each synchronized step. May be empty if data is buffered."""
 
+class Variables:
+    """
+    Thread-safe container for runtime variable values.
+
+    Variables allow you to define STL formulas with dynamic thresholds that
+    can be updated at runtime. Use the ``$variable`` syntax in formulas to
+    reference variables.
+
+    Example:
+        >>> # Create variables and set initial values
+        >>> vars = Variables()
+        >>> vars.set("threshold", 5.0)
+        >>> vars.set("limit", 10.0)
+        >>>
+        >>> # Parse a formula using variables
+        >>> formula = parse_formula("x > $threshold && y < $limit")
+        >>>
+        >>> # Create a monitor with variables
+        >>> monitor = Monitor(formula, variables=vars)
+        >>>
+        >>> # Update a variable value at runtime
+        >>> vars.set("threshold", 7.0)  # Affects future evaluations
+
+    Note:
+        Variable predicates require the Incremental algorithm.
+        Using variables with the Naive algorithm will raise an error.
+    """
+
+    def __init__(self) -> None:
+        """
+        Create a new empty Variables container.
+
+        Example:
+            >>> vars = Variables()
+        """
+        ...
+
+    def set(self, name: str, value: float) -> None:
+        """
+        Set a variable to a value.
+
+        Args:
+            name: The variable name (without $ prefix)
+            value: The variable value
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("threshold", 5.0)
+        """
+        ...
+
+    def get(self, name: str) -> Union[float, None]:
+        """
+        Get a variable's value.
+
+        Args:
+            name: The variable name (without $ prefix)
+
+        Returns:
+            The variable's value, or None if not set.
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("x", 5.0)
+            >>> print(vars.get("x"))  # prints 5.0
+            >>> print(vars.get("y"))  # prints None
+        """
+        ...
+
+    def contains(self, name: str) -> bool:
+        """
+        Check if a variable exists.
+
+        Args:
+            name: The variable name (without $ prefix)
+
+        Returns:
+            True if the variable exists, False otherwise.
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("x", 5.0)
+            >>> vars.contains("x")  # True
+            >>> vars.contains("y")  # False
+        """
+        ...
+
+    def names(self) -> List[str]:
+        """
+        Get a list of all variable names.
+
+        Returns:
+            A list of variable names.
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("a", 1.0)
+            >>> vars.set("b", 2.0)
+            >>> vars.names()  # ['a', 'b']
+        """
+        ...
+
+    def remove(self, name: str) -> Union[float, None]:
+        """
+        Remove a variable.
+
+        Args:
+            name: The variable name to remove (without $ prefix)
+
+        Returns:
+            The variable's previous value, or None if it didn't exist.
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("x", 5.0)
+            >>> vars.remove("x")  # returns 5.0
+            >>> vars.remove("x")  # returns None
+        """
+        ...
+
+    def clear(self) -> None:
+        """
+        Remove all variables.
+
+        Example:
+            >>> vars = Variables()
+            >>> vars.set("x", 5.0)
+            >>> vars.clear()
+            >>> vars.names()  # []
+        """
+        ...
+
+    def __str__(self) -> str:
+        """Return string representation of the Variables."""
+        ...
+
+    def __repr__(self) -> str:
+        """Return detailed representation of the Variables."""
+        ...
+
 class Formula:
     """
     Signal Temporal Logic (STL) formula.
@@ -135,6 +284,8 @@ class Formula:
         ...     Formula.gt('x', 0.3),
         ...     Formula.eventually(0, 3, Formula.lt('y', 0.8))
         ... )
+        >>> # Using variables for dynamic thresholds
+        >>> phi3 = Formula.gt_var('x', 'threshold')
     """
 
     @staticmethod
@@ -168,6 +319,52 @@ class Formula:
 
         Example:
             >>> Formula.lt('x', 0.5)  # x < 0.5
+        """
+        ...
+
+    @staticmethod
+    def gt_var(signal: str, variable: str) -> "Formula":
+        """
+        Create a greater-than atomic predicate with a variable threshold.
+
+        The variable value is looked up at runtime from a Variables object,
+        allowing dynamic thresholds that can be updated on-the-fly.
+
+        Args:
+            signal: Name of the signal to compare
+            variable: Name of the variable (without $ prefix)
+
+        Returns:
+            Formula representing: signal > $variable
+
+        Note:
+            Requires Incremental algorithm. The Naive algorithm does not support variables.
+
+        Example:
+            >>> Formula.gt_var('x', 'threshold')  # x > $threshold
+        """
+        ...
+
+    @staticmethod
+    def lt_var(signal: str, variable: str) -> "Formula":
+        """
+        Create a less-than atomic predicate with a variable threshold.
+
+        The variable value is looked up at runtime from a Variables object,
+        allowing dynamic thresholds that can be updated on-the-fly.
+
+        Args:
+            signal: Name of the signal to compare
+            variable: Name of the variable (without $ prefix)
+
+        Returns:
+            Formula representing: signal < $variable
+
+        Note:
+            Requires Incremental algorithm. The Naive algorithm does not support variables.
+
+        Example:
+            >>> Formula.lt_var('y', 'limit')  # y < $limit
         """
         ...
 
@@ -494,6 +691,7 @@ class Monitor:
         semantics: SemanticsType = "Robustness",
         algorithm: AlgorithmType = "Incremental",
         synchronization: SynchronizationType = "ZeroOrderHold",
+        variables: Union[Variables, None] = None,
     ) -> None:
         """
         Create a new STL monitor.
@@ -512,10 +710,14 @@ class Monitor:
                 - "ZeroOrderHold": Zero-order hold (default)
                 - "Linear": Linear interpolation
                 - "None": No interpolation
+            variables: A Variables object containing runtime variable values.
+                Required if the formula contains variable predicates (e.g., ``x > $threshold``).
+                Note: Variable predicates require the Incremental algorithm.
 
         Raises:
             ValueError: If invalid semantics, algorithm, or synchronization is specified
             ValueError: If Naive algorithm is used with EagerSatisfaction (not supported)
+            ValueError: If Naive algorithm is used with variable predicates (not supported)
 
         Note:
             - For single-signal formulas, signal synchronization is automatically disabled
@@ -530,6 +732,12 @@ class Monitor:
             >>>
             >>> # Rosi intervals with eager evaluation
             >>> m3 = Monitor(phi, semantics="Rosi")
+            >>>
+            >>> # Using variables for dynamic thresholds
+            >>> vars = Variables()
+            >>> vars.set("threshold", 5.0)
+            >>> phi = parse_formula("G[0, 5](x > $threshold)")
+            >>> m4 = Monitor(phi, variables=vars)
         """
         ...
 
@@ -582,6 +790,23 @@ class Monitor:
 
         Returns:
             Set[str]: A set of signal names (identifiers) used in the formula.
+        """
+        ...
+
+    def get_variables(self) -> Variables:
+        """
+        Get the Variables object associated with this monitor.
+
+        This allows you to update variable values at runtime, which will
+        affect future evaluations of the formula.
+
+        Returns:
+            The Variables object containing runtime variable values.
+
+        Example:
+            >>> monitor = Monitor(formula, variables=vars)
+            >>> # Update a variable at runtime
+            >>> monitor.get_variables().set("threshold", 10.0)
         """
         ...
 

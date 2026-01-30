@@ -447,25 +447,62 @@ impl<'a> Parser<'a> {
                         return self.parse_primary();
                     };
 
-                    let value = self.parse_number()?;
-
-                    // Convert to FormulaDefinition
+                    // Convert signal to FormulaDefinition
                     // We need to leak the string to get 'static lifetime
                     let signal_static: &'static str = Box::leak(signal.into_boxed_str());
 
+                    // Try to parse the threshold - either a number or a variable (identifier)
+                    self.skip_whitespace();
+
+                    // Check if it's a variable reference ($ prefix or identifier)
+                    let is_variable = self.peek() == Some('$');
+                    if is_variable {
+                        self.pos += 1; // consume '$'
+                    }
+
+                    // Try parsing a number first (if not explicitly a variable)
+                    if !is_variable {
+                        let num_start = self.pos;
+                        if let Ok(value) = self.parse_number() {
+                            return match op {
+                                ">" => Ok(FormulaDefinition::GreaterThan(signal_static, value)),
+                                "<" => Ok(FormulaDefinition::LessThan(signal_static, value)),
+                                ">=" => {
+                                    // x >= v is equivalent to !(x < v)
+                                    Ok(FormulaDefinition::Not(Box::new(
+                                        FormulaDefinition::LessThan(signal_static, value),
+                                    )))
+                                }
+                                "<=" => {
+                                    // x <= v is equivalent to !(x > v)
+                                    Ok(FormulaDefinition::Not(Box::new(
+                                        FormulaDefinition::GreaterThan(signal_static, value),
+                                    )))
+                                }
+                                _ => unreachable!(),
+                            };
+                        }
+                        // Not a number, restore position and try as variable
+                        self.pos = num_start;
+                    }
+
+                    // Parse as variable identifier
+                    let var_name = self.parse_identifier()?;
+                    let var_static: &'static str = Box::leak(var_name.into_boxed_str());
+
                     match op {
-                        ">" => Ok(FormulaDefinition::GreaterThan(signal_static, value)),
-                        "<" => Ok(FormulaDefinition::LessThan(signal_static, value)),
+                        ">" => Ok(FormulaDefinition::GreaterThanVar(signal_static, var_static)),
+                        "<" => Ok(FormulaDefinition::LessThanVar(signal_static, var_static)),
                         ">=" => {
-                            // x >= v is equivalent to !(x < v)
+                            // x >= var is equivalent to !(x < var)
                             Ok(FormulaDefinition::Not(Box::new(
-                                FormulaDefinition::LessThan(signal_static, value),
+                                FormulaDefinition::LessThanVar(signal_static, var_static),
                             )))
                         }
                         "<=" => {
-                            // x <= v is equivalent to !(x > v)
+                            // x <= var is equivalent to !(x > var)
                             Ok(FormulaDefinition::Not(Box::new(
-                                FormulaDefinition::GreaterThan(signal_static, value),
+                                FormulaDefinition::GreaterThanVar(signal_static, var_static),
                             )))
                         }
                         _ => unreachable!(),
@@ -890,5 +927,91 @@ mod tests {
                 result.err()
             );
         }
+    }
+
+    #[test]
+    fn test_variable_greater_than_with_dollar() {
+        let result = parse_stl("x > $threshold").unwrap();
+        match result {
+            FormulaDefinition::GreaterThanVar(sig, var) => {
+                assert_eq!(sig, "x");
+                assert_eq!(var, "threshold");
+            }
+            _ => panic!("Expected GreaterThanVar, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_variable_less_than_with_dollar() {
+        let result = parse_stl("temperature < $MAX_TEMP").unwrap();
+        match result {
+            FormulaDefinition::LessThanVar(sig, var) => {
+                assert_eq!(sig, "temperature");
+                assert_eq!(var, "MAX_TEMP");
+            }
+            _ => panic!("Expected LessThanVar, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_variable_without_dollar() {
+        // Variables can also be used without $ prefix
+        let result = parse_stl("x > A").unwrap();
+        match result {
+            FormulaDefinition::GreaterThanVar(sig, var) => {
+                assert_eq!(sig, "x");
+                assert_eq!(var, "A");
+            }
+            _ => panic!("Expected GreaterThanVar, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_variable_in_temporal_formula() {
+        let result = parse_stl("F[0,10](x > $threshold)").unwrap();
+        match result {
+            FormulaDefinition::Eventually(_, inner) => match *inner {
+                FormulaDefinition::GreaterThanVar(sig, var) => {
+                    assert_eq!(sig, "x");
+                    assert_eq!(var, "threshold");
+                }
+                _ => panic!("Expected GreaterThanVar inside Eventually"),
+            },
+            _ => panic!("Expected Eventually"),
+        }
+    }
+
+    #[test]
+    fn test_variable_mixed_with_constant() {
+        // Formula with both a variable and a constant
+        let result = parse_stl("x > $A && y < 10").unwrap();
+        match result {
+            FormulaDefinition::And(left, right) => {
+                match *left {
+                    FormulaDefinition::GreaterThanVar(sig, var) => {
+                        assert_eq!(sig, "x");
+                        assert_eq!(var, "A");
+                    }
+                    _ => panic!("Expected GreaterThanVar on left"),
+                }
+                match *right {
+                    FormulaDefinition::LessThan(sig, val) => {
+                        assert_eq!(sig, "y");
+                        assert_eq!(val, 10.0);
+                    }
+                    _ => panic!("Expected LessThan on right"),
+                }
+            }
+            _ => panic!("Expected And"),
+        }
+    }
+
+    #[test]
+    fn test_variable_identifiers() {
+        let result = parse_stl("x > $threshold && y < $limit").unwrap();
+        let vars = result.get_variable_identifiers();
+        assert_eq!(vars.len(), 2);
+        assert!(vars.contains(&"threshold"));
+        assert!(vars.contains(&"limit"));
     }
 }

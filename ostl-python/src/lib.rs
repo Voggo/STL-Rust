@@ -1,5 +1,5 @@
 use ostl::ring_buffer::Step;
-use ostl::stl::core::{RobustnessInterval, TimeInterval};
+use ostl::stl::core::{RobustnessInterval, TimeInterval, Variables};
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
     Algorithm, EagerSatisfaction, MonitorOutput, Robustness, Rosi, StlMonitor, StrictSatisfaction,
@@ -157,6 +157,56 @@ impl Formula {
     fn false_() -> Self {
         Formula {
             inner: FormulaDefinition::False,
+        }
+    }
+
+    /// Create a greater-than atomic predicate with a variable threshold: signal > variable
+    ///
+    /// The variable value is looked up at runtime, allowing dynamic thresholds.
+    ///
+    /// # Arguments
+    /// * `signal` - Name of the signal to compare
+    /// * `variable` - Name of the variable (without $ prefix)
+    ///
+    /// # Example
+    /// ```python
+    /// Formula.gt_var('x', 'threshold')  # x > $threshold
+    /// ```
+    ///
+    /// # Note
+    /// Requires Incremental algorithm. The Naive algorithm does not support variables.
+    #[staticmethod]
+    #[pyo3(text_signature = "(signal, variable)")]
+    fn gt_var(signal: String, variable: String) -> Self {
+        let sig_ref = Box::leak(signal.into_boxed_str());
+        let var_ref = Box::leak(variable.into_boxed_str());
+        Formula {
+            inner: FormulaDefinition::GreaterThanVar(sig_ref, var_ref),
+        }
+    }
+
+    /// Create a less-than atomic predicate with a variable threshold: signal < variable
+    ///
+    /// The variable value is looked up at runtime, allowing dynamic thresholds.
+    ///
+    /// # Arguments
+    /// * `signal` - Name of the signal to compare
+    /// * `variable` - Name of the variable (without $ prefix)
+    ///
+    /// # Example
+    /// ```python
+    /// Formula.lt_var('y', 'limit')  # y < $limit
+    /// ```
+    ///
+    /// # Note
+    /// Requires Incremental algorithm. The Naive algorithm does not support variables.
+    #[staticmethod]
+    #[pyo3(text_signature = "(signal, variable)")]
+    fn lt_var(signal: String, variable: String) -> Self {
+        let sig_ref = Box::leak(signal.into_boxed_str());
+        let var_ref = Box::leak(variable.into_boxed_str());
+        Formula {
+            inner: FormulaDefinition::LessThanVar(sig_ref, var_ref),
         }
     }
 
@@ -549,6 +599,147 @@ fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> St
 }
 
 // -----------------------------------------------------------------------------
+// 3.5 Variables Wrapper
+// -----------------------------------------------------------------------------
+
+/// A container for variable values that can be used in STL formulas.
+///
+/// Variables allow you to create formulas with dynamic thresholds that can be
+/// updated at runtime. This is useful for adaptive monitoring where thresholds
+/// may change based on system state or external inputs.
+///
+/// # Example
+/// ```python
+/// from ostl_python import Variables, parse_formula, Monitor
+///
+/// # Create variables and set initial values
+/// vars = Variables()
+/// vars.set("threshold", 5.0)
+/// vars.set("limit", 10.0)
+///
+/// # Parse a formula using variables
+/// formula = parse_formula("x > $threshold && y < $limit")
+///
+/// # Create a monitor with variables
+/// monitor = Monitor(formula, variables=vars)
+///
+/// # Update a variable value at runtime
+/// vars.set("threshold", 7.0)  # This affects future evaluations
+/// ```
+///
+/// Note: Variable predicates require the Incremental algorithm.
+/// Using variables with the Naive algorithm will raise an error.
+#[pyclass(name = "Variables")]
+#[derive(Clone)]
+struct PyVariables {
+    inner: Variables,
+}
+
+#[pymethods]
+impl PyVariables {
+    /// Create a new empty Variables container.
+    #[new]
+    fn new() -> Self {
+        PyVariables {
+            inner: Variables::new(),
+        }
+    }
+
+    /// Set a variable to a value.
+    ///
+    /// # Arguments
+    /// * `name` - The variable name
+    /// * `value` - The variable value
+    ///
+    /// # Example
+    /// ```python
+    /// vars = Variables()
+    /// vars.set("threshold", 5.0)
+    /// ```
+    fn set(&self, name: String, value: f64) {
+        let name_ref = Box::leak(name.into_boxed_str());
+        self.inner.set(name_ref, value);
+    }
+
+    /// Get a variable's value.
+    ///
+    /// # Arguments
+    /// * `name` - The variable name
+    ///
+    /// # Returns
+    /// The variable's value, or None if not set.
+    ///
+    /// # Example
+    /// ```python
+    /// vars = Variables()
+    /// vars.set("x", 5.0)
+    /// print(vars.get("x"))  # prints 5.0
+    /// print(vars.get("y"))  # prints None
+    /// ```
+    fn get(&self, name: String) -> Option<f64> {
+        let name_ref: &'static str = Box::leak(name.into_boxed_str());
+        self.inner.get(name_ref)
+    }
+
+    /// Check if a variable exists.
+    ///
+    /// # Arguments
+    /// * `name` - The variable name
+    ///
+    /// # Returns
+    /// True if the variable exists, False otherwise.
+    fn contains(&self, name: String) -> bool {
+        let name_ref: &'static str = Box::leak(name.into_boxed_str());
+        self.inner.contains(name_ref)
+    }
+
+    /// Get a list of all variable names.
+    ///
+    /// # Returns
+    /// A list of variable names.
+    fn names(&self) -> Vec<String> {
+        self.inner.names().iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Remove a variable.
+    ///
+    /// # Arguments
+    /// * `name` - The variable name to remove
+    ///
+    /// # Returns
+    /// The variable's previous value, or None if it didn't exist.
+    fn remove(&self, name: String) -> Option<f64> {
+        let name_ref: &'static str = Box::leak(name.into_boxed_str());
+        self.inner.remove(name_ref)
+    }
+
+    /// Remove all variables.
+    fn clear(&self) {
+        self.inner.clear();
+    }
+
+    /// String representation of the Variables.
+    fn __str__(&self) -> String {
+        let names = self.inner.names();
+        if names.is_empty() {
+            return "Variables({})".to_string();
+        }
+        let pairs: Vec<String> = names
+            .iter()
+            .map(|n| {
+                let val = self.inner.get(n).map_or("None".to_string(), |v| v.to_string());
+                format!("{}: {}", n, val)
+            })
+            .collect();
+        format!("Variables({{{}}})", pairs.join(", "))
+    }
+
+    fn __repr__(&self) -> String {
+        self.__str__()
+    }
+}
+
+// -----------------------------------------------------------------------------
 // 4. Monitor Wrapper
 // -----------------------------------------------------------------------------
 
@@ -572,6 +763,7 @@ struct Monitor {
     semantics: String,
     algorithm: String,
     synchronization: String,
+    variables: PyVariables,
 }
 
 #[pymethods]
@@ -597,16 +789,21 @@ impl Monitor {
     ///     - "ZeroOrderHold": zero-order hold (default)
     ///     - "Linear": linear interpolation
     ///     - "None": no interpolation
+    /// variables : Variables, optional
+    ///     A Variables object containing runtime variable values.
+    ///     Required if the formula contains variable predicates (e.g., `x > $threshold`).
+    ///     Note: Variable predicates require the Incremental algorithm.
     /// Returns:
     /// --------
     /// Monitor
     #[new]
-    #[pyo3(signature = (formula, semantics="Robustness", algorithm="Incremental", synchronization="ZeroOrderHold"))]
+    #[pyo3(signature = (formula, semantics="Robustness", algorithm="Incremental", synchronization="ZeroOrderHold", variables=None))]
     fn new(
         formula: &Formula,
         semantics: &str,
         algorithm: &str,
         synchronization: &str,
+        variables: Option<&PyVariables>,
     ) -> PyResult<Self> {
         // Parse algorithm
         let algo = match algorithm {
@@ -630,6 +827,9 @@ impl Monitor {
             }
         };
 
+        // Get or create variables
+        let vars = variables.map(|v| v.clone()).unwrap_or_else(PyVariables::new);
+
         // Build monitor based on semantics
         match semantics {
             "StrictSatisfaction" => {
@@ -638,6 +838,7 @@ impl Monitor {
                     .algorithm(algo)
                     .semantics(StrictSatisfaction)
                     .synchronization_strategy(synchronization_strategy)
+                    .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -645,6 +846,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
+                    variables: vars,
                 })
             }
             "EagerSatisfaction" => {
@@ -653,6 +855,7 @@ impl Monitor {
                     .algorithm(algo)
                     .semantics(EagerSatisfaction)
                     .synchronization_strategy(synchronization_strategy)
+                    .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -660,6 +863,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
+                    variables: vars,
                 })
             }
             "Robustness" => {
@@ -668,6 +872,7 @@ impl Monitor {
                     .algorithm(algo)
                     .semantics(Robustness)
                     .synchronization_strategy(synchronization_strategy)
+                    .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -675,6 +880,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
+                    variables: vars,
                 })
             }
             "Rosi" => {
@@ -683,6 +889,7 @@ impl Monitor {
                     .algorithm(algo)
                     .semantics(Rosi)
                     .synchronization_strategy(synchronization_strategy)
+                    .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
@@ -690,6 +897,7 @@ impl Monitor {
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
+                    variables: vars,
                 })
             }
             _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -755,6 +963,27 @@ impl Monitor {
             InnerMonitor::Robustness(m) => m.get_signal_identifiers(),
             InnerMonitor::Rosi(m) => m.get_signal_identifiers(),
         }
+    }
+
+    /// Get the Variables object associated with this monitor.
+    ///
+    /// This allows you to update variable values at runtime, affecting
+    /// future evaluations of the formula.
+    ///
+    /// Returns:
+    /// --------
+    /// Variables
+    ///     The Variables object containing runtime variable values.
+    ///
+    /// Example:
+    /// --------
+    /// ```python
+    /// monitor = Monitor(formula, variables=vars)
+    /// # Update a variable at runtime
+    /// monitor.get_variables().set("threshold", 10.0)
+    /// ```
+    fn get_variables(&self) -> PyVariables {
+        self.variables.clone()
     }
 
     fn __repr__(&self) -> String {
@@ -853,6 +1082,7 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(py_parse_formula, m)?)?;
     m.add_class::<Formula>()?;
+    m.add_class::<PyVariables>()?;
     m.add_class::<PyMonitorOutput>()?;
     m.add_class::<Monitor>()?;
 

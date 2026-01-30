@@ -1,14 +1,36 @@
 use crate::ring_buffer::Step;
-use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait};
+use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait, Variables};
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::time::Duration;
 
+/// Atomic predicates for STL formulas.
+///
+/// Supports both constant thresholds (e.g., `x > 5.0`) and variable thresholds
+/// (e.g., `x > $A` where `A` is looked up from a `Variables` context at runtime).
 #[derive(Clone)]
 pub enum Atomic<Y> {
+    /// Signal less than constant: signal < value
     LessThan(&'static str, f64, std::marker::PhantomData<Y>),
+    /// Signal greater than constant: signal > value
     GreaterThan(&'static str, f64, std::marker::PhantomData<Y>),
+    /// Signal less than variable: signal < $var_name
+    LessThanVar(
+        &'static str,
+        &'static str,
+        Variables,
+        std::marker::PhantomData<Y>,
+    ),
+    /// Signal greater than variable: signal > $var_name
+    GreaterThanVar(
+        &'static str,
+        &'static str,
+        Variables,
+        std::marker::PhantomData<Y>,
+    ),
+    /// Always true
     True(std::marker::PhantomData<Y>),
+    /// Always false
     False(std::marker::PhantomData<Y>),
 }
 
@@ -18,6 +40,20 @@ impl<Y> Atomic<Y> {
     }
     pub fn new_greater_than(signal_name: &'static str, val: f64) -> Self {
         Atomic::GreaterThan(signal_name, val, std::marker::PhantomData)
+    }
+    pub fn new_less_than_var(
+        signal_name: &'static str,
+        var_name: &'static str,
+        vars: Variables,
+    ) -> Self {
+        Atomic::LessThanVar(signal_name, var_name, vars, std::marker::PhantomData)
+    }
+    pub fn new_greater_than_var(
+        signal_name: &'static str,
+        var_name: &'static str,
+        vars: Variables,
+    ) -> Self {
+        Atomic::GreaterThanVar(signal_name, var_name, vars, std::marker::PhantomData)
     }
     pub fn new_true() -> Self {
         Atomic::True(std::marker::PhantomData)
@@ -47,6 +83,18 @@ where
             Atomic::False(_) => Y::atomic_false(),
             Atomic::GreaterThan(_signal_name, c, _) => Y::atomic_greater_than(value, *c),
             Atomic::LessThan(_signal_name, c, _) => Y::atomic_less_than(value, *c),
+            Atomic::GreaterThanVar(_signal_name, var_name, vars, _) => {
+                let c = vars
+                    .get(var_name)
+                    .unwrap_or_else(|| panic!("Variable '{}' not found in context", var_name));
+                Y::atomic_greater_than(value, c)
+            }
+            Atomic::LessThanVar(_signal_name, var_name, vars, _) => {
+                let c = vars
+                    .get(var_name)
+                    .unwrap_or_else(|| panic!("Variable '{}' not found in context", var_name));
+                Y::atomic_less_than(value, c)
+            }
         };
 
         vec![Step {
@@ -65,14 +113,13 @@ impl<Y> SignalIdentifier for Atomic<Y> {
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         match self {
-            Atomic::LessThan(signal_name, _, _) => {
+            Atomic::LessThan(signal_name, _, _)
+            | Atomic::GreaterThan(signal_name, _, _)
+            | Atomic::LessThanVar(signal_name, _, _, _)
+            | Atomic::GreaterThanVar(signal_name, _, _, _) => {
                 ids.insert(*signal_name);
             }
-            Atomic::GreaterThan(signal_name, _, _) => {
-                ids.insert(*signal_name);
-            }
-            Atomic::True(_) => {}
-            Atomic::False(_) => {}
+            Atomic::True(_) | Atomic::False(_) => {}
         }
         ids
     }
@@ -83,6 +130,12 @@ impl<Y> Display for Atomic<Y> {
         match self {
             Atomic::LessThan(signal_name, c, _) => write!(f, "{signal_name} < {c}"),
             Atomic::GreaterThan(signal_name, c, _) => write!(f, "{signal_name} > {c}"),
+            Atomic::LessThanVar(signal_name, var_name, _, _) => {
+                write!(f, "{signal_name} < ${var_name}")
+            }
+            Atomic::GreaterThanVar(signal_name, var_name, _, _) => {
+                write!(f, "{signal_name} > ${var_name}")
+            }
             Atomic::True(_) => write!(f, "True"),
             Atomic::False(_) => write!(f, "False"),
         }
@@ -163,6 +216,28 @@ mod tests {
             )]
         );
     }
+
+    // #[test]
+    // fn atomic_with_variables_robustness() {
+    //     let mut vars = Variables::new();
+    //     vars.set("A", 10.0);
+    //     let mut atomic = Atomic::<f64>::new_greater_than_var("x", "A", vars);
+    //     atomic.get_signal_identifiers();
+
+    //     let step1 = Step::new("x", 15.0, Duration::from_secs(5));
+    //     let robustness = atomic.update(&step1);
+    //     assert_eq!(
+    //         robustness,
+    //         vec![Step::new("output", -5.0, Duration::from_secs(5))]
+    //     );
+    //     vars.set("A", 16.0);
+    //     let step2 = Step::new("x", 8.0, Duration::from_secs(6));
+    //     let robustness2 = atomic.update(&step2);
+    //     assert_eq!(
+    //         robustness2,
+    //         vec![Step::new("output", 1.0, Duration::from_secs(8))]
+    //     );
+    // }
 
     #[test]
     fn atomic_signal_identifiers() {

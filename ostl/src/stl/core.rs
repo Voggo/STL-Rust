@@ -489,3 +489,138 @@ mod tests {
         assert_eq!(ti.end, Duration::from_secs(5));
     }
 }
+
+// -----------------------------------------------------------------------------
+// Variables context for runtime variable bindings
+// -----------------------------------------------------------------------------
+
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
+/// A thread-safe container for runtime variable bindings.
+///
+/// Variables can be declared and updated at runtime, and their values
+/// are used when evaluating formulas containing variable references.
+///
+/// # Example
+///
+/// ```
+/// use ostl::stl::core::Variables;
+///
+/// let vars = Variables::new();
+/// vars.set("threshold", 5.0);
+/// assert_eq!(vars.get("threshold"), Some(5.0));
+///
+/// // Update the variable
+/// vars.set("threshold", 10.0);
+/// assert_eq!(vars.get("threshold"), Some(10.0));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct Variables {
+    inner: Arc<RwLock<HashMap<&'static str, f64>>>,
+}
+
+impl Variables {
+    /// Create a new empty variable context.
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Set (or update) a variable's value.
+    ///
+    /// # Arguments
+    /// * `name` - The variable name (must be a static string)
+    /// * `value` - The variable's value
+    pub fn set(&self, name: &'static str, value: f64) {
+        let mut map = self.inner.write().unwrap();
+        map.insert(name, value);
+    }
+
+    /// Get a variable's current value.
+    ///
+    /// Returns `None` if the variable has not been set.
+    pub fn get(&self, name: &'static str) -> Option<f64> {
+        let map = self.inner.read().unwrap();
+        map.get(name).copied()
+    }
+
+    /// Check if a variable is defined.
+    pub fn contains(&self, name: &'static str) -> bool {
+        let map = self.inner.read().unwrap();
+        map.contains_key(name)
+    }
+
+    /// Get all variable names.
+    pub fn names(&self) -> Vec<&'static str> {
+        let map = self.inner.read().unwrap();
+        map.keys().copied().collect()
+    }
+
+    /// Remove a variable.
+    pub fn remove(&self, name: &'static str) -> Option<f64> {
+        let mut map = self.inner.write().unwrap();
+        map.remove(name)
+    }
+
+    /// Clear all variables.
+    pub fn clear(&self) {
+        let mut map = self.inner.write().unwrap();
+        map.clear();
+    }
+}
+
+#[cfg(test)]
+mod variables_tests {
+    use super::*;
+
+    #[test]
+    fn test_variables_basic() {
+        let vars = Variables::new();
+        assert_eq!(vars.get("x"), None);
+
+        vars.set("x", 5.0);
+        assert_eq!(vars.get("x"), Some(5.0));
+
+        vars.set("x", 10.0);
+        assert_eq!(vars.get("x"), Some(10.0));
+    }
+
+    #[test]
+    fn test_variables_multiple() {
+        let vars = Variables::new();
+        vars.set("a", 1.0);
+        vars.set("b", 2.0);
+        vars.set("c", 3.0);
+
+        assert_eq!(vars.get("a"), Some(1.0));
+        assert_eq!(vars.get("b"), Some(2.0));
+        assert_eq!(vars.get("c"), Some(3.0));
+        assert_eq!(vars.get("d"), None);
+    }
+
+    #[test]
+    fn test_variables_clone() {
+        let vars1 = Variables::new();
+        vars1.set("x", 5.0);
+
+        let vars2 = vars1.clone();
+        assert_eq!(vars2.get("x"), Some(5.0));
+
+        // Changes through one clone are visible through the other
+        vars1.set("x", 10.0);
+        assert_eq!(vars2.get("x"), Some(10.0));
+    }
+
+    #[test]
+    fn test_variables_remove() {
+        let vars = Variables::new();
+        vars.set("x", 5.0);
+        assert!(vars.contains("x"));
+
+        let removed = vars.remove("x");
+        assert_eq!(removed, Some(5.0));
+        assert!(!vars.contains("x"));
+    }
+}

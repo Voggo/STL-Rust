@@ -172,4 +172,135 @@ mod tests {
             _ => panic!("Expected Until formula"),
         }
     }
+
+    #[test]
+    fn test_stl_macro_variable_greater_than() {
+        // Variable reference with $ prefix
+        let formula: FormulaDefinition = stl!(x > $threshold);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::GreaterThanVar(signal, var) => {
+                assert_eq!(signal, "x");
+                assert_eq!(var, "threshold");
+            }
+            _ => panic!("Expected GreaterThanVar formula"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_less_than() {
+        // Variable reference with $ prefix
+        let formula: FormulaDefinition = stl!(temp < $limit);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::LessThanVar(signal, var) => {
+                assert_eq!(signal, "temp");
+                assert_eq!(var, "limit");
+            }
+            _ => panic!("Expected LessThanVar formula"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_in_temporal() {
+        // Variable inside temporal operator
+        let formula: FormulaDefinition = stl!(G[0, 5](signal > $threshold));
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::Globally(_, sub) => match *sub {
+                FormulaDefinition::GreaterThanVar(signal, var) => {
+                    assert_eq!(signal, "signal");
+                    assert_eq!(var, "threshold");
+                }
+                _ => panic!("Expected GreaterThanVar inside Globally"),
+            },
+            _ => panic!("Expected Globally formula"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_combined() {
+        // Mix of constant and variable predicates
+        let formula: FormulaDefinition = stl!(x > 5 && y < $limit);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::And(left, right) => {
+                assert!(matches!(*left, FormulaDefinition::GreaterThan("x", _)));
+                match *right {
+                    FormulaDefinition::LessThanVar(signal, var) => {
+                        assert_eq!(signal, "y");
+                        assert_eq!(var, "limit");
+                    }
+                    _ => panic!("Expected LessThanVar on right"),
+                }
+            }
+            _ => panic!("Expected And formula"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_greater_equal() {
+        // >= with variable (syntactic sugar for !(x < $var))
+        let formula: FormulaDefinition = stl!(x >= $threshold);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::Not(inner) => match *inner {
+                FormulaDefinition::LessThanVar(signal, var) => {
+                    assert_eq!(signal, "x");
+                    assert_eq!(var, "threshold");
+                }
+                _ => panic!("Expected LessThanVar inside Not"),
+            },
+            _ => panic!("Expected Not formula for >= sugar"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_less_equal() {
+        // <= with variable (syntactic sugar for !(x > $var))
+        let formula: FormulaDefinition = stl!(x <= $threshold);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::Not(inner) => match *inner {
+                FormulaDefinition::GreaterThanVar(signal, var) => {
+                    assert_eq!(signal, "x");
+                    assert_eq!(var, "threshold");
+                }
+                _ => panic!("Expected GreaterThanVar inside Not"),
+            },
+            _ => panic!("Expected Not formula for <= sugar"),
+        }
+    }
+
+    #[test]
+    fn test_stl_macro_variable_equal() {
+        // == with variable (syntactic sugar for !(x < $var) && !(x > $var))
+        let formula: FormulaDefinition = stl!(x == $target);
+        println!("{}", formula.to_tree_string(2));
+        match formula {
+            FormulaDefinition::And(left, right) => {
+                match *left {
+                    FormulaDefinition::Not(inner) => match *inner {
+                        FormulaDefinition::LessThanVar(signal, var) => {
+                            assert_eq!(signal, "x");
+                            assert_eq!(var, "target");
+                        }
+                        _ => panic!("Expected LessThanVar inside Not on left"),
+                    },
+                    _ => panic!("Expected Not on left side of =="),
+                }
+                match *right {
+                    FormulaDefinition::Not(inner) => match *inner {
+                        FormulaDefinition::GreaterThanVar(signal, var) => {
+                            assert_eq!(signal, "x");
+                            assert_eq!(var, "target");
+                        }
+                        _ => panic!("Expected GreaterThanVar inside Not on right"),
+                    },
+                    _ => panic!("Expected Not on right side of =="),
+                }
+            }
+            _ => panic!("Expected And formula for == sugar"),
+        }
+    }
 }
