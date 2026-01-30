@@ -4,13 +4,80 @@ use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
     Algorithm, EagerSatisfaction, MonitorOutput, Robustness, Rosi, StlMonitor, StrictSatisfaction,
 };
+use ostl::stl::parse_stl;
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyTuple};
 use std::time::Duration;
 
 // -----------------------------------------------------------------------------
-// 1. Formula Wrapper
+// 1. Formula Parsing Function
+// -----------------------------------------------------------------------------
+
+/// Parse an STL formula from a string using the same DSL syntax as the Rust `stl!` macro.
+///
+/// This allows you to write formulas using the same syntax as Rust, making it easy
+/// to port formulas between Python and Rust code.
+///
+/// # Syntax
+///
+/// ## Predicates
+/// - `signal > value` - Signal greater than value
+/// - `signal < value` - Signal less than value
+/// - `signal >= value` - Signal greater than or equal to value
+/// - `signal <= value` - Signal less than or equal to value
+///
+/// ## Boolean Constants
+/// - `true` - Always true
+/// - `false` - Always false
+///
+/// ## Unary Operators
+/// - `!(sub)` or `not(sub)` - Negation
+/// - `G[start, end](sub)` or `globally[start, end](sub)` - Globally (always)
+/// - `F[start, end](sub)` or `eventually[start, end](sub)` - Eventually (finally)
+///
+/// ## Binary Operators
+/// - `left && right` or `left and right` - Conjunction
+/// - `left || right` or `left or right` - Disjunction
+/// - `left -> right` or `left implies right` - Implication
+/// - `left U[start, end] right` or `left until[start, end] right` - Until
+///
+/// # Examples
+///
+/// ```python
+/// from ostl_python import parse_formula
+///
+/// # Simple predicate
+/// f = parse_formula("x > 5")
+///
+/// # Globally operator
+/// f = parse_formula("G[0, 10](x > 5)")
+///
+/// # Complex formula
+/// f = parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
+///
+/// # Using keyword syntax
+/// f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
+/// ```
+///
+/// # Arguments
+/// * `formula_str` - A string containing an STL formula
+///
+/// # Returns
+/// * `Formula` - The parsed formula object
+///
+/// # Raises
+/// * `ValueError` - If the formula string cannot be parsed
+#[pyfunction]
+#[pyo3(name = "parse_formula")]
+fn py_parse_formula(formula_str: &str) -> PyResult<Formula> {
+    let formula = parse_stl(formula_str)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
+    Ok(Formula { inner: formula })
+}
+
+// -----------------------------------------------------------------------------
+// 2. Formula Wrapper
 // -----------------------------------------------------------------------------
 
 /// A Python wrapper around the Rust FormulaDefinition enum.
@@ -230,7 +297,7 @@ impl Formula {
 }
 
 // -----------------------------------------------------------------------------
-// 2. Monitor Wrapper
+// 3. Monitor Wrapper
 // -----------------------------------------------------------------------------
 
 /// We need an enum to handle the different generics (bool, f64, RobustnessInterval)
@@ -487,7 +554,7 @@ where
 }
 
 // -----------------------------------------------------------------------------
-// 3. Module Definition
+// 4. Module Definition
 // -----------------------------------------------------------------------------
 
 #[pymodule]
@@ -498,8 +565,18 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         - StrictSatisfaction/EagerSatisfaction: true/false evaluation\n\
         - Robustness: robustness as a single float value\n\
         - Rosi: robustness as an interval (min, max)\n\n\
-        Example:\n\
-        --------\n\
+        Example using parse_formula (recommended):\n\
+        -----------------------------------------\n\
+        >>> import ostl_python\n\
+        >>> # Parse formula using the same DSL syntax as Rust's stl! macro\n\
+        >>> phi = ostl_python.parse_formula('G[0, 5](x > 0.5)')\n\
+        >>> # Create monitor with Robustness semantics\n\
+        >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
+        >>> # Feed data\n\
+        >>> result = monitor.update('x', 1.0, 0.0)\n\
+        >>> print(result['evaluations'])\n\n\
+        Example using Formula builder methods:\n\
+        --------------------------------------\n\
         >>> import ostl_python\n\
         >>> # Create formula: Always[0,5](x > 0.5)\n\
         >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))\n\
@@ -510,6 +587,7 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         >>> print(result['evaluations'])\n\
     ")?;
 
+    m.add_function(wrap_pyfunction!(py_parse_formula, m)?)?;
     m.add_class::<Formula>()?;
     m.add_class::<Monitor>()?;
 

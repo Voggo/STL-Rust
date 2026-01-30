@@ -8,6 +8,174 @@ import pytest
 import ostl_python.ostl_python as ostl
 
 
+class TestParseFormula:
+    """Test the parse_formula function that uses the same DSL as Rust's stl! macro."""
+
+    def test_simple_greater_than(self):
+        """Test parsing a simple greater-than predicate."""
+        formula = ostl.parse_formula("x > 5")
+        assert formula is not None
+        assert "x" in str(formula)
+
+    def test_simple_less_than(self):
+        """Test parsing a simple less-than predicate."""
+        formula = ostl.parse_formula("y < 3.14")
+        assert formula is not None
+        assert "y" in str(formula)
+
+    def test_greater_equal(self):
+        """Test parsing greater-than-or-equal predicate."""
+        formula = ostl.parse_formula("x >= 5")
+        assert formula is not None
+
+    def test_less_equal(self):
+        """Test parsing less-than-or-equal predicate."""
+        formula = ostl.parse_formula("x <= 5")
+        assert formula is not None
+
+    def test_boolean_true(self):
+        """Test parsing true constant."""
+        formula = ostl.parse_formula("true")
+        assert formula is not None
+
+    def test_boolean_false(self):
+        """Test parsing false constant."""
+        formula = ostl.parse_formula("false")
+        assert formula is not None
+
+    def test_globally(self):
+        """Test parsing globally operator."""
+        formula = ostl.parse_formula("G[0, 10](x > 5)")
+        assert formula is not None
+        assert "G" in str(formula)
+
+    def test_globally_keyword(self):
+        """Test parsing globally keyword syntax."""
+        formula = ostl.parse_formula("globally[0, 10](x > 5)")
+        assert formula is not None
+
+    def test_eventually(self):
+        """Test parsing eventually operator."""
+        formula = ostl.parse_formula("F[0, 5](y < 3)")
+        assert formula is not None
+        assert "F" in str(formula)
+
+    def test_eventually_keyword(self):
+        """Test parsing eventually keyword syntax."""
+        formula = ostl.parse_formula("eventually[0, 5](y < 3)")
+        assert formula is not None
+
+    def test_and_symbols(self):
+        """Test parsing conjunction with && symbols."""
+        formula = ostl.parse_formula("x > 5 && y < 3")
+        assert formula is not None
+
+    def test_and_keyword(self):
+        """Test parsing conjunction with 'and' keyword."""
+        formula = ostl.parse_formula("x > 5 and y < 3")
+        assert formula is not None
+
+    def test_or_symbols(self):
+        """Test parsing disjunction with || symbols."""
+        formula = ostl.parse_formula("x > 5 || y < 3")
+        assert formula is not None
+
+    def test_or_keyword(self):
+        """Test parsing disjunction with 'or' keyword."""
+        formula = ostl.parse_formula("x > 5 or y < 3")
+        assert formula is not None
+
+    def test_not_symbol(self):
+        """Test parsing negation with ! symbol."""
+        formula = ostl.parse_formula("!(x > 5)")
+        assert formula is not None
+
+    def test_not_keyword(self):
+        """Test parsing negation with 'not' keyword."""
+        formula = ostl.parse_formula("not(x > 5)")
+        assert formula is not None
+
+    def test_implies_symbol(self):
+        """Test parsing implication with -> symbol."""
+        formula = ostl.parse_formula("x > 5 -> y < 3")
+        assert formula is not None
+
+    def test_implies_keyword(self):
+        """Test parsing implication with 'implies' keyword."""
+        formula = ostl.parse_formula("x > 5 implies y < 3")
+        assert formula is not None
+
+    def test_until_symbol(self):
+        """Test parsing until operator with U symbol."""
+        formula = ostl.parse_formula("x > 5 U[0, 10] y < 3")
+        assert formula is not None
+
+    def test_until_keyword(self):
+        """Test parsing until operator with 'until' keyword."""
+        formula = ostl.parse_formula("x > 5 until[0, 10] y < 3")
+        assert formula is not None
+
+    def test_nested_temporal(self):
+        """Test parsing nested temporal operators."""
+        formula = ostl.parse_formula("G[0, 10](F[0, 5](x > 0))")
+        assert formula is not None
+
+    def test_complex_formula(self):
+        """Test parsing complex formula."""
+        formula = ostl.parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
+        assert formula is not None
+
+    def test_whitespace_tolerance(self):
+        """Test that parser handles extra whitespace."""
+        formula = ostl.parse_formula("  G  [  0  ,  10  ]  (  x  >  5  )  ")
+        assert formula is not None
+
+    def test_decimal_interval(self):
+        """Test parsing intervals with decimal values."""
+        formula = ostl.parse_formula("G[0.5, 10.5](x > 5)")
+        assert formula is not None
+
+    def test_signal_with_underscore(self):
+        """Test parsing signal names with underscores."""
+        formula = ostl.parse_formula("my_signal > 5")
+        assert formula is not None
+        assert "my_signal" in str(formula)
+
+    def test_negative_threshold(self):
+        """Test parsing predicates with negative thresholds."""
+        formula = ostl.parse_formula("x > -5")
+        assert formula is not None
+
+    def test_error_empty_input(self):
+        """Test that empty input raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("")
+
+    def test_error_invalid_syntax(self):
+        """Test that invalid syntax raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("not a valid formula !!!")
+
+    def test_error_missing_interval(self):
+        """Test that missing interval raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("G(x > 5)")
+
+    def test_with_monitor(self):
+        """Test using parse_formula with a monitor."""
+        formula = ostl.parse_formula("G[0, 5](x > 0.5)")
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+        result = monitor.update("x", 1.0, 0.0)
+        assert "evaluations" in result
+
+    def test_complex_with_monitor(self):
+        """Test complex parsed formula with a monitor."""
+        formula = ostl.parse_formula("G[0, 5](x > 0) && F[0, 3](y < 10)")
+        monitor = ostl.Monitor(formula, semantics="Rosi")
+        result = monitor.update("x", 1.0, 0.0)
+        assert "evaluations" in result
+
+
 class TestFormulaCreation:
     """Test that all formula types can be created."""
 

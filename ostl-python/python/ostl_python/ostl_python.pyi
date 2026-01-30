@@ -6,7 +6,17 @@ This library provides efficient online monitoring of STL formulas with multiple 
 - Robustness: robustness as a single float value
 - Rosi: robustness as an interval (min, max)
 
-Example:
+Example using parse_formula (recommended):
+    >>> import ostl_python
+    >>> # Parse formula using the same DSL syntax as Rust's stl! macro
+    >>> phi = ostl_python.parse_formula('G[0, 5](x > 0.5)')
+    >>> # Create monitor with Robustness semantics
+    >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')
+    >>> # Feed data
+    >>> result = monitor.update('x', 1.0, 0.0)
+    >>> print(result['evaluations'])
+
+Example using Formula builder methods:
     >>> import ostl_python
     >>> # Create formula: Always[0,5](x > 0.5)
     >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))
@@ -21,6 +31,58 @@ Example:
 from typing import Literal, TypedDict, Union, List, Tuple
 
 __version__: str
+
+
+def parse_formula(formula_str: str) -> "Formula":
+    """
+    Parse an STL formula from a string using the same DSL syntax as Rust's `stl!` macro.
+
+    This allows you to write formulas using the same syntax as Rust, making it easy
+    to port formulas between Python and Rust code.
+
+    Syntax:
+        Predicates:
+            - ``signal > value`` - Signal greater than value
+            - ``signal < value`` - Signal less than value
+            - ``signal >= value`` - Signal greater than or equal
+            - ``signal <= value`` - Signal less than or equal
+
+        Boolean Constants:
+            - ``true`` - Always true
+            - ``false`` - Always false
+
+        Unary Operators:
+            - ``!(sub)`` or ``not(sub)`` - Negation
+            - ``G[start, end](sub)`` or ``globally[start, end](sub)`` - Globally (always)
+            - ``F[start, end](sub)`` or ``eventually[start, end](sub)`` - Eventually (finally)
+
+        Binary Operators:
+            - ``left && right`` or ``left and right`` - Conjunction
+            - ``left || right`` or ``left or right`` - Disjunction
+            - ``left -> right`` or ``left implies right`` - Implication
+            - ``left U[start, end] right`` or ``left until[start, end] right`` - Until
+
+    Args:
+        formula_str: A string containing an STL formula
+
+    Returns:
+        The parsed Formula object
+
+    Raises:
+        ValueError: If the formula string cannot be parsed
+
+    Examples:
+        >>> # Simple predicate
+        >>> f = parse_formula("x > 5")
+        >>> # Globally operator
+        >>> f = parse_formula("G[0, 10](x > 5)")
+        >>> # Complex formula
+        >>> f = parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
+        >>> # Using keyword syntax
+        >>> f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
+    """
+    ...
+
 
 class OutputDict(TypedDict):
     """A single output verdict."""
