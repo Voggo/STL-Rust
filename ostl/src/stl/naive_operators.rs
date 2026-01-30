@@ -1,6 +1,6 @@
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
-use crate::stl::core::{RobustnessSemantics, StlOperatorTrait, TimeInterval};
+use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait, TimeInterval};
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -506,6 +506,46 @@ impl Display for StlOperator {
                 StlOperator::LessThan(s, val) => format!("{s} < {val}"),
             }
         )
+    }
+}
+
+impl<T, C, Y> SignalIdentifier for StlFormula<T, C, Y>
+where
+    T: 'static,
+    C: RingBufferTrait<Value = T> + 'static,
+    Y: RobustnessSemantics + 'static,
+{
+    fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
+        let mut signals = std::collections::HashSet::new();
+        fn collect_signals(
+            node: &StlOperator,
+            signals: &mut std::collections::HashSet<&'static str>,
+        ) {
+            match node {
+                StlOperator::GreaterThan(s, _) | StlOperator::LessThan(s, _) => {
+                    signals.insert(*s);
+                }
+                StlOperator::True | StlOperator::False => {}
+                StlOperator::Not(f) => {
+                    collect_signals(f, signals);
+                }
+                StlOperator::And(f1, f2)
+                | StlOperator::Or(f1, f2)
+                | StlOperator::Implies(f1, f2) => {
+                    collect_signals(f1, signals);
+                    collect_signals(f2, signals);
+                }
+                StlOperator::Globally(_, f) | StlOperator::Eventually(_, f) => {
+                    collect_signals(f, signals);
+                }
+                StlOperator::Until(_, f1, f2) => {
+                    collect_signals(f1, signals);
+                    collect_signals(f2, signals);
+                }
+            }
+        }
+        collect_signals(&self.formula, &mut signals);
+        signals
     }
 }
 

@@ -219,6 +219,10 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
     pub fn specification_to_string(&self) -> String {
         self.root_operator.to_string()
     }
+
+    pub fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
+        self.root_operator.get_signal_identifiers()
+    }
 }
 
 /// The Builder pattern struct for StlMonitor.
@@ -498,19 +502,19 @@ mod tests {
                     start: Duration::from_secs(0),
                     end: Duration::from_secs(10),
                 },
-                Box::new(FormulaDefinition::LessThan("x", 10.0)),
+                Box::new(FormulaDefinition::LessThan("y", 10.0)),
             )),
         );
 
         // Usage with marker struct implies Y = f64
-        let monitor = StlMonitor::builder()
+        let mut monitor = StlMonitor::builder()
             .formula(formula.clone())
             .algorithm(Algorithm::Incremental)
             .semantics(Robustness)
             .build()
             .unwrap();
 
-        let monitor_naive = StlMonitor::builder()
+        let mut monitor_naive = StlMonitor::builder()
             .formula(formula)
             .algorithm(Algorithm::Naive)
             .semantics(Robustness)
@@ -519,6 +523,14 @@ mod tests {
 
         let spec = monitor.specification_to_string();
         let spec_naive = monitor_naive.specification_to_string();
+
+        let naive_ids = monitor_naive.get_signal_identifiers();
+        let inc_ids = monitor.get_signal_identifiers();
+        assert_eq!(naive_ids, inc_ids);
+        assert!(naive_ids.contains("x"));
+        assert!(naive_ids.contains("y"));
+        assert!(inc_ids.contains("x"));
+        assert!(inc_ids.contains("y"));
         assert_eq!(spec, spec_naive);
     }
 }

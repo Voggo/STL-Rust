@@ -8,6 +8,7 @@ use ostl::stl::parse_stl;
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyList, PyTuple};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -739,6 +740,20 @@ impl Monitor {
                     inner: InnerMonitorOutput::Interval(output),
                 }
             }
+        }
+    }
+
+    /// Get the set of signal identifiers used in the monitor's formula.
+    /// Returns:
+    /// --------
+    /// Set[str]
+    ///     A set of signal names (identifiers) used in the formula. 
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
+        match &mut self.inner {
+            InnerMonitor::StrictSatisfaction(m) => m.get_signal_identifiers(),
+            InnerMonitor::EagerSatisfaction(m) => m.get_signal_identifiers(),
+            InnerMonitor::Robustness(m) => m.get_signal_identifiers(),
+            InnerMonitor::Rosi(m) => m.get_signal_identifiers(),
         }
     }
 

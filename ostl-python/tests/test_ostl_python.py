@@ -789,6 +789,22 @@ class TestMonitorOutputFormatting:
         assert output.input_timestamp == 1.5
         assert output.input_value == 42.5
 
+class TestMonitorGetSignalIdentifiers:
+    """Test getting signal identifiers from the monitor."""
+
+    def test_get_signal_identifiers(self):
+        """Test that get_signal_identifiers returns correct signals."""
+        f1 = ostl.Formula.gt("x", 5.0)
+        f2 = ostl.Formula.lt("y", 10.0)
+        formula = ostl.Formula.and_(f1, f2)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        signals = monitor.get_signal_identifiers()
+        assert isinstance(signals, set)
+        assert "x" in signals
+        assert "y" in signals
+        assert len(signals) == 2
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
