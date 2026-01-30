@@ -3,7 +3,7 @@ use crate::stl::core::{SignalIdentifier, TimeInterval};
 use std::fmt::Display;
 
 /// An enum representing the definition of an STL formula.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FormulaDefinition {
     GreaterThan(&'static str, f64),
     LessThan(&'static str, f64),

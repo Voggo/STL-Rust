@@ -6,21 +6,87 @@ This library provides efficient online monitoring of STL formulas with multiple 
 - Robustness: robustness as a single float value
 - Rosi: robustness as an interval (min, max)
 
-Example:
+Example using parse_formula (recommended):
+    >>> import ostl_python
+    >>> # Parse formula using the same DSL syntax as Rust's stl! macro
+    >>> phi = ostl_python.parse_formula('G[0, 5](x > 0.5)')
+    >>> # Create monitor with Robustness semantics
+    >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')
+    >>> # Feed data
+    >>> output = monitor.update('x', 1.0, 0.0)
+    >>> # Print using Rust's Display formatting
+    >>> print(output)
+    >>> # Access structured data
+    >>> print(output.to_dict())
+
+Example using Formula builder methods:
     >>> import ostl_python
     >>> # Create formula: Always[0,5](x > 0.5)
     >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))
     >>> # Create monitor with Rosi semantics
     >>> monitor = ostl_python.Monitor(phi, semantics='Rosi')
     >>> # Feed data
-    >>> result = monitor.update('x', 1.0, 0.0)
-    >>> for eval in result['evaluations']:
-    ...     print(eval['outputs'])
+    >>> output = monitor.update('x', 1.0, 0.0)
+    >>> # Use __str__ and __repr__ for Rust-style formatting
+    >>> print(str(output))   # Display format
+    >>> print(repr(output))  # Debug format
 """
 
 from typing import Literal, TypedDict, Union, List, Tuple
 
 __version__: str
+
+
+def parse_formula(formula_str: str) -> "Formula":
+    """
+    Parse an STL formula from a string using the same DSL syntax as Rust's `stl!` macro.
+
+    This allows you to write formulas using the same syntax as Rust, making it easy
+    to port formulas between Python and Rust code.
+
+    Syntax:
+        Predicates:
+            - ``signal > value`` - Signal greater than value
+            - ``signal < value`` - Signal less than value
+            - ``signal >= value`` - Signal greater than or equal
+            - ``signal <= value`` - Signal less than or equal
+
+        Boolean Constants:
+            - ``true`` - Always true
+            - ``false`` - Always false
+
+        Unary Operators:
+            - ``!(sub)`` or ``not(sub)`` - Negation
+            - ``G[start, end](sub)`` or ``globally[start, end](sub)`` - Globally (always)
+            - ``F[start, end](sub)`` or ``eventually[start, end](sub)`` - Eventually (finally)
+
+        Binary Operators:
+            - ``left && right`` or ``left and right`` - Conjunction
+            - ``left || right`` or ``left or right`` - Disjunction
+            - ``left -> right`` or ``left implies right`` - Implication
+            - ``left U[start, end] right`` or ``left until[start, end] right`` - Until
+
+    Args:
+        formula_str: A string containing an STL formula
+
+    Returns:
+        The parsed Formula object
+
+    Raises:
+        ValueError: If the formula string cannot be parsed
+
+    Examples:
+        >>> # Simple predicate
+        >>> f = parse_formula("x > 5")
+        >>> # Globally operator
+        >>> f = parse_formula("G[0, 10](x > 5)")
+        >>> # Complex formula
+        >>> f = parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
+        >>> # Using keyword syntax
+        >>> f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
+    """
+    ...
+
 
 class OutputDict(TypedDict):
     """A single output verdict."""
@@ -280,6 +346,130 @@ SemanticsType = Literal["StrictSatisfaction", "EagerSatisfaction", "Robustness",
 AlgorithmType = Literal["Incremental", "Naive"]
 SynchronizationType = Literal["ZeroOrderHold", "Linear", "None"]
 
+
+class MonitorOutput:
+    """
+    Output from a monitor update operation.
+
+    This class wraps the Rust MonitorOutput structure and provides:
+    - Rust-style Display formatting via __str__()
+    - Rust-style Debug formatting via __repr__()
+    - Structured data access via to_dict()
+    - Convenient properties and methods
+
+    The string representation shows verdicts in the format:
+        ``t={timestamp}: {value}``
+
+    For multiple verdicts, they are shown on separate lines.
+    If no verdicts are available, it shows "No verdicts available".
+
+    Example:
+        >>> output = monitor.update('x', 1.0, 0.0)
+        >>> # Rust-style Display
+        >>> print(output)
+        t=5s: 0.5
+        >>> # Access properties
+        >>> print(output.input_signal, output.input_timestamp)
+        >>> # Get finalized verdicts
+        >>> for ts, val in output.finalize():
+        ...     print(f"Verdict at {ts}: {val}")
+    """
+
+    @property
+    def input_signal(self) -> str:
+        """The name of the signal that was updated."""
+        ...
+
+    @property
+    def input_timestamp(self) -> float:
+        """The timestamp (in seconds) of the input that triggered this update."""
+        ...
+
+    @property
+    def input_value(self) -> float:
+        """The value of the input signal."""
+        ...
+
+    def has_outputs(self) -> bool:
+        """
+        Check if there are any output verdicts.
+
+        Returns:
+            True if there is at least one output verdict, False otherwise.
+        """
+        ...
+
+    def total_outputs(self) -> int:
+        """
+        Get the total number of output verdicts.
+
+        Returns:
+            The total count of output verdicts across all evaluations.
+        """
+        ...
+
+    def is_empty(self) -> bool:
+        """
+        Check if the evaluations list is empty.
+
+        Returns:
+            True if no evaluations were triggered, False otherwise.
+        """
+        ...
+
+    def finalize(self) -> List[Tuple[float, Union[bool, float, Tuple[float, float]]]]:
+        """
+        Get the finalized verdicts as a list of (timestamp, value) tuples.
+
+        This returns the latest verdict for each unique timestamp,
+        matching the behavior of Rust's ``finalize()`` method.
+
+        Returns:
+            List of (timestamp, value) tuples. The value type depends on the
+            monitor semantics:
+            - bool for qualitative semantics
+            - float for robustness semantics
+            - tuple[float, float] for RoSI semantics
+        """
+        ...
+
+    def to_dict(self) -> MonitorOutputDict:
+        """
+        Convert the monitor output to a dictionary.
+
+        Returns:
+            Dictionary containing:
+            - 'input_signal': the signal name
+            - 'input_timestamp': the input timestamp
+            - 'input_value': the input value
+            - 'evaluations': list of evaluation dictionaries
+
+        Example:
+            >>> output = monitor.update('x', 1.0, 0.0)
+            >>> d = output.to_dict()
+            >>> print(d['input_signal'], d['input_timestamp'])
+        """
+        ...
+
+    def __str__(self) -> str:
+        """
+        Return Rust-style Display representation of the output.
+
+        Shows verdicts in the format: ``t={timestamp}: {value}``
+        For multiple verdicts, they are shown on separate lines.
+        If no verdicts are available, returns "No verdicts available".
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Return Rust-style Debug representation of the output.
+
+        Shows the full internal structure of the MonitorOutput,
+        matching Rust's Debug formatting.
+        """
+        ...
+
 class Monitor:
     """
     Online STL monitor.
@@ -346,7 +536,7 @@ class Monitor:
         """
         ...
 
-    def update(self, signal: str, value: float, timestamp: float) -> MonitorOutputDict:
+    def update(self, signal: str, value: float, timestamp: float) -> MonitorOutput:
         """
         Update the monitor with a new signal value.
 
@@ -360,16 +550,11 @@ class Monitor:
             timestamp: Timestamp in seconds (must be monotonically increasing)
 
         Returns:
-            Dictionary containing:
-                - 'input_signal': The signal name that was updated
-                - 'input_timestamp': The timestamp of this update
-                - 'evaluations': List of evaluation dictionaries, each containing:
-                    - 'sync_step_signal': Signal name of the synchronized step
-                    - 'sync_step_timestamp': Timestamp of the synchronized step
-                    - 'sync_step_value': Value of the synchronized step
-                    - 'outputs': List of output dictionaries with:
-                        - 'timestamp': The time this verdict is for
-                        - 'value': The verdict value (type depends on semantics)
+            MonitorOutput object containing:
+                - Display/Debug formatting via __str__() and __repr__()
+                - Properties: input_signal, input_timestamp, input_value
+                - Methods: has_outputs(), total_outputs(), is_empty(), finalize()
+                - Structured data access via to_dict()
 
         Note:
             - Evaluations list may be empty if data is being buffered
@@ -378,12 +563,19 @@ class Monitor:
             - Multiple outputs may be produced for each synchronized step
 
         Example:
-            >>> result = monitor.update('x', 0.8, 1.0)
-            >>> print(f"Input: {result['input_signal']} at t={result['input_timestamp']}")
-            >>> for eval in result['evaluations']:
-            ...     print(f"Sync step: {eval['sync_step_signal']} = {eval['sync_step_value']} at t={eval['sync_step_timestamp']}")
-            ...     for output in eval['outputs']:
-            ...         print(f"  Verdict at t={output['timestamp']}: {output['value']}")
+            >>> output = monitor.update('x', 0.8, 1.0)
+            >>> # Use Rust-style Display formatting
+            >>> print(output)
+            >>> # Access properties
+            >>> print(f"Input: {output.input_signal} at t={output.input_timestamp}")
+            >>> # Get finalized verdicts
+            >>> for ts, val in output.finalize():
+            ...     print(f"Verdict at {ts}: {val}")
+            >>> # Access as dictionary
+            >>> d = output.to_dict()
+            >>> for eval in d['evaluations']:
+            ...     for out in eval['outputs']:
+            ...         print(f"  t={out['timestamp']}: {out['value']}")
         """
         ...
 

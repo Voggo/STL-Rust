@@ -8,6 +8,183 @@ import pytest
 import ostl_python.ostl_python as ostl
 
 
+class TestParseFormula:
+    """Test the parse_formula function that uses the same DSL as Rust's stl! macro."""
+
+    def test_simple_greater_than(self):
+        """Test parsing a simple greater-than predicate."""
+        formula = ostl.parse_formula("x > 5")
+        assert formula is not None
+        assert "x" in str(formula)
+
+    def test_simple_less_than(self):
+        """Test parsing a simple less-than predicate."""
+        formula = ostl.parse_formula("y < 3.14")
+        assert formula is not None
+        assert "y" in str(formula)
+
+    def test_greater_equal(self):
+        """Test parsing greater-than-or-equal predicate."""
+        formula = ostl.parse_formula("x >= 5")
+        assert formula is not None
+
+    def test_less_equal(self):
+        """Test parsing less-than-or-equal predicate."""
+        formula = ostl.parse_formula("x <= 5")
+        assert formula is not None
+
+    def test_boolean_true(self):
+        """Test parsing true constant."""
+        formula = ostl.parse_formula("true")
+        assert formula is not None
+
+    def test_boolean_false(self):
+        """Test parsing false constant."""
+        formula = ostl.parse_formula("false")
+        assert formula is not None
+
+    def test_globally(self):
+        """Test parsing globally operator."""
+        formula = ostl.parse_formula("G[0, 10](x > 5)")
+        assert formula is not None
+        assert "G" in str(formula)
+
+    def test_globally_keyword(self):
+        """Test parsing globally keyword syntax."""
+        formula = ostl.parse_formula("globally[0, 10](x > 5)")
+        assert formula is not None
+
+    def test_eventually(self):
+        """Test parsing eventually operator."""
+        formula = ostl.parse_formula("F[0, 5](y < 3)")
+        assert formula is not None
+        assert "F" in str(formula)
+
+    def test_eventually_keyword(self):
+        """Test parsing eventually keyword syntax."""
+        formula = ostl.parse_formula("eventually[0, 5](y < 3)")
+        assert formula is not None
+
+    def test_and_symbols(self):
+        """Test parsing conjunction with && symbols."""
+        formula = ostl.parse_formula("x > 5 && y < 3")
+        assert formula is not None
+
+    def test_and_keyword(self):
+        """Test parsing conjunction with 'and' keyword."""
+        formula = ostl.parse_formula("x > 5 and y < 3")
+        assert formula is not None
+
+    def test_or_symbols(self):
+        """Test parsing disjunction with || symbols."""
+        formula = ostl.parse_formula("x > 5 || y < 3")
+        assert formula is not None
+
+    def test_or_keyword(self):
+        """Test parsing disjunction with 'or' keyword."""
+        formula = ostl.parse_formula("x > 5 or y < 3")
+        assert formula is not None
+
+    def test_not_symbol(self):
+        """Test parsing negation with ! symbol."""
+        formula = ostl.parse_formula("!(x > 5)")
+        assert formula is not None
+
+    def test_not_keyword(self):
+        """Test parsing negation with 'not' keyword."""
+        formula = ostl.parse_formula("not(x > 5)")
+        assert formula is not None
+
+    def test_implies_symbol(self):
+        """Test parsing implication with -> symbol."""
+        formula = ostl.parse_formula("x > 5 -> y < 3")
+        assert formula is not None
+
+    def test_implies_keyword(self):
+        """Test parsing implication with 'implies' keyword."""
+        formula = ostl.parse_formula("x > 5 implies y < 3")
+        assert formula is not None
+
+    def test_until_symbol(self):
+        """Test parsing until operator with U symbol."""
+        formula = ostl.parse_formula("x > 5 U[0, 10] y < 3")
+        assert formula is not None
+
+    def test_until_keyword(self):
+        """Test parsing until operator with 'until' keyword."""
+        formula = ostl.parse_formula("x > 5 until[0, 10] y < 3")
+        assert formula is not None
+
+    def test_nested_temporal(self):
+        """Test parsing nested temporal operators."""
+        formula = ostl.parse_formula("G[0, 10](F[0, 5](x > 0))")
+        assert formula is not None
+
+    def test_complex_formula(self):
+        """Test parsing complex formula."""
+        formula = ostl.parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
+        assert formula is not None
+
+    def test_whitespace_tolerance(self):
+        """Test that parser handles extra whitespace."""
+        formula = ostl.parse_formula("  G  [  0  ,  10  ]  (  x  >  5  )  ")
+        assert formula is not None
+
+    def test_decimal_interval(self):
+        """Test parsing intervals with decimal values."""
+        formula = ostl.parse_formula("G[0.5, 10.5](x > 5)")
+        assert formula is not None
+
+    def test_signal_with_underscore(self):
+        """Test parsing signal names with underscores."""
+        formula = ostl.parse_formula("my_signal > 5")
+        assert formula is not None
+        assert "my_signal" in str(formula)
+
+    def test_negative_threshold(self):
+        """Test parsing predicates with negative thresholds."""
+        formula = ostl.parse_formula("x > -5")
+        assert formula is not None
+
+    def test_error_empty_input(self):
+        """Test that empty input raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("")
+
+    def test_error_invalid_syntax(self):
+        """Test that invalid syntax raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("not a valid formula !!!")
+
+    def test_error_missing_interval(self):
+        """Test that missing interval raises an error."""
+        with pytest.raises(ValueError):
+            ostl.parse_formula("G(x > 5)")
+
+    def test_with_monitor(self):
+        """Test using parse_formula with a monitor."""
+        formula = ostl.parse_formula("G[0, 5](x > 0.5)")
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+        output = monitor.update("x", 1.0, 0.0)
+        # Test new MonitorOutput properties
+        assert output.input_signal == "x"
+        assert output.input_timestamp == 0.0
+        # Test to_dict() still works
+        result = output.to_dict()
+        assert "evaluations" in result
+
+    def test_complex_with_monitor(self):
+        """Test complex parsed formula with a monitor."""
+        formula = ostl.parse_formula("G[0, 5](x > 0) && F[0, 3](y < 10)")
+        monitor = ostl.Monitor(formula, semantics="Rosi")
+        output = monitor.update("x", 1.0, 0.0)
+        # Test new MonitorOutput properties
+        assert output.input_signal == "x"
+        # Test to_dict() still works
+        result = output.to_dict()
+        assert "evaluations" in result
+
+
 class TestFormulaCreation:
     """Test that all formula types can be created."""
 
@@ -151,8 +328,15 @@ class TestMonitorUpdate:
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
-        result = monitor.update("x", 10.0, 0.0)
+        output = monitor.update("x", 10.0, 0.0)
 
+        # Test new MonitorOutput properties
+        assert output.input_signal == "x"
+        assert output.input_timestamp == 0.0
+        assert output.input_value == 10.0
+
+        # Test to_dict() for structured access
+        result = output.to_dict()
         assert "input_signal" in result
         assert result["input_signal"] == "x"
         assert "input_timestamp" in result
@@ -169,45 +353,55 @@ class TestMonitorUpdate:
             assert "outputs" in eval_dict
 
             if len(eval_dict["outputs"]) > 0:
-                output = eval_dict["outputs"][0]
-                assert "timestamp" in output
-                assert "value" in output
-                assert isinstance(output["value"], bool)
+                out = eval_dict["outputs"][0]
+                assert "timestamp" in out
+                assert "value" in out
+                assert isinstance(out["value"], bool)
 
     def test_quantitative_update(self):
         """Test quantitative monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Robustness")
 
-        result = monitor.update("x", 10.0, 0.0)
+        output = monitor.update("x", 10.0, 0.0)
 
+        # Test new MonitorOutput properties
+        assert output.input_signal == "x"
+
+        # Test to_dict() for structured access
+        result = output.to_dict()
         assert "input_signal" in result
         assert "evaluations" in result
 
         if len(result["evaluations"]) > 0:
             eval_dict = result["evaluations"][0]
             if len(eval_dict["outputs"]) > 0:
-                output = eval_dict["outputs"][0]
-                assert isinstance(output["value"], float)
+                out = eval_dict["outputs"][0]
+                assert isinstance(out["value"], float)
 
     def test_robustness_update(self):
         """Test robustness monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
-        result = monitor.update("x", 10.0, 0.0)
+        output = monitor.update("x", 10.0, 0.0)
 
+        # Test new MonitorOutput properties
+        assert output.input_signal == "x"
+
+        # Test to_dict() for structured access
+        result = output.to_dict()
         assert "input_signal" in result
         assert "evaluations" in result
 
         if len(result["evaluations"]) > 0:
             eval_dict = result["evaluations"][0]
             if len(eval_dict["outputs"]) > 0:
-                output = eval_dict["outputs"][0]
-                assert isinstance(output["value"], tuple)
-                assert len(output["value"]) == 2
-                assert isinstance(output["value"][0], float)
-                assert isinstance(output["value"][1], float)
+                out = eval_dict["outputs"][0]
+                assert isinstance(out["value"], tuple)
+                assert len(out["value"]) == 2
+                assert isinstance(out["value"][0], float)
+                assert isinstance(out["value"][1], float)
 
     def test_multiple_updates(self):
         """Test multiple sequential updates."""
@@ -215,9 +409,9 @@ class TestMonitorUpdate:
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
         for t in range(5):
-            result = monitor.update("x", 10.0, float(t))
-            assert result is not None
-            assert result["input_timestamp"] == float(t)
+            output = monitor.update("x", 10.0, float(t))
+            assert output is not None
+            assert output.input_timestamp == float(t)
 
     def test_multi_signal_update(self):
         """Test updates with multiple signals."""
@@ -226,11 +420,11 @@ class TestMonitorUpdate:
         formula = ostl.Formula.and_(f1, f2)
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
-        result1 = monitor.update("x", 10.0, 0.0)
-        assert result1["input_signal"] == "x"
+        output1 = monitor.update("x", 10.0, 0.0)
+        assert output1.input_signal == "x"
 
-        result2 = monitor.update("y", 5.0, 0.0)
-        assert result2["input_signal"] == "y"
+        output2 = monitor.update("y", 5.0, 0.0)
+        assert output2.input_signal == "y"
 
 
 class TestErrorHandling:
@@ -331,13 +525,13 @@ class TestTemporalFormulas:
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
         # Feed data points
-        results = []
+        outputs = []
         for t in range(5):
-            result = monitor.update("x", 10.0, float(t))
-            results.append(result)
+            output = monitor.update("x", 10.0, float(t))
+            outputs.append(output)
 
-        # At least some results should have evaluations
-        total_evals = sum(len(r["evaluations"]) for r in results)
+        # At least some outputs should have evaluations
+        total_evals = sum(len(o.to_dict()["evaluations"]) for o in outputs)
         assert total_evals > 0
 
     def test_eventually_produces_verdicts(self):
@@ -345,12 +539,12 @@ class TestTemporalFormulas:
         formula = ostl.Formula.eventually(0.0, 2.0, ostl.Formula.gt("x", 5.0))
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
-        results = []
+        outputs = []
         for t in range(5):
-            result = monitor.update("x", 10.0, float(t))
-            results.append(result)
+            output = monitor.update("x", 10.0, float(t))
+            outputs.append(output)
 
-        total_evals = sum(len(r["evaluations"]) for r in results)
+        total_evals = sum(len(o.to_dict()["evaluations"]) for o in outputs)
         assert total_evals > 0
 
     def test_until_produces_verdicts(self):
@@ -360,16 +554,16 @@ class TestTemporalFormulas:
         formula = ostl.Formula.until(0.0, 3.0, f1, f2)
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
-        results = []
+        outputs = []
         # Start with low value, then high
         for t in range(2):
-            result = monitor.update("x", 5.0, float(t))
-            results.append(result)
+            output = monitor.update("x", 5.0, float(t))
+            outputs.append(output)
         for t in range(2, 5):
-            result = monitor.update("x", 15.0, float(t))
-            results.append(result)
+            output = monitor.update("x", 15.0, float(t))
+            outputs.append(output)
 
-        total_evals = sum(len(r["evaluations"]) for r in results)
+        total_evals = sum(len(o.to_dict()["evaluations"]) for o in outputs)
         assert total_evals > 0
 
 
@@ -425,7 +619,8 @@ class TestEvaluationStructure:
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
 
-        result = monitor.update("x", 10.0, 0.0)
+        output = monitor.update("x", 10.0, 0.0)
+        result = output.to_dict()
 
         if len(result["evaluations"]) > 0:
             eval_dict = result["evaluations"][0]
@@ -447,16 +642,152 @@ class TestEvaluationStructure:
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
-        result = monitor.update("x", 10.0, 0.0)
+        output = monitor.update("x", 10.0, 0.0)
+        result = output.to_dict()
 
         if len(result["evaluations"]) > 0:
             eval_dict = result["evaluations"][0]
             if len(eval_dict["outputs"]) > 0:
-                output = eval_dict["outputs"][0]
+                out = eval_dict["outputs"][0]
 
-                assert "timestamp" in output
-                assert "value" in output
-                assert isinstance(output["timestamp"], float)
+                assert "timestamp" in out
+                assert "value" in out
+                assert isinstance(out["timestamp"], float)
+
+
+class TestMonitorOutputFormatting:
+    """Test MonitorOutput __str__ and __repr__ methods."""
+
+    def test_str_with_verdicts(self):
+        """Test __str__ when verdicts are available."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        # __str__ should return Rust-style Display formatting
+        str_repr = str(output)
+        # The format should be "t={timestamp}: {value}" or "No verdicts available"
+        assert isinstance(str_repr, str)
+        # If there are verdicts, they should contain 't='
+        if output.has_outputs():
+            assert "t=" in str_repr
+
+    def test_str_without_verdicts(self):
+        """Test __str__ when no verdicts are available yet."""
+        formula = ostl.Formula.always(0.0, 10.0, ostl.Formula.gt("x", 5.0))
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        # First update may not produce verdicts yet
+        output = monitor.update("x", 10.0, 0.0)
+
+        str_repr = str(output)
+        assert isinstance(str_repr, str)
+        # If no verdicts, should say so
+        if not output.has_outputs():
+            assert "No verdicts available" in str_repr
+
+    def test_repr_format(self):
+        """Test __repr__ returns Rust Debug format."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        # __repr__ should return Rust-style Debug formatting
+        repr_str = repr(output)
+        assert isinstance(repr_str, str)
+        # Debug format typically includes struct name
+        assert "MonitorOutput" in repr_str
+
+    def test_str_multiple_verdicts(self):
+        """Test __str__ with multiple verdicts produces multiple lines."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        # Multiple updates
+        for t in range(5):
+            output = monitor.update("x", 10.0, float(t))
+
+        # The final output should have multiple verdicts in finalize()
+        verdicts = output.finalize()
+        str_repr = str(output)
+
+        # str representation should contain 't=' for each verdict
+        assert isinstance(str_repr, str)
+
+    def test_finalize_method(self):
+        """Test finalize() method returns list of (timestamp, value) tuples."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        verdicts = output.finalize()
+        assert isinstance(verdicts, list)
+
+        for item in verdicts:
+            assert isinstance(item, tuple)
+            assert len(item) == 2
+            # First element is timestamp (float)
+            assert isinstance(item[0], float)
+            # Second element is value (float for Robustness)
+            assert isinstance(item[1], float)
+
+    def test_finalize_with_bool_semantics(self):
+        """Test finalize() with boolean semantics."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        verdicts = output.finalize()
+        for item in verdicts:
+            assert isinstance(item, tuple)
+            assert isinstance(item[0], float)  # timestamp
+            assert isinstance(item[1], bool)   # value
+
+    def test_finalize_with_rosi_semantics(self):
+        """Test finalize() with RoSI semantics."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Rosi")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        verdicts = output.finalize()
+        for item in verdicts:
+            assert isinstance(item, tuple)
+            assert isinstance(item[0], float)  # timestamp
+            # Value should be a tuple (min, max)
+            assert isinstance(item[1], tuple)
+            assert len(item[1]) == 2
+
+    def test_helper_methods(self):
+        """Test has_outputs, total_outputs, is_empty methods."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        output = monitor.update("x", 10.0, 0.0)
+
+        # Test method return types
+        assert isinstance(output.has_outputs(), bool)
+        assert isinstance(output.total_outputs(), int)
+        assert isinstance(output.is_empty(), bool)
+
+        # If has_outputs is True, total_outputs should be > 0
+        if output.has_outputs():
+            assert output.total_outputs() > 0
+
+    def test_properties(self):
+        """Test input_signal, input_timestamp, input_value properties."""
+        formula = ostl.Formula.gt("x", 5.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        output = monitor.update("test_signal", 42.5, 1.5)
+
+        assert output.input_signal == "test_signal"
+        assert output.input_timestamp == 1.5
+        assert output.input_value == 42.5
 
 
 if __name__ == "__main__":
