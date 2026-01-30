@@ -17,7 +17,7 @@ pub struct TimeInterval {
 
 // stloperator trait
 // DynClone for cloning trait objects
-pub trait StlOperatorTrait<T: Clone>: DynClone + Display {
+pub trait StlOperatorTrait<T: Clone>: DynClone + Display + SignalIdentifier {
     type Output;
 
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>>;

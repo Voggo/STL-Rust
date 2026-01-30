@@ -36,7 +36,6 @@ from typing import Literal, TypedDict, Union, List, Tuple
 
 __version__: str
 
-
 def parse_formula(formula_str: str) -> "Formula":
     """
     Parse an STL formula from a string using the same DSL syntax as Rust's `stl!` macro.
@@ -86,7 +85,6 @@ def parse_formula(formula_str: str) -> "Formula":
         >>> f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
     """
     ...
-
 
 class OutputDict(TypedDict):
     """A single output verdict."""
@@ -346,7 +344,6 @@ SemanticsType = Literal["StrictSatisfaction", "EagerSatisfaction", "Robustness",
 AlgorithmType = Literal["Incremental", "Naive"]
 SynchronizationType = Literal["ZeroOrderHold", "Linear", "None"]
 
-
 class MonitorOutput:
     """
     Output from a monitor update operation.
@@ -576,6 +573,15 @@ class Monitor:
             >>> for eval in d['evaluations']:
             ...     for out in eval['outputs']:
             ...         print(f"  t={out['timestamp']}: {out['value']}")
+        """
+        ...
+
+    def get_signal_identifiers(self) -> set[str]:
+        """
+        Get the set of signal identifiers used in the monitor's formula.
+
+        Returns:
+            Set[str]: A set of signal names (identifiers) used in the formula.
         """
         ...
 
