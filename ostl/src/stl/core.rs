@@ -494,10 +494,11 @@ mod tests {
 // Variables context for runtime variable bindings
 // -----------------------------------------------------------------------------
 
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::rc::Rc;
 
-/// A thread-safe container for runtime variable bindings.
+/// A container for runtime variable bindings.
 ///
 /// Variables can be declared and updated at runtime, and their values
 /// are used when evaluating formulas containing variable references.
@@ -517,14 +518,14 @@ use std::sync::{Arc, RwLock};
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Variables {
-    inner: Arc<RwLock<HashMap<&'static str, f64>>>,
+    inner: Rc<RefCell<HashMap<&'static str, f64>>>,
 }
 
 impl Variables {
     /// Create a new empty variable context.
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            inner: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -534,40 +535,34 @@ impl Variables {
     /// * `name` - The variable name (must be a static string)
     /// * `value` - The variable's value
     pub fn set(&self, name: &'static str, value: f64) {
-        let mut map = self.inner.write().unwrap();
-        map.insert(name, value);
+        self.inner.borrow_mut().insert(name, value);
     }
 
     /// Get a variable's current value.
     ///
     /// Returns `None` if the variable has not been set.
     pub fn get(&self, name: &'static str) -> Option<f64> {
-        let map = self.inner.read().unwrap();
-        map.get(name).copied()
+        self.inner.borrow().get(name).copied()
     }
 
     /// Check if a variable is defined.
     pub fn contains(&self, name: &'static str) -> bool {
-        let map = self.inner.read().unwrap();
-        map.contains_key(name)
+        self.inner.borrow().contains_key(name)
     }
 
     /// Get all variable names.
     pub fn names(&self) -> Vec<&'static str> {
-        let map = self.inner.read().unwrap();
-        map.keys().copied().collect()
+        self.inner.borrow().keys().copied().collect()
     }
 
     /// Remove a variable.
     pub fn remove(&self, name: &'static str) -> Option<f64> {
-        let mut map = self.inner.write().unwrap();
-        map.remove(name)
+        self.inner.borrow_mut().remove(name)
     }
 
     /// Clear all variables.
     pub fn clear(&self) {
-        let mut map = self.inner.write().unwrap();
-        map.clear();
+        self.inner.borrow_mut().clear();
     }
 }
 

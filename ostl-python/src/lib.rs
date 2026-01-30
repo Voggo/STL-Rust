@@ -629,7 +629,7 @@ fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> St
 ///
 /// Note: Variable predicates require the Incremental algorithm.
 /// Using variables with the Naive algorithm will raise an error.
-#[pyclass(name = "Variables")]
+#[pyclass(name = "Variables", unsendable)]
 #[derive(Clone)]
 struct PyVariables {
     inner: Variables,
@@ -752,12 +752,10 @@ enum InnerMonitor {
     Rosi(StlMonitor<f64, RobustnessInterval>),
 }
 
-// SAFETY: StlMonitor and its operators are designed to be used from a single thread.
+// Note: Monitor is marked unsendable because it contains Variables which uses Rc<RefCell>.
 // Python's GIL ensures thread safety across Python threads.
-unsafe impl Send for InnerMonitor {}
-unsafe impl Sync for InnerMonitor {}
 
-#[pyclass]
+#[pyclass(unsendable)]
 struct Monitor {
     inner: InnerMonitor,
     semantics: String,
