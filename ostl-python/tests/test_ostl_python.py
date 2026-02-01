@@ -427,6 +427,162 @@ class TestMonitorUpdate:
         assert output2.input_signal == "y"
 
 
+class TestBatchUpdate:
+    """Test batch update functionality."""
+
+    def test_batch_update_single_signal(self):
+        """Test batch update with a single signal."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        steps = {
+            "x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]  # (value, timestamp)
+        }
+
+        output = monitor.update_batch(steps)
+
+        # Check output properties
+        assert output is not None
+        assert output.input_timestamp == 2.0  # Last step's timestamp
+        assert output.input_signal == "x"
+
+        # Check verdicts
+        verdicts = output.finalize()
+        assert len(verdicts) == 3
+        # 5.0 > 10.0 = False, 15.0 > 10.0 = True, 8.0 > 10.0 = False
+        assert verdicts[0][1] is False
+        assert verdicts[1][1] is True
+        assert verdicts[2][1] is False
+
+    def test_batch_update_robustness(self):
+        """Test batch update with robustness semantics."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="Robustness")
+
+        steps = {
+            "x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]
+        }
+
+        output = monitor.update_batch(steps)
+
+        # Check verdicts
+        verdicts = output.finalize()
+        assert len(verdicts) == 3
+        # Robustness: value - threshold
+        assert verdicts[0][1] == -5.0  # 5.0 - 10.0
+        assert verdicts[1][1] == 5.0   # 15.0 - 10.0
+        assert verdicts[2][1] == -2.0  # 8.0 - 10.0
+
+    def test_batch_update_rosi(self):
+        """Test batch update with RoSI semantics."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="Rosi")
+
+        steps = {
+            "x": [(5.0, 0.0), (15.0, 1.0)]
+        }
+
+        output = monitor.update_batch(steps)
+        verdicts = output.finalize()
+        assert len(verdicts) >= 1
+        # RoSI returns tuples (min, max)
+        for ts, val in verdicts:
+            assert isinstance(val, tuple)
+            assert len(val) == 2
+
+    def test_batch_update_multi_signal(self):
+        """Test batch update with multiple signals."""
+        f1 = ostl.Formula.gt("x", 5.0)
+        f2 = ostl.Formula.lt("y", 10.0)
+        formula = ostl.Formula.and_(f1, f2)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        steps = {
+            "x": [(10.0, 0.0), (8.0, 2.0)],
+            "y": [(5.0, 1.0), (3.0, 3.0)]
+        }
+
+        output = monitor.update_batch(steps)
+        assert output is not None
+        # Input metadata should reflect last chronological step
+        assert output.input_timestamp == 3.0
+
+    def test_batch_update_out_of_order_timestamps(self):
+        """Test that batch update handles out-of-order timestamps correctly."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        # Provide steps out of chronological order
+        steps = {
+            "x": [(15.0, 2.0), (5.0, 0.0), (8.0, 1.0)]  # Out of order
+        }
+
+        output = monitor.update_batch(steps)
+
+        # Should still work - steps are sorted internally
+        assert output is not None
+        verdicts = output.finalize()
+        assert len(verdicts) == 3
+        # Verdicts should be in chronological order
+        assert verdicts[0][0] == 0.0
+        assert verdicts[1][0] == 1.0
+        assert verdicts[2][0] == 2.0
+
+    def test_batch_update_empty_raises_error(self):
+        """Test that empty batch raises ValueError."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        with pytest.raises(ValueError, match="at least one step"):
+            monitor.update_batch({})
+
+    def test_batch_update_empty_lists_raises_error(self):
+        """Test that batch with empty lists raises ValueError."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        with pytest.raises(ValueError, match="at least one step"):
+            monitor.update_batch({"x": []})
+
+    def test_batch_update_to_dict(self):
+        """Test that batch update output can be converted to dict."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        steps = {"x": [(15.0, 0.0), (5.0, 1.0)]}
+        output = monitor.update_batch(steps)
+
+        result = output.to_dict()
+        assert "input_signal" in result
+        assert "input_timestamp" in result
+        assert "evaluations" in result
+        assert isinstance(result["evaluations"], list)
+
+    def test_batch_update_has_outputs(self):
+        """Test has_outputs and total_outputs methods on batch output."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        steps = {"x": [(15.0, 0.0), (5.0, 1.0), (20.0, 2.0)]}
+        output = monitor.update_batch(steps)
+
+        assert output.has_outputs() is True
+        assert output.total_outputs() == 3
+
+    def test_batch_update_display(self):
+        """Test that batch output can be displayed via __str__."""
+        formula = ostl.Formula.gt("x", 10.0)
+        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+
+        steps = {"x": [(15.0, 0.0)]}
+        output = monitor.update_batch(steps)
+
+        # Should not raise and should contain some content
+        display_str = str(output)
+        assert display_str is not None
+        assert len(display_str) > 0
+
+
 class TestErrorHandling:
     """Test that invalid inputs are properly caught."""
 

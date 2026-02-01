@@ -58,3 +58,32 @@ for var, t, val in vals:
     # finalized is a list of tuples, convert to np array for easier handling
     finalized_array = np.array(finalized, dtype=object)
     print(finalized_array)
+
+
+# Batch update example
+print("\n" + "=" * 50)
+print("Batch Update Example")
+print("=" * 50)
+
+# Create a simple monitor for batch processing
+phi_batch = ostl.parse_formula("x > 10.0")
+batch_monitor = ostl.Monitor(phi_batch, semantics="Robustness")
+
+# Prepare batch data: dict mapping signal names to lists of (value, timestamp) tuples
+batch_steps = {
+    "x": [
+        (5.0, 0.0),   # x=5 at t=0 (robustness: 5-10 = -5)
+        (15.0, 1.0),  # x=15 at t=1 (robustness: 15-10 = 5)
+        (8.0, 2.0),   # x=8 at t=2 (robustness: 8-10 = -2)
+        (12.0, 3.0),  # x=12 at t=3 (robustness: 12-10 = 2)
+    ]
+}
+
+# Process all steps at once
+output = batch_monitor.update_batch(batch_steps)
+
+print(f"Batch input metadata: signal={output.input_signal}, timestamp={output.input_timestamp}")
+print(f"Total outputs: {output.total_outputs()}")
+print("\nFinalized verdicts:")
+for ts, val in output.finalize():
+    print(f"  t={ts:.1f}s: robustness={val:.1f}")
