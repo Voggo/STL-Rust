@@ -205,17 +205,131 @@ impl StlMonitor<f64, f64> {
 }
 
 impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
-    pub fn update(&mut self, step: &Step<T>) -> MonitorOutput<T, Y>
+    /// Processes a single input step through the monitor's evaluation pipeline.
+    ///
+    /// This is the core evaluation logic shared by both single and batch updates.
+    /// It synchronizes the input, evaluates all pending synchronized steps, and
+    /// collects the results.
+    fn process_step(&mut self, step: &Step<T>) -> MonitorOutput<T, Y>
     where
         Y: RobustnessSemantics + Debug,
     {
         self.synchronizer.evaluate(step.clone());
-        let mut evaluations = Vec::new();
-        while let Some(sync_step) = self.synchronizer.pending.pop_front() {
-            let op_res = self.root_operator.update(&sync_step);
-            evaluations.push(SyncStepResult::new(sync_step, op_res));
-        }
+
+        let evaluations = std::iter::from_fn(|| self.synchronizer.pending.pop_front())
+            .map(|sync_step| {
+                let op_res = self.root_operator.update(&sync_step);
+                SyncStepResult::new(sync_step, op_res)
+            })
+            .collect();
+
         MonitorOutput::new(step, evaluations)
+    }
+
+    /// Updates the monitor with a single input step and returns the evaluation output.
+    ///
+    /// This method processes the input through synchronization and evaluates all
+    /// pending synchronized steps against the STL formula.
+    ///
+    /// # Arguments
+    ///
+    /// * `step` - The input step containing signal name, value, and timestamp.
+    ///
+    /// # Returns
+    ///
+    /// A [`MonitorOutput`] containing the input metadata and all evaluation results
+    /// produced by this update.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let step = Step::new("temperature", 25.0, Duration::from_secs(1));
+    /// let output = monitor.update(&step);
+    /// for verdict in output.finalize() {
+    ///     println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
+    /// }
+    /// ```
+    pub fn update(&mut self, step: &Step<T>) -> MonitorOutput<T, Y>
+    where
+        Y: RobustnessSemantics + Debug,
+    {
+        self.process_step(step)
+    }
+
+    /// Updates the monitor with multiple input steps organized by signal name.
+    ///
+    /// This method processes each step sequentially through the monitor and
+    /// aggregates all evaluations into a single [`MonitorOutput`]. This is useful
+    /// when you have batched data from multiple signals that need to be evaluated
+    /// together and you want a unified result.
+    ///
+    /// # Arguments
+    ///
+    /// * `steps` - A map from signal names to vectors of steps for that signal.
+    ///
+    /// # Returns
+    ///
+    /// A single [`MonitorOutput`] containing all evaluation results from processing
+    /// the batch. The input metadata reflects the last step processed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `steps` is empty (no steps to process).
+    ///
+    /// # Note
+    ///
+    /// Steps are processed in chronological order to optimize performance for Incremental algorithms.
+    /// If another ordering is required, consider updating steps individually.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut steps = HashMap::new();
+    /// steps.insert("temperature", vec![
+    ///     Step::new("temperature", 25.0, Duration::from_secs(1)),
+    ///     Step::new("temperature", 26.0, Duration::from_secs(2)),
+    /// ]);
+    /// steps.insert("pressure", vec![
+    ///     Step::new("pressure", 101.3, Duration::from_secs(1)),
+    /// ]);
+    /// let output = monitor.update_batch(&steps);
+    /// println!("{}", output); // Display all finalized verdicts
+    /// ```
+    pub fn update_batch(
+        &mut self,
+        steps: &std::collections::HashMap<&'static str, Vec<Step<T>>>,
+    ) -> MonitorOutput<T, Y>
+    where
+        Y: RobustnessSemantics + Debug,
+    {
+        let mut all_steps: Vec<_> = steps
+            .values()
+            .flat_map(|step_list| step_list.iter())
+            .collect();
+
+        all_steps.sort_by_key(|step| step.timestamp);
+
+        assert!(
+            !all_steps.is_empty(),
+            "update_batch requires at least one step"
+        );
+
+        let mut all_evaluations = Vec::new();
+        let first_step = all_steps[0];
+        let mut last_step = first_step;
+
+        for step in all_steps {
+            let output = self.process_step(step);
+            all_evaluations.extend(output.evaluations);
+            last_step = step;
+        }
+
+        MonitorOutput {
+            input_signal: last_step.signal,
+            input_timestamp: last_step.timestamp,
+            input_value: last_step.value,
+            evaluations: all_evaluations,
+        }
     }
 
     pub fn specification_to_string(&self) -> String {
@@ -519,6 +633,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stl;
     use crate::stl::core::TimeInterval;
     use crate::stl::monitor::{Algorithm, StlMonitor};
     use std::time::Duration;
@@ -703,5 +818,49 @@ mod tests {
             .variables(variables)
             .build()
             .unwrap();
+    }
+
+    #[test]
+    fn test_batch_update() {
+        // Test batch update with a simple atomic predicate
+        let formula = stl!(G[0,2] (x > 10.0) && F[0,3] (y < 20.0));
+
+        let mut monitor = StlMonitor::builder()
+            .formula(formula)
+            .semantics(Rosi)
+            .algorithm(Algorithm::Incremental)
+            .build()
+            .unwrap();
+
+        let mut steps = std::collections::HashMap::new();
+        steps.insert(
+            "x",
+            vec![
+                Step::new("x", 5.0, Duration::from_secs(0)),
+                Step::new("x", 15.0, Duration::from_secs(2)),
+                Step::new("x", 8.0, Duration::from_secs(4)),
+            ],
+        );
+        steps.insert(
+            "y",
+            vec![
+                Step::new("y", 25.0, Duration::from_secs(0)),
+                Step::new("y", 15.0, Duration::from_secs(3)),
+                Step::new("y", 30.0, Duration::from_secs(5)),
+            ],
+        );
+
+        let output = monitor.update_batch(&steps);
+        let verdicts = output.finalize();
+
+        assert_eq!(verdicts.len(), 4);
+        assert!(verdicts[0].timestamp == Duration::from_secs(0));
+        assert!(verdicts[0].value.0 == verdicts[0].value.1); // final
+        assert!(verdicts[1].timestamp == Duration::from_secs(2));
+        assert!(verdicts[1].value.0 == verdicts[1].value.1); // final
+        assert!(verdicts[2].timestamp == Duration::from_secs(3));
+        assert!(verdicts[2].value.0 != verdicts[2].value.1); // non-final
+        assert!(verdicts[3].timestamp == Duration::from_secs(4));
+        assert!(verdicts[3].value.0 != verdicts[3].value.1); // non-final
     }
 }

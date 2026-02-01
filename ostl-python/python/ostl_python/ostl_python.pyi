@@ -810,6 +810,44 @@ class Monitor:
         """
         ...
 
+    def update_batch(
+        self, steps: dict[str, List[Tuple[float, float]]]
+    ) -> MonitorOutput:
+        """
+        Update the monitor with multiple signal values in batch.
+
+        This method processes multiple data points at once. Steps are automatically
+        sorted by timestamp in chronological order before processing, which is
+        optimal for the Incremental algorithm.
+
+        Args:
+            steps: A dictionary mapping signal names to lists of (value, timestamp)
+                tuples. Example: ``{"x": [(1.0, 0.0), (2.0, 1.0)], "y": [(5.0, 0.5)]}``
+
+        Returns:
+            A single MonitorOutput containing all evaluation results from processing
+            the batch. The input metadata reflects the last step processed.
+
+        Raises:
+            ValueError: If the steps dictionary is empty or contains no steps.
+
+        Note:
+            Steps are processed in chronological order (sorted by timestamp) regardless
+            of the order in which signals appear in the dictionary. If you need a
+            specific processing order, use ``update()`` directly.
+
+        Example:
+            >>> steps = {
+            ...     "temperature": [(25.0, 1.0), (26.0, 2.0)],
+            ...     "pressure": [(101.3, 1.5)]
+            ... }
+            >>> output = monitor.update_batch(steps)
+            >>> print(output)  # Display all finalized verdicts
+            >>> for ts, val in output.finalize():
+            ...     print(f"t={ts}: {val}")
+        """
+        ...
+
     def __repr__(self) -> str:
         """Return string representation of the monitor."""
         ...

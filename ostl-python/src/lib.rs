@@ -8,7 +8,7 @@ use ostl::stl::parse_stl;
 use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyList, PyTuple};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -727,7 +727,10 @@ impl PyVariables {
         let pairs: Vec<String> = names
             .iter()
             .map(|n| {
-                let val = self.inner.get(n).map_or("None".to_string(), |v| v.to_string());
+                let val = self
+                    .inner
+                    .get(n)
+                    .map_or("None".to_string(), |v| v.to_string());
                 format!("{}: {}", n, val)
             })
             .collect();
@@ -826,7 +829,9 @@ impl Monitor {
         };
 
         // Get or create variables
-        let vars = variables.map(|v| v.clone()).unwrap_or_else(PyVariables::new);
+        let vars = variables
+            .map(|v| v.clone())
+            .unwrap_or_else(PyVariables::new);
 
         // Build monitor based on semantics
         match semantics {
@@ -953,7 +958,7 @@ impl Monitor {
     /// Returns:
     /// --------
     /// Set[str]
-    ///     A set of signal names (identifiers) used in the formula. 
+    ///     A set of signal names (identifiers) used in the formula.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         match &mut self.inner {
             InnerMonitor::StrictSatisfaction(m) => m.get_signal_identifiers(),
@@ -982,6 +987,95 @@ impl Monitor {
     /// ```
     fn get_variables(&self) -> PyVariables {
         self.variables.clone()
+    }
+
+    /// Update the monitor with multiple data points in batch.
+    ///
+    /// This method processes multiple signal values at once. Steps are automatically
+    /// sorted by timestamp in chronological order before processing, which is optimal
+    /// for the Incremental algorithm.
+    ///
+    /// Parameters:
+    /// -----------
+    /// steps : dict[str, list[tuple[float, float]]]
+    ///     A dictionary mapping signal names to lists of (value, timestamp) tuples.
+    ///     Example: {"x": [(1.0, 0.0), (2.0, 1.0)], "y": [(5.0, 0.5)]}
+    ///
+    /// Returns:
+    /// --------
+    /// MonitorOutput
+    ///     A single MonitorOutput containing all evaluation results from processing
+    ///     the batch. The input metadata reflects the last step processed.
+    ///
+    /// Raises:
+    /// -------
+    /// ValueError
+    ///     If the steps dictionary is empty.
+    ///
+    /// Example:
+    /// --------
+    /// ```python
+    /// steps = {
+    ///     "temperature": [(25.0, 1.0), (26.0, 2.0)],
+    ///     "pressure": [(101.3, 1.5)]
+    /// }
+    /// output = monitor.update_batch(steps)
+    /// print(output)  # Display all finalized verdicts
+    /// for ts, val in output.finalize():
+    ///     print(f"t={ts}: {val}")
+    /// ```
+    fn update_batch(&mut self, steps: &Bound<'_, PyDict>) -> PyResult<PyMonitorOutput> {
+        // Convert Python dict to Rust HashMap<&'static str, Vec<Step<f64>>>
+        let mut rust_steps: HashMap<&'static str, Vec<Step<f64>>> = HashMap::new();
+
+        for (key, value) in steps.iter() {
+            let signal: String = key.extract()?;
+            let sig_ref: &'static str = Box::leak(signal.into_boxed_str());
+
+            let step_list: Bound<'_, PyList> = value.extract()?;
+            let mut steps_vec = Vec::new();
+
+            for item in step_list.iter() {
+                let tuple: Bound<'_, PyTuple> = item.extract()?;
+                if tuple.len() != 2 {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Each step must be a tuple of (value, timestamp)",
+                    ));
+                }
+                let val: f64 = tuple.get_item(0)?.extract()?;
+                let ts: f64 = tuple.get_item(1)?.extract()?;
+                steps_vec.push(Step::new(sig_ref, val, Duration::from_secs_f64(ts)));
+            }
+
+            rust_steps.insert(sig_ref, steps_vec);
+        }
+
+        if rust_steps.is_empty() || rust_steps.values().all(|v| v.is_empty()) {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "update_batch requires at least one step",
+            ));
+        }
+
+        match &mut self.inner {
+            InnerMonitor::Robustness(m) => {
+                let output = m.update_batch(&rust_steps);
+                Ok(PyMonitorOutput {
+                    inner: InnerMonitorOutput::Float(output),
+                })
+            }
+            InnerMonitor::EagerSatisfaction(m) | InnerMonitor::StrictSatisfaction(m) => {
+                let output = m.update_batch(&rust_steps);
+                Ok(PyMonitorOutput {
+                    inner: InnerMonitorOutput::Bool(output),
+                })
+            }
+            InnerMonitor::Rosi(m) => {
+                let output = m.update_batch(&rust_steps);
+                Ok(PyMonitorOutput {
+                    inner: InnerMonitorOutput::Interval(output),
+                })
+            }
+        }
     }
 
     fn __repr__(&self) -> String {
