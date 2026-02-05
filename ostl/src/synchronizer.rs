@@ -45,14 +45,29 @@ where
 
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
+    /// 
+    /// Steps with non-strictly-increasing timestamps are ignored with a warning.
     pub fn evaluate(&mut self, current_step: Step<T>) {
+        let signal_id = current_step.signal;
+        let current_time = current_step.timestamp;
+        
+        // Validate that timestamp is strictly increasing for this signal
+        if let Some(prev_step) = self.last_steps.get(&signal_id) {
+            if current_time <= prev_step.timestamp {
+                eprintln!(
+                    "Warning: Ignoring step for signal '{}' at {:?}. Timestamp must be strictly increasing (last: {:?}).",
+                    signal_id, current_time, prev_step.timestamp
+                );
+                return;
+            }
+        }
+        
         if self.strategy == SynchronizationStrategy::None {
+            self.last_steps.insert(signal_id, current_step.clone());
             self.pending.push_back(current_step);
             return;
         }
 
-        let signal_id = current_step.signal;
-        let current_time = current_step.timestamp;
         let current_value = current_step.value;
 
         // 1. Add this new timestamp to the global timeline
@@ -211,5 +226,91 @@ mod tests {
         assert!(result.iter().any(|s| s.signal == "B"
             && s.timestamp == Duration::from_secs(2)
             && (s.value - 10.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn test_non_increasing_timestamp_ignored() {
+        let mut sync = Synchronizer::new(SynchronizationStrategy::ZeroOrderHold);
+        
+        // First step at t=2
+        sync.evaluate(Step {
+            signal: "A",
+            value: 10.0,
+            timestamp: Duration::from_secs(2),
+        });
+        assert_eq!(sync.pending.len(), 1);
+        sync.pending.clear();
+        
+        // Valid step at t=3 (strictly increasing)
+        sync.evaluate(Step {
+            signal: "A",
+            value: 15.0,
+            timestamp: Duration::from_secs(3),
+        });
+        assert_eq!(sync.pending.len(), 1);
+        sync.pending.clear();
+        
+        // Invalid step at t=3 (equal, should be ignored)
+        sync.evaluate(Step {
+            signal: "A",
+            value: 20.0,
+            timestamp: Duration::from_secs(3),
+        });
+        assert_eq!(sync.pending.len(), 0, "Equal timestamp should be ignored");
+        
+        // Invalid step at t=1 (decreasing, should be ignored)
+        sync.evaluate(Step {
+            signal: "A",
+            value: 25.0,
+            timestamp: Duration::from_secs(1),
+        });
+        assert_eq!(sync.pending.len(), 0, "Decreasing timestamp should be ignored");
+        
+        // Valid step at t=5 (strictly increasing again)
+        sync.evaluate(Step {
+            signal: "A",
+            value: 30.0,
+            timestamp: Duration::from_secs(5),
+        });
+        assert_eq!(sync.pending.len(), 1);
+    }
+
+    #[test]
+    fn test_different_signals_independent_timestamps() {
+        let mut sync = Synchronizer::new(SynchronizationStrategy::None);
+        
+        // Signal A at t=5
+        sync.evaluate(Step {
+            signal: "A",
+            value: 10.0,
+            timestamp: Duration::from_secs(5),
+        });
+        assert_eq!(sync.pending.len(), 1);
+        sync.pending.clear();
+        
+        // Signal B at t=2 is valid (different signal)
+        sync.evaluate(Step {
+            signal: "B",
+            value: 20.0,
+            timestamp: Duration::from_secs(2),
+        });
+        assert_eq!(sync.pending.len(), 1);
+        sync.pending.clear();
+        
+        // Signal A at t=3 is invalid (less than previous A timestamp)
+        sync.evaluate(Step {
+            signal: "A",
+            value: 15.0,
+            timestamp: Duration::from_secs(3),
+        });
+        assert_eq!(sync.pending.len(), 0, "Signal A timestamp must be > 5");
+        
+        // Signal B at t=3 is valid (greater than previous B timestamp)
+        sync.evaluate(Step {
+            signal: "B",
+            value: 25.0,
+            timestamp: Duration::from_secs(3),
+        });
+        assert_eq!(sync.pending.len(), 1);
     }
 }
