@@ -47,5 +47,7 @@ fn main() {
     println!("   Outputs: {}", output5.total_outputs());
 
     println!("\n=== Test Complete ===");
-    println!("\nNote: Warning messages are printed to stderr when invalid timestamps are detected.");
+    println!(
+        "\nNote: Warning messages are printed to stderr when invalid timestamps are detected."
+    );
 }
