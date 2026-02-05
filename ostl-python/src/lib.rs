@@ -12,64 +12,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::time::Duration;
 
-// -----------------------------------------------------------------------------
-// 1. Formula Parsing Function
-// -----------------------------------------------------------------------------
-
-/// Parse an STL formula from a string using the same DSL syntax as the Rust `stl!` macro.
-///
-/// This allows you to write formulas using the same syntax as Rust, making it easy
-/// to port formulas between Python and Rust code.
-///
-/// # Syntax
-///
-/// ## Predicates
-/// - `signal > value` - Signal greater than value
-/// - `signal < value` - Signal less than value
-/// - `signal >= value` - Signal greater than or equal to value
-/// - `signal <= value` - Signal less than or equal to value
-///
-/// ## Boolean Constants
-/// - `true` - Always true
-/// - `false` - Always false
-///
-/// ## Unary Operators
-/// - `!(sub)` or `not(sub)` - Negation
-/// - `G[start, end](sub)` or `globally[start, end](sub)` - Globally (always)
-/// - `F[start, end](sub)` or `eventually[start, end](sub)` - Eventually (finally)
-///
-/// ## Binary Operators
-/// - `left && right` or `left and right` - Conjunction
-/// - `left || right` or `left or right` - Disjunction
-/// - `left -> right` or `left implies right` - Implication
-/// - `left U[start, end] right` or `left until[start, end] right` - Until
-///
-/// # Examples
-///
-/// ```python
-/// from ostl_python import parse_formula
-///
-/// # Simple predicate
-/// f = parse_formula("x > 5")
-///
-/// # Globally operator
-/// f = parse_formula("G[0, 10](x > 5)")
-///
-/// # Complex formula
-/// f = parse_formula("G[0, 10](x > 5) && F[0, 5](y < 3)")
-///
-/// # Using keyword syntax
-/// f = parse_formula("globally[0, 10](x > 5) and eventually[0, 5](y < 3)")
-/// ```
-///
-/// # Arguments
-/// * `formula_str` - A string containing an STL formula
-///
-/// # Returns
-/// * `Formula` - The parsed formula object
-///
-/// # Raises
-/// * `ValueError` - If the formula string cannot be parsed
 #[pyfunction]
 #[pyo3(name = "parse_formula")]
 fn py_parse_formula(formula_str: &str) -> PyResult<Formula> {
@@ -77,13 +19,7 @@ fn py_parse_formula(formula_str: &str) -> PyResult<Formula> {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
     Ok(Formula { inner: formula })
 }
-
-// -----------------------------------------------------------------------------
-// 2. Formula Wrapper
-// -----------------------------------------------------------------------------
-
-/// A Python wrapper around the Rust FormulaDefinition enum.
-#[pyclass]
+#[pyclass(name = "Formula", module = "ostl_python.ostl_python")]
 #[derive(Clone)]
 struct Formula {
     inner: FormulaDefinition,
@@ -92,17 +28,6 @@ struct Formula {
 #[pymethods]
 impl Formula {
     // --- Atomic Propositions ---
-
-    /// Create a greater-than atomic predicate: signal > value
-    ///
-    /// # Arguments
-    /// * `signal` - Name of the signal to compare
-    /// * `value` - Threshold value
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.gt('x', 0.5)  # x > 0.5
-    /// ```
     #[staticmethod]
     // #[pyo3(text_signature = "(signal, value)")]
     fn gt(signal: String, value: f64) -> Self {
@@ -113,16 +38,6 @@ impl Formula {
         }
     }
 
-    /// Create a less-than atomic predicate: signal < value
-    ///
-    /// # Arguments
-    /// * `signal` - Name of the signal to compare
-    /// * `value` - Threshold value
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.lt('y', 0.8)  # y < 0.8
-    /// ```
     #[staticmethod]
     #[pyo3(text_signature = "(signal, value)")]
     fn lt(signal: String, value: f64) -> Self {
@@ -132,12 +47,6 @@ impl Formula {
         }
     }
 
-    /// Create a constant true formula (⊤)
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.true_()
-    /// ```
     #[staticmethod]
     #[pyo3(text_signature = "()")]
     fn true_() -> Self {
@@ -146,12 +55,6 @@ impl Formula {
         }
     }
 
-    /// Create a constant false formula (⊥)
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.false_()
-    /// ```
     #[staticmethod]
     #[pyo3(text_signature = "()")]
     fn false_() -> Self {
@@ -160,21 +63,6 @@ impl Formula {
         }
     }
 
-    /// Create a greater-than atomic predicate with a variable threshold: signal > variable
-    ///
-    /// The variable value is looked up at runtime, allowing dynamic thresholds.
-    ///
-    /// # Arguments
-    /// * `signal` - Name of the signal to compare
-    /// * `variable` - Name of the variable (without $ prefix)
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.gt_var('x', 'threshold')  # x > $threshold
-    /// ```
-    ///
-    /// # Note
-    /// Requires Incremental algorithm. The Naive algorithm does not support variables.
     #[staticmethod]
     #[pyo3(text_signature = "(signal, variable)")]
     fn gt_var(signal: String, variable: String) -> Self {
@@ -185,21 +73,6 @@ impl Formula {
         }
     }
 
-    /// Create a less-than atomic predicate with a variable threshold: signal < variable
-    ///
-    /// The variable value is looked up at runtime, allowing dynamic thresholds.
-    ///
-    /// # Arguments
-    /// * `signal` - Name of the signal to compare
-    /// * `variable` - Name of the variable (without $ prefix)
-    ///
-    /// # Example
-    /// ```python
-    /// Formula.lt_var('y', 'limit')  # y < $limit
-    /// ```
-    ///
-    /// # Note
-    /// Requires Incremental algorithm. The Naive algorithm does not support variables.
     #[staticmethod]
     #[pyo3(text_signature = "(signal, variable)")]
     fn lt_var(signal: String, variable: String) -> Self {
@@ -210,13 +83,6 @@ impl Formula {
         }
     }
 
-    // --- Boolean Logic ---
-
-    /// Create conjunction (AND) of two formulas: left ∧ right
-    ///
-    /// # Arguments
-    /// * `left` - First formula
-    /// * `right` - Second formula
     #[staticmethod]
     #[pyo3(text_signature = "(left, right)")]
     fn and_(left: &Formula, right: &Formula) -> Self {
@@ -228,11 +94,6 @@ impl Formula {
         }
     }
 
-    /// Create disjunction (OR) of two formulas: left ∨ right
-    ///
-    /// # Arguments
-    /// * `left` - First formula
-    /// * `right` - Second formula
     #[staticmethod]
     #[pyo3(text_signature = "(left, right)")]
     fn or_(left: &Formula, right: &Formula) -> Self {
@@ -244,10 +105,6 @@ impl Formula {
         }
     }
 
-    /// Create negation (NOT) of a formula: ¬child
-    ///
-    /// # Arguments
-    /// * `child` - Formula to negate
     #[staticmethod]
     #[pyo3(text_signature = "(child)")]
     fn not_(child: &Formula) -> Self {
@@ -256,11 +113,6 @@ impl Formula {
         }
     }
 
-    /// Create implication: left → right (if left then right)
-    ///
-    /// # Arguments
-    /// * `left` - Antecedent (condition)
-    /// * `right` - Consequent (result)
     #[staticmethod]
     #[pyo3(text_signature = "(left, right)")]
     fn implies(left: &Formula, right: &Formula) -> Self {
@@ -274,14 +126,6 @@ impl Formula {
 
     // --- Temporal Logic ---
 
-    /// Create globally (always) temporal formula: G[start,end](child)
-    ///
-    /// The formula must hold at all time points in [start, end].
-    ///
-    /// # Arguments
-    /// * `start` - Start of time interval (seconds)
-    /// * `end` - End of time interval (seconds)
-    /// * `child` - Formula that must hold throughout
     #[staticmethod]
     #[pyo3(text_signature = "(start, end, child)")]
     fn always(start: f64, end: f64, child: &Formula) -> Self {
@@ -294,14 +138,6 @@ impl Formula {
         }
     }
 
-    /// Create eventually (finally) temporal formula: F[start,end](child)
-    ///
-    /// The formula must hold at some time point in [start, end].
-    ///
-    /// # Arguments
-    /// * `start` - Start of time interval (seconds)
-    /// * `end` - End of time interval (seconds)
-    /// * `child` - Formula that must hold at some point
     #[staticmethod]
     #[pyo3(text_signature = "(start, end, child)")]
     fn eventually(start: f64, end: f64, child: &Formula) -> Self {
@@ -314,15 +150,6 @@ impl Formula {
         }
     }
 
-    /// Create until temporal formula: left U[start,end] right
-    ///
-    /// Left must hold until right becomes true (within [start, end]).
-    ///
-    /// # Arguments
-    /// * `start` - Start of time interval (seconds)
-    /// * `end` - End of time interval (seconds)
-    /// * `left` - Formula that must hold until right
-    /// * `right` - Formula that must eventually become true
     #[staticmethod]
     #[pyo3(text_signature = "(start, end, left, right)")]
     fn until(start: f64, end: f64, left: &Formula, right: &Formula) -> Self {
@@ -351,30 +178,13 @@ impl Formula {
 // -----------------------------------------------------------------------------
 // 3. MonitorOutput Wrapper
 // -----------------------------------------------------------------------------
-
-/// We need an enum to hold the different output types since Python is dynamic
-/// but Rust types are static.
 #[derive(Clone)]
 enum InnerMonitorOutput {
     Bool(MonitorOutput<f64, bool>),
     Float(MonitorOutput<f64, f64>),
     Interval(MonitorOutput<f64, RobustnessInterval>),
 }
-
-/// A wrapper around the Rust MonitorOutput that provides idiomatic Display and Debug formatting.
-///
-/// This class wraps the output from a monitor update, preserving access to both
-/// the structured data (via `to_dict()`) and the Rust Display/Debug formatting
-/// (via `__str__()` and `__repr__()`).
-///
-/// The string representation shows verdicts in the format:
-/// ```
-/// t={timestamp}: {value}
-/// ```
-///
-/// For multiple verdicts, they are shown on separate lines.
-/// If no verdicts are available, it shows "No verdicts available".
-#[pyclass(name = "MonitorOutput")]
+#[pyclass(name = "MonitorOutput", module = "ostl_python.ostl_python")]
 #[derive(Clone)]
 struct PyMonitorOutput {
     inner: InnerMonitorOutput,
@@ -382,19 +192,6 @@ struct PyMonitorOutput {
 
 #[pymethods]
 impl PyMonitorOutput {
-    /// Convert the monitor output to a dictionary.
-    ///
-    /// Returns a dictionary containing:
-    /// - 'input_signal': the signal name
-    /// - 'input_timestamp': the input timestamp
-    /// - 'input_value': the input value
-    /// - 'evaluations': list of evaluation dictionaries, each containing:
-    ///     - 'sync_step_signal': signal name of the synchronized step
-    ///     - 'sync_step_timestamp': timestamp of the synchronized step
-    ///     - 'sync_step_value': value of the synchronized step
-    ///     - 'outputs': list of output dictionaries with:
-    ///         - 'timestamp': when the verdict is for
-    ///         - 'value': the verdict value (bool, float, or tuple depending on semantics)
     fn to_dict(&self) -> PyResult<Py<PyAny>> {
         Python::attach(|py| match &self.inner {
             InnerMonitorOutput::Bool(output) => convert_output_to_dict(py, output.clone(), |val| {
@@ -416,7 +213,6 @@ impl PyMonitorOutput {
         })
     }
 
-    /// Get the input signal name.
     #[getter]
     fn input_signal(&self) -> &'static str {
         match &self.inner {
@@ -426,7 +222,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Get the input timestamp in seconds.
     #[getter]
     fn input_timestamp(&self) -> f64 {
         match &self.inner {
@@ -436,7 +231,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Get the input value.
     #[getter]
     fn input_value(&self) -> f64 {
         match &self.inner {
@@ -446,7 +240,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Check if there are any outputs.
     fn has_outputs(&self) -> bool {
         match &self.inner {
             InnerMonitorOutput::Bool(o) => o.has_outputs(),
@@ -455,7 +248,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Get the total number of outputs.
     fn total_outputs(&self) -> usize {
         match &self.inner {
             InnerMonitorOutput::Bool(o) => o.total_outputs(),
@@ -464,7 +256,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Check if the evaluations list is empty.
     fn is_empty(&self) -> bool {
         match &self.inner {
             InnerMonitorOutput::Bool(o) => o.is_empty(),
@@ -473,10 +264,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Get the finalized verdicts as a list of (timestamp, value) tuples.
-    ///
-    /// This returns the latest verdict for each unique timestamp,
-    /// matching the behavior of Rust's `finalize()` method.
     fn finalize(&self) -> PyResult<Py<PyList>> {
         Python::attach(|py| {
             let list = match &self.inner {
@@ -549,15 +336,6 @@ impl PyMonitorOutput {
         })
     }
 
-    /// Returns the Display representation of the MonitorOutput.
-    ///
-    /// This uses the Rust Display implementation which formats verdicts as:
-    /// ```
-    /// t={timestamp}: {value}
-    /// ```
-    ///
-    /// For multiple verdicts, they are shown on separate lines.
-    /// If no verdicts are available, returns "No verdicts available".
     fn __str__(&self) -> String {
         match &self.inner {
             InnerMonitorOutput::Bool(o) => format_monitor_output(o),
@@ -566,10 +344,6 @@ impl PyMonitorOutput {
         }
     }
 
-    /// Returns the Debug representation of the MonitorOutput.
-    ///
-    /// This uses the Rust Debug implementation which shows the full
-    /// internal structure of the MonitorOutput.
     fn __repr__(&self) -> String {
         match &self.inner {
             InnerMonitorOutput::Bool(o) => format!("{:?}", o),
@@ -578,9 +352,6 @@ impl PyMonitorOutput {
         }
     }
 }
-
-/// Helper function to format MonitorOutput using the same logic as Rust's Display impl.
-/// This is needed because Display is only implemented for MonitorOutput<f64, Y>.
 fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> String {
     let finalized = output.finalize();
 
@@ -601,35 +372,7 @@ fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> St
 // -----------------------------------------------------------------------------
 // 3.5 Variables Wrapper
 // -----------------------------------------------------------------------------
-
-/// A container for variable values that can be used in STL formulas.
-///
-/// Variables allow you to create formulas with dynamic thresholds that can be
-/// updated at runtime. This is useful for adaptive monitoring where thresholds
-/// may change based on system state or external inputs.
-///
-/// # Example
-/// ```python
-/// from ostl_python import Variables, parse_formula, Monitor
-///
-/// # Create variables and set initial values
-/// vars = Variables()
-/// vars.set("threshold", 5.0)
-/// vars.set("limit", 10.0)
-///
-/// # Parse a formula using variables
-/// formula = parse_formula("x > $threshold && y < $limit")
-///
-/// # Create a monitor with variables
-/// monitor = Monitor(formula, variables=vars)
-///
-/// # Update a variable value at runtime
-/// vars.set("threshold", 7.0)  # This affects future evaluations
-/// ```
-///
-/// Note: Variable predicates require the Incremental algorithm.
-/// Using variables with the Naive algorithm will raise an error.
-#[pyclass(name = "Variables", unsendable)]
+#[pyclass(name = "Variables", module = "ostl_python.ostl_python", unsendable)]
 #[derive(Clone)]
 struct PyVariables {
     inner: Variables,
@@ -637,7 +380,6 @@ struct PyVariables {
 
 #[pymethods]
 impl PyVariables {
-    /// Create a new empty Variables container.
     #[new]
     fn new() -> Self {
         PyVariables {
@@ -645,80 +387,34 @@ impl PyVariables {
         }
     }
 
-    /// Set a variable to a value.
-    ///
-    /// # Arguments
-    /// * `name` - The variable name
-    /// * `value` - The variable value
-    ///
-    /// # Example
-    /// ```python
-    /// vars = Variables()
-    /// vars.set("threshold", 5.0)
-    /// ```
     fn set(&self, name: String, value: f64) {
         let name_ref = Box::leak(name.into_boxed_str());
         self.inner.set(name_ref, value);
     }
 
-    /// Get a variable's value.
-    ///
-    /// # Arguments
-    /// * `name` - The variable name
-    ///
-    /// # Returns
-    /// The variable's value, or None if not set.
-    ///
-    /// # Example
-    /// ```python
-    /// vars = Variables()
-    /// vars.set("x", 5.0)
-    /// print(vars.get("x"))  # prints 5.0
-    /// print(vars.get("y"))  # prints None
-    /// ```
     fn get(&self, name: String) -> Option<f64> {
         let name_ref: &'static str = Box::leak(name.into_boxed_str());
         self.inner.get(name_ref)
     }
 
-    /// Check if a variable exists.
-    ///
-    /// # Arguments
-    /// * `name` - The variable name
-    ///
-    /// # Returns
-    /// True if the variable exists, False otherwise.
     fn contains(&self, name: String) -> bool {
         let name_ref: &'static str = Box::leak(name.into_boxed_str());
         self.inner.contains(name_ref)
     }
 
-    /// Get a list of all variable names.
-    ///
-    /// # Returns
-    /// A list of variable names.
     fn names(&self) -> Vec<String> {
         self.inner.names().iter().map(|s| s.to_string()).collect()
     }
 
-    /// Remove a variable.
-    ///
-    /// # Arguments
-    /// * `name` - The variable name to remove
-    ///
-    /// # Returns
-    /// The variable's previous value, or None if it didn't exist.
     fn remove(&self, name: String) -> Option<f64> {
         let name_ref: &'static str = Box::leak(name.into_boxed_str());
         self.inner.remove(name_ref)
     }
 
-    /// Remove all variables.
     fn clear(&self) {
         self.inner.clear();
     }
 
-    /// String representation of the Variables.
     fn __str__(&self) -> String {
         let names = self.inner.names();
         if names.is_empty() {
@@ -745,9 +441,6 @@ impl PyVariables {
 // -----------------------------------------------------------------------------
 // 4. Monitor Wrapper
 // -----------------------------------------------------------------------------
-
-/// We need an enum to handle the different generics (bool, f64, RobustnessInterval)
-/// because Python types are dynamic but Rust types are static.
 enum InnerMonitor {
     StrictSatisfaction(StlMonitor<f64, bool>),
     EagerSatisfaction(StlMonitor<f64, bool>),
@@ -758,7 +451,7 @@ enum InnerMonitor {
 // Note: Monitor is marked unsendable because it contains Variables which uses Rc<RefCell>.
 // Python's GIL ensures thread safety across Python threads.
 
-#[pyclass(unsendable)]
+#[pyclass(module = "ostl_python.ostl_python", unsendable)]
 struct Monitor {
     inner: InnerMonitor,
     semantics: String,
@@ -769,34 +462,6 @@ struct Monitor {
 
 #[pymethods]
 impl Monitor {
-    /// Create a new monitor.
-    ///
-    /// Parameters:
-    /// -----------
-    /// formula : Formula
-    ///     The STL formula to monitor
-    /// semantics : str, optional
-    ///     The output semantics:
-    ///     - "StrictSatisfaction": boolean satisfaction with strict evaluation
-    ///     - "EagerSatisfaction": boolean satisfaction with eager evaluation
-    ///     - "Robustness": quantitative robustness as a single float value (default)
-    ///     - "Rosi": robustness as an interval (min, max)
-    /// algorithm : str, optional
-    ///     The monitoring algorithm:
-    ///     - "Incremental": efficient incremental monitoring (default)
-    ///     - "Naive": simple but less efficient
-    /// synchronization : str, optional
-    ///     The signal synchronization method:
-    ///     - "ZeroOrderHold": zero-order hold (default)
-    ///     - "Linear": linear interpolation
-    ///     - "None": no interpolation
-    /// variables : Variables, optional
-    ///     A Variables object containing runtime variable values.
-    ///     Required if the formula contains variable predicates (e.g., `x > $threshold`).
-    ///     Note: Variable predicates require the Incremental algorithm.
-    /// Returns:
-    /// --------
-    /// Monitor
     #[new]
     #[pyo3(signature = (formula, semantics="Robustness", algorithm="Incremental", synchronization="ZeroOrderHold", variables=None))]
     fn new(
@@ -909,25 +574,6 @@ impl Monitor {
         }
     }
 
-    /// Update the monitor with a new data point.
-    ///
-    /// Parameters:
-    /// -----------
-    /// signal : str
-    ///     The signal name
-    /// value : float
-    ///     The signal value
-    /// timestamp : float
-    ///     The timestamp in seconds
-    ///
-    /// Returns:
-    /// --------
-    /// MonitorOutput
-    ///     An object containing the monitor output with:
-    ///     - Display/Debug formatting via __str__() and __repr__()
-    ///     - Structured data access via to_dict() method
-    ///     - Properties: input_signal, input_timestamp, input_value
-    ///     - Methods: has_outputs(), total_outputs(), is_empty(), finalize()
     fn update(&mut self, signal: String, value: f64, timestamp: f64) -> PyMonitorOutput {
         let sig_ref = Box::leak(signal.into_boxed_str());
         let step = Step::new(sig_ref, value, Duration::from_secs_f64(timestamp));
@@ -954,11 +600,6 @@ impl Monitor {
         }
     }
 
-    /// Get the set of signal identifiers used in the monitor's formula.
-    /// Returns:
-    /// --------
-    /// Set[str]
-    ///     A set of signal names (identifiers) used in the formula.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         match &mut self.inner {
             InnerMonitor::StrictSatisfaction(m) => m.get_signal_identifiers(),
@@ -968,62 +609,10 @@ impl Monitor {
         }
     }
 
-    /// Get the Variables object associated with this monitor.
-    ///
-    /// This allows you to update variable values at runtime, affecting
-    /// future evaluations of the formula.
-    ///
-    /// Returns:
-    /// --------
-    /// Variables
-    ///     The Variables object containing runtime variable values.
-    ///
-    /// Example:
-    /// --------
-    /// ```python
-    /// monitor = Monitor(formula, variables=vars)
-    /// # Update a variable at runtime
-    /// monitor.get_variables().set("threshold", 10.0)
-    /// ```
     fn get_variables(&self) -> PyVariables {
         self.variables.clone()
     }
 
-    /// Update the monitor with multiple data points in batch.
-    ///
-    /// This method processes multiple signal values at once. Steps are automatically
-    /// sorted by timestamp in chronological order before processing, which is optimal
-    /// for the Incremental algorithm.
-    ///
-    /// Parameters:
-    /// -----------
-    /// steps : dict[str, list[tuple[float, float]]]
-    ///     A dictionary mapping signal names to lists of (value, timestamp) tuples.
-    ///     Example: {"x": [(1.0, 0.0), (2.0, 1.0)], "y": [(5.0, 0.5)]}
-    ///
-    /// Returns:
-    /// --------
-    /// MonitorOutput
-    ///     A single MonitorOutput containing all evaluation results from processing
-    ///     the batch. The input metadata reflects the last step processed.
-    ///
-    /// Raises:
-    /// -------
-    /// ValueError
-    ///     If the steps dictionary is empty.
-    ///
-    /// Example:
-    /// --------
-    /// ```python
-    /// steps = {
-    ///     "temperature": [(25.0, 1.0), (26.0, 2.0)],
-    ///     "pressure": [(101.3, 1.5)]
-    /// }
-    /// output = monitor.update_batch(steps)
-    /// print(output)  # Display all finalized verdicts
-    /// for ts, val in output.finalize():
-    ///     print(f"t={ts}: {val}")
-    /// ```
     fn update_batch(&mut self, steps: &Bound<'_, PyDict>) -> PyResult<PyMonitorOutput> {
         // Convert Python dict to Rust HashMap<&'static str, Vec<Step<f64>>>
         let mut rust_steps: HashMap<&'static str, Vec<Step<f64>>> = HashMap::new();
@@ -1085,8 +674,6 @@ impl Monitor {
         )
     }
 }
-
-/// Helper function to convert Rust MonitorOutput to a Python Dictionary
 fn convert_output_to_dict<Y, F>(
     py: Python,
     output: MonitorOutput<f64, Y>,

@@ -15,3 +15,9 @@ dynamic = ["version"]
 [tool.maturin]
 # Python source directory for additional files (like .pyi)
 python-source = "python"
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings-python>=0.24",
+]
