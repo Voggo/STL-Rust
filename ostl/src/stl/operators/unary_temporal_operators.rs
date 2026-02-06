@@ -88,10 +88,6 @@ where
                         // New step: Safe to prune back and append (Lemire)
                         pop_dominated_values(&mut self.cache, &sub_step, true); // true for Max (Eventually)
                         self.cache.add_step(sub_step);
-                    } else {
-                        // Old step: It was previously pruned.
-                        // Because we use robust pruning, we know it is still dominated.
-                        // We safely ignore it.
                     }
                 }
             }
@@ -265,10 +261,6 @@ where
                         // New step: Safe to prune back and append (Lemire)
                         pop_dominated_values(&mut self.cache, &sub_step, false); // false for Min (Globally)
                         self.cache.add_step(sub_step);
-                    } else {
-                        // Old step: It was previously pruned.
-                        // Because we use robust pruning, we know it is still dominated.
-                        // We safely ignore it.
                     }
                 }
             }
