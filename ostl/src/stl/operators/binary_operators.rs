@@ -71,42 +71,6 @@ where
 
                     left_cache.pop_front();
                     right_cache.pop_front();
-                } else if l.timestamp < r.timestamp {
-                    // 2. Left is earlier
-                    let l_ts = l.timestamp;
-                    let l_val = l.value;
-
-                    // Eager Short-Circuit Check
-                    if IS_EAGER {
-                        output_robustness.push(Step::new(
-                            "output",
-                            combine_op(l_val, right_last_known.value),
-                            l_ts,
-                        ));
-                        *left_last_known = left_cache.pop_front().unwrap();
-                        continue;
-                    }
-
-                    // In Strict mode (and Eager fall-through), we discard the lagging step
-                    // because it can never be matched with a future step from Right.
-                    *left_last_known = left_cache.pop_front().unwrap();
-                } else {
-                    // 3. Right is earlier
-                    let r_ts = r.timestamp;
-                    let r_val = r.value;
-
-                    if IS_EAGER {
-                        output_robustness.push(Step::new(
-                            "output",
-                            combine_op(left_last_known.value, r_val),
-                            r_ts,
-                        ));
-                        *right_last_known = right_cache.pop_front().unwrap();
-                        continue;
-                    }
-
-                    // Discard lagging step
-                    *right_last_known = right_cache.pop_front().unwrap();
                 }
             }
             // Only Left has data - we must wait for Right to potentially match or exceed Left's timestamp
