@@ -602,15 +602,46 @@ impl Monitor {
 
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         match &mut self.inner {
-            InnerMonitor::StrictSatisfaction(m) => m.get_signal_identifiers(),
-            InnerMonitor::EagerSatisfaction(m) => m.get_signal_identifiers(),
-            InnerMonitor::Robustness(m) => m.get_signal_identifiers(),
-            InnerMonitor::Rosi(m) => m.get_signal_identifiers(),
+            InnerMonitor::StrictSatisfaction(m) => m.signal_identifiers(),
+            InnerMonitor::EagerSatisfaction(m) => m.signal_identifiers(),
+            InnerMonitor::Robustness(m) => m.signal_identifiers(),
+            InnerMonitor::Rosi(m) => m.signal_identifiers(),
         }
     }
 
     fn get_variables(&self) -> PyVariables {
         self.variables.clone()
+    }
+
+    fn get_specification(&self) -> String {
+        match &self.inner {
+            InnerMonitor::StrictSatisfaction(m) => m.specification(),
+            InnerMonitor::EagerSatisfaction(m) => m.specification(),
+            InnerMonitor::Robustness(m) => m.specification(),
+            InnerMonitor::Rosi(m) => m.specification(),
+        }
+    }
+
+    fn get_algorithm(&self) -> String {
+        self.algorithm.clone()
+    }
+
+    fn get_semantics(&self) -> String {
+        self.semantics.clone()
+    }
+
+    fn get_synchronization_strategy(&self) -> String {
+        self.synchronization.clone()
+    }
+
+    fn get_temporal_depth(&self) -> f64 {
+        let duration = match &self.inner {
+            InnerMonitor::StrictSatisfaction(m) => m.temporal_depth(),
+            InnerMonitor::EagerSatisfaction(m) => m.temporal_depth(),
+            InnerMonitor::Robustness(m) => m.temporal_depth(),
+            InnerMonitor::Rosi(m) => m.temporal_depth(),
+        };
+        duration.as_secs_f64()
     }
 
     fn update_batch(&mut self, steps: &Bound<'_, PyDict>) -> PyResult<PyMonitorOutput> {
@@ -672,6 +703,16 @@ impl Monitor {
             "Monitor(semantics='{}', algorithm='{}', synchronization='{}')",
             self.semantics, self.algorithm, self.synchronization
         )
+    }
+
+    fn __str__(&self) -> String {
+        // Use the Rust Display implementation
+        match &self.inner {
+            InnerMonitor::StrictSatisfaction(m) => format!("{}", m),
+            InnerMonitor::EagerSatisfaction(m) => format!("{}", m),
+            InnerMonitor::Robustness(m) => format!("{}", m),
+            InnerMonitor::Rosi(m) => format!("{}", m),
+        }
     }
 }
 fn convert_output_to_dict<Y, F>(

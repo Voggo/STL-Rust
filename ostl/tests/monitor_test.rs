@@ -591,7 +591,7 @@ mod tests {
                 expected,
                 "Test failed for formula at index {} ({}) with algorithm {:?} and semantics {:?}",
                 i,
-                monitor.specification_to_string(),
+                monitor.specification(),
                 strategy,
                 S::as_enum()
             );
@@ -672,7 +672,7 @@ mod tests {
             .build()
             .unwrap();
 
-        println!("Testing formula: {} \n", monitor.specification_to_string());
+        println!("Testing formula: {} \n", monitor.specification());
         // pass step to monitor to ensure it works
         let step = vec![
             Step::new("x", 1.0, Duration::from_secs(0)),

@@ -11,6 +11,8 @@ monitor = ostl.Monitor(
     phi, semantics="Rosi", synchronization="ZeroOrderHold", variables=vars
 )
 
+print(monitor)
+
 # Get signal identifiers used in the formula
 signal_ids = monitor.get_signal_identifiers()
 print(f"Signal Identifiers in the formula: {signal_ids}")

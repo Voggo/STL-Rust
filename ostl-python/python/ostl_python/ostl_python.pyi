@@ -807,6 +807,12 @@ class Monitor:
 
         Returns:
             Set[str]: A set of signal names (identifiers) used in the formula.
+
+        Examples:
+            >>> phi = parse_formula("G[0,5](x > 5) && F[0,3](y < 10)")
+            >>> monitor = Monitor(phi)
+            >>> signals = monitor.get_signal_identifiers()
+            >>> print(signals)  # {'x', 'y'}
         """
         ...
 
@@ -821,9 +827,80 @@ class Monitor:
             The Variables object containing runtime variable values.
 
         Examples:
+            >>> vars = Variables()
+            >>> vars.set("threshold", 5.0)
             >>> monitor = Monitor(formula, variables=vars)
             >>> # Update a variable at runtime
             >>> monitor.get_variables().set("threshold", 10.0)
+        """
+        ...
+
+    def get_specification(self) -> str:
+        """
+        Get the STL specification as a string representation.
+
+        Returns:
+            String representation of the STL formula being monitored.
+
+        Examples:
+            >>> phi = parse_formula("G[0,5](x > 5)")
+            >>> monitor = Monitor(phi)
+            >>> print(monitor.get_specification())  # "G[0s,5s](x > 5)"
+        """
+        ...
+
+    def get_algorithm(self) -> str:
+        """
+        Get the algorithm used by this monitor.
+
+        Returns:
+            "Incremental" or "Naive"
+
+        Examples:
+            >>> monitor = Monitor(phi, algorithm="Incremental")
+            >>> print(monitor.get_algorithm())  # "Incremental"
+        """
+        ...
+
+    def get_semantics(self) -> str:
+        """
+        Get the semantics used by this monitor.
+
+        Returns:
+            One of: "StrictSatisfaction", "EagerSatisfaction", "Robustness", or "Rosi"
+
+        Examples:
+            >>> monitor = Monitor(phi, semantics="Robustness")
+            >>> print(monitor.get_semantics())  # "Robustness"
+        """
+        ...
+
+    def get_synchronization_strategy(self) -> str:
+        """
+        Get the synchronization strategy used by this monitor.
+
+        Returns:
+            One of: "ZeroOrderHold", "Linear", or "None"
+
+        Examples:
+            >>> monitor = Monitor(phi, synchronization="Linear")
+            >>> print(monitor.get_synchronization_strategy())  # "Linear"
+        """
+        ...
+
+    def get_temporal_depth(self) -> float:
+        """
+        Get the maximum lookahead required by the formula (temporal depth).
+
+        This corresponds to the maximum time interval in any temporal operator.
+
+        Returns:
+            The temporal depth in seconds.
+
+        Examples:
+            >>> phi = parse_formula("G[0,5](x > 5) && F[0,3](y < 10)")
+            >>> monitor = Monitor(phi)
+            >>> print(monitor.get_temporal_depth())  # 5.0
         """
         ...
 
@@ -864,5 +941,42 @@ class Monitor:
         ...
 
     def __repr__(self) -> str:
-        """Return string representation of the monitor."""
+        """
+        Return a brief representation of the monitor.
+
+        Returns:
+            String in the format: "Monitor(semantics='...', algorithm='...', synchronization='...')"
+        """
+        ...
+
+    def __str__(self) -> str:
+        """
+        Return the complete monitor configuration using Rust's Display trait.
+
+        This provides a detailed view of all monitor configuration including:
+        - STL specification formula
+        - Algorithm (Naive/Incremental)
+        - Semantics (Robustness/Rosi/StrictSatisfaction/EagerSatisfaction)
+        - Synchronization strategy
+        - Temporal depth
+        - Variables (if any are defined)
+
+        Returns:
+            Formatted string showing complete monitor configuration.
+
+        Examples:
+            >>> phi = parse_formula("G[0,5](x > $threshold)")
+            >>> vars = Variables()
+            >>> vars.set("threshold", 10.0)
+            >>> monitor = Monitor(phi, semantics="Robustness", variables=vars)
+            >>> print(monitor)
+            STL Monitor Configuration:
+              Specification: G[0s,5s](x > 10)
+              Algorithm: Incremental
+              Semantics: Robustness
+              Synchronization: ZeroOrderHold
+              Temporal Depth: 5s
+              Variables:
+                $threshold = 10
+        """
         ...

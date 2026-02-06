@@ -187,6 +187,8 @@ pub struct StlMonitor<T: Clone + Interpolatable, Y> {
     root_operator: Box<dyn StlOperatorTrait<T, Output = Y>>,
     synchronizer: Synchronizer<T>,
     variables: Variables,
+    algorithm: Algorithm,
+    semantics: Semantics,
 }
 
 /// Entry point for the builder.
@@ -332,18 +334,64 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
         }
     }
 
-    pub fn specification_to_string(&self) -> String {
+    /// Returns the STL specification as a string representation.
+    pub fn specification(&self) -> String {
         self.root_operator.to_string()
     }
 
-    pub fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
+    /// Returns the algorithm used by this monitor (Naive or Incremental).
+    pub fn algorithm(&self) -> Algorithm {
+        self.algorithm
+    }
+
+    /// Returns the semantics used by this monitor.
+    pub fn semantics(&self) -> Semantics {
+        self.semantics
+    }
+
+    /// Returns the synchronization strategy used by this monitor.
+    pub fn synchronization_strategy(&self) -> SynchronizationStrategy {
+        self.synchronizer.strategy()
+    }
+
+    /// Returns the signal identifiers used in the formula.
+    pub fn signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
         self.root_operator.get_signal_identifiers()
     }
 
-    /// Get a reference to the variables context used by this monitor.
+    /// Returns the maximum lookahead required by the formula (temporal depth).
+    pub fn temporal_depth(&self) -> Duration {
+        self.root_operator.get_max_lookahead()
+    }
+
+    /// Returns a clone of the variables context used by this monitor.
     /// This allows reading and updating variable values at runtime.
-    pub fn get_variables(&self) -> Variables {
+    pub fn variables(&self) -> Variables {
         self.variables.clone()
+    }
+}
+
+impl<T: Clone + Interpolatable, Y> Display for StlMonitor<T, Y> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "STL Monitor Configuration:")?;
+        writeln!(f, "  Specification: {}", self.root_operator)?;
+        writeln!(f, "  Algorithm: {:?}", self.algorithm)?;
+        writeln!(f, "  Semantics: {:?}", self.semantics)?;
+        writeln!(f, "  Synchronization: {:?}", self.synchronizer.strategy())?;
+        writeln!(
+            f,
+            "  Temporal Depth: {:?}",
+            self.root_operator.get_max_lookahead()
+        )?;
+
+        if !self.variables.is_empty() {
+            writeln!(f, "  Variables:")?;
+            for (name, value) in self.variables.iter() {
+                writeln!(f, "    ${} = {}", name, value)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -487,6 +535,8 @@ where
             root_operator,
             synchronizer,
             variables: self.variables.clone(),
+            algorithm: self.algorithm,
+            semantics: self.semantics,
         })
     }
 
@@ -689,11 +739,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let spec = monitor.specification_to_string();
-        let spec_naive = monitor_naive.specification_to_string();
+        let spec = monitor.specification();
+        let spec_naive = monitor_naive.specification();
 
-        let naive_ids = monitor_naive.get_signal_identifiers();
-        let inc_ids = monitor.get_signal_identifiers();
+        let naive_ids = monitor_naive.signal_identifiers();
+        let inc_ids = monitor.signal_identifiers();
         assert_eq!(naive_ids, inc_ids);
         assert!(naive_ids.contains("x"));
         assert!(naive_ids.contains("y"));
@@ -796,7 +846,7 @@ mod tests {
             .unwrap();
 
         // Get variables back from monitor
-        let vars = monitor.get_variables();
+        let vars = monitor.variables();
         assert_eq!(vars.get("A"), Some(1.0));
         assert_eq!(vars.get("B"), Some(2.0));
     }
@@ -862,5 +912,77 @@ mod tests {
         assert!(verdicts[2].value.0 != verdicts[2].value.1); // non-final
         assert!(verdicts[3].timestamp == Duration::from_secs(4));
         assert!(verdicts[3].value.0 != verdicts[3].value.1); // non-final
+    }
+
+    #[test]
+    fn test_monitor_display_and_getters() {
+        use crate::stl::parse_stl;
+
+        // Create a formula with variables
+        let formula = parse_stl("G[0,5] (x > $threshold) && F[1,3] (y < 20.0)").unwrap();
+        let variables = Variables::new();
+        variables.set("threshold", 10.0);
+
+        let mut monitor = StlMonitor::builder()
+            .formula(formula)
+            .semantics(Robustness)
+            .algorithm(Algorithm::Incremental)
+            .synchronization_strategy(SynchronizationStrategy::Linear)
+            .variables(variables)
+            .build()
+            .unwrap();
+
+        // Test getters
+        assert_eq!(monitor.algorithm(), Algorithm::Incremental);
+        assert_eq!(monitor.semantics(), Semantics::Robustness);
+        assert_eq!(
+            monitor.synchronization_strategy(),
+            SynchronizationStrategy::Linear
+        );
+        assert_eq!(monitor.temporal_depth(), Duration::from_secs(5));
+
+        // Test specification getter
+        let spec = monitor.specification();
+        assert!(spec.contains("x"));
+        assert!(spec.contains("y"));
+
+        // Test variables getter
+        let vars = monitor.variables();
+        assert_eq!(vars.get("threshold"), Some(10.0));
+
+        // Test signal identifiers
+        let signals = monitor.signal_identifiers();
+        assert!(signals.contains("x"));
+        assert!(signals.contains("y"));
+        assert_eq!(signals.len(), 2);
+
+        // Test Display implementation
+        let display_output = format!("{}", monitor);
+        assert!(display_output.contains("STL Monitor Configuration"));
+        assert!(display_output.contains("Algorithm: Incremental"));
+        assert!(display_output.contains("Semantics: Robustness"));
+        assert!(display_output.contains("Synchronization: Linear"));
+        assert!(display_output.contains("Temporal Depth: 5s"));
+        assert!(display_output.contains("Variables:"));
+        assert!(display_output.contains("$threshold = 10"));
+    }
+
+    #[test]
+    fn test_monitor_display_no_variables() {
+        let formula = FormulaDefinition::GreaterThan("x", 5.0);
+
+        let monitor = StlMonitor::builder()
+            .formula(formula)
+            .semantics(StrictSatisfaction)
+            .algorithm(Algorithm::Incremental)
+            .build()
+            .unwrap();
+
+        // Test Display implementation without variables
+        let display_output = format!("{}", monitor);
+        assert!(display_output.contains("STL Monitor Configuration"));
+        assert!(display_output.contains("Algorithm: Incremental"));
+        assert!(display_output.contains("Semantics: StrictSatisfaction"));
+        assert!(!display_output.contains("Variables:")); // Should not appear
     }
 }
