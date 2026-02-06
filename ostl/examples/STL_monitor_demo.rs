@@ -209,7 +209,7 @@ fn main() {
         .build()
         .unwrap();
 
-    println!("Monitoring formula: {}", monitor.specification_to_string());
+    println!("Monitoring formula: {}", monitor.specification());
 
     // Basic CLI parsing for anomaly injection (no external crates required)
     let mut anomaly_time: Option<Duration> = None;
@@ -336,11 +336,7 @@ fn main() {
         for out in result_x.outputs_iter() {
             let entry = OutputEntry {
                 // prefix signal name so the plot can distinguish monitors
-                signal: format!(
-                    "spec1_/{}/{}",
-                    monitor.specification_to_string(),
-                    out.signal
-                ),
+                signal: format!("spec1_/{}/{}", monitor.specification(), out.signal),
                 value: Some(if out.value { 1.0 } else { 0.0 }),
                 timestamp_secs: out.timestamp.as_secs_f64(),
             };
@@ -350,7 +346,7 @@ fn main() {
             let entry = OutputEntry {
                 signal: format!(
                     "spec2_/{}/{}",
-                    monitor_eventually.specification_to_string(),
+                    monitor_eventually.specification(),
                     out.signal
                 ),
                 value: Some(if out.value { 1.0 } else { 0.0 }),

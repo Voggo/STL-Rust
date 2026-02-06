@@ -70,7 +70,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             .semantics(StrictSatisfaction)
             .build()
             .unwrap();
-        let spec_str = temp.specification_to_string();
+        let spec_str = temp.specification();
         let formula_name = format!("{}: {}", id, spec_str);
 
         let mut group = c.benchmark_group(&formula_name);

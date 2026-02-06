@@ -564,6 +564,21 @@ impl Variables {
     pub fn clear(&self) {
         self.inner.borrow_mut().clear();
     }
+
+    /// Check if the variable context is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.borrow().is_empty()
+    }
+
+    /// Get the number of variables.
+    pub fn len(&self) -> usize {
+        self.inner.borrow().len()
+    }
+
+    /// Iterate over all variable name-value pairs.
+    pub fn iter(&self) -> Vec<(&'static str, f64)> {
+        self.inner.borrow().iter().map(|(k, v)| (*k, *v)).collect()
+    }
 }
 
 #[cfg(test)]

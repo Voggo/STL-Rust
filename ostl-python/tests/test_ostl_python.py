@@ -1180,5 +1180,161 @@ class TestMonitorWithVariables:
         assert "naive" in str(exc_info.value).lower() or "Variable" in str(exc_info.value)
 
 
+class TestMonitorGetters:
+    """Test all the monitor getter methods."""
+
+    def test_get_algorithm(self):
+        """Test getting the algorithm from a monitor."""
+        formula = ostl.parse_formula("x > 5")
+        
+        monitor_inc = ostl.Monitor(formula, algorithm="Incremental")
+        assert monitor_inc.get_algorithm() == "Incremental"
+        
+        monitor_naive = ostl.Monitor(formula, algorithm="Naive", semantics="Robustness")
+        assert monitor_naive.get_algorithm() == "Naive"
+
+    def test_get_semantics(self):
+        """Test getting the semantics from a monitor."""
+        formula = ostl.parse_formula("x > 5")
+        
+        monitor_rob = ostl.Monitor(formula, semantics="Robustness")
+        assert monitor_rob.get_semantics() == "Robustness"
+        
+        monitor_strict = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        assert monitor_strict.get_semantics() == "StrictSatisfaction"
+        
+        monitor_eager = ostl.Monitor(formula, semantics="EagerSatisfaction")
+        assert monitor_eager.get_semantics() == "EagerSatisfaction"
+        
+        monitor_rosi = ostl.Monitor(formula, semantics="Rosi")
+        assert monitor_rosi.get_semantics() == "Rosi"
+
+    def test_get_synchronization_strategy(self):
+        """Test getting the synchronization strategy from a monitor."""
+        formula = ostl.parse_formula("x > 5")
+        
+        monitor_zoh = ostl.Monitor(formula, synchronization="ZeroOrderHold")
+        assert monitor_zoh.get_synchronization_strategy() == "ZeroOrderHold"
+        
+        monitor_linear = ostl.Monitor(formula, synchronization="Linear")
+        assert monitor_linear.get_synchronization_strategy() == "Linear"
+        
+        monitor_none = ostl.Monitor(formula, synchronization="None")
+        assert monitor_none.get_synchronization_strategy() == "None"
+
+    def test_get_specification(self):
+        """Test getting the specification string from a monitor."""
+        formula = ostl.parse_formula("G[0,5](x > 10)")
+        monitor = ostl.Monitor(formula)
+        
+        spec = monitor.get_specification()
+        assert "x" in spec
+        assert "10" in spec
+        assert "G" in spec or "globally" in spec.lower()
+
+    def test_get_temporal_depth(self):
+        """Test getting the temporal depth from a monitor."""
+        # Single temporal operator
+        formula1 = ostl.parse_formula("G[0,5](x > 10)")
+        monitor1 = ostl.Monitor(formula1)
+        assert monitor1.get_temporal_depth() == 5.0
+        
+        # Multiple temporal operators - should return the max
+        formula2 = ostl.parse_formula("G[0,5](x > 10) && F[0,3](y < 20)")
+        monitor2 = ostl.Monitor(formula2)
+        assert monitor2.get_temporal_depth() == 5.0
+        
+        # Nested temporal operators
+        formula3 = ostl.parse_formula("G[0,10](F[0,3](x > 5))")
+        monitor3 = ostl.Monitor(formula3)
+        assert monitor3.get_temporal_depth() == 13.0  # 10 + 3
+
+    def test_get_signal_identifiers(self):
+        """Test getting signal identifiers from a monitor."""
+        # Single signal
+        formula1 = ostl.parse_formula("x > 5")
+        monitor1 = ostl.Monitor(formula1)
+        signals1 = monitor1.get_signal_identifiers()
+        assert "x" in signals1
+        assert len(signals1) == 1
+        
+        # Multiple signals
+        formula2 = ostl.parse_formula("G[0,5](x > 10) && F[0,3](y < 20)")
+        monitor2 = ostl.Monitor(formula2)
+        signals2 = monitor2.get_signal_identifiers()
+        assert "x" in signals2
+        assert "y" in signals2
+        assert len(signals2) == 2
+
+
+class TestMonitorDisplay:
+    """Test the Display trait implementation (__str__ and __repr__)."""
+
+    def test_monitor_str_basic(self):
+        """Test the string representation of a monitor without variables."""
+        # Use a multi-signal formula to test synchronization
+        formula = ostl.parse_formula("G[0,5](x > 10) && y < 20")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="Robustness",
+            algorithm="Incremental",
+            synchronization="Linear"
+        )
+        
+        display = str(monitor)
+        assert "STL Monitor Configuration" in display
+        assert "Specification:" in display
+        assert "Algorithm: Incremental" in display
+        assert "Semantics: Robustness" in display
+        assert "Synchronization: Linear" in display
+        assert "Temporal Depth:" in display
+        assert "5s" in display
+
+    def test_monitor_str_with_variables(self):
+        """Test the string representation of a monitor with variables."""
+        vars = ostl.Variables()
+        vars.set("threshold", 10.0)
+        vars.set("limit", 20.0)
+        
+        formula = ostl.parse_formula("G[0,5](x > $threshold) && y < $limit")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="Robustness",
+            variables=vars
+        )
+        
+        display = str(monitor)
+        assert "STL Monitor Configuration" in display
+        assert "Variables:" in display
+        assert "$threshold = 10" in display
+        assert "$limit = 20" in display
+
+    def test_monitor_repr(self):
+        """Test the repr representation of a monitor."""
+        formula = ostl.parse_formula("x > 5")
+        monitor = ostl.Monitor(
+            formula,
+            semantics="StrictSatisfaction",
+            algorithm="Naive",
+            synchronization="None"
+        )
+        
+        repr_str = repr(monitor)
+        assert "Monitor(" in repr_str
+        assert "semantics='StrictSatisfaction'" in repr_str
+        assert "algorithm='Naive'" in repr_str
+        assert "synchronization='None'" in repr_str
+
+    def test_print_monitor(self):
+        """Test that print(monitor) works correctly."""
+        formula = ostl.parse_formula("F[0,3](x > 5)")
+        monitor = ostl.Monitor(formula)
+        
+        # Should not raise an exception
+        output = str(monitor)
+        assert len(output) > 0
+        assert "Monitor" in output
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

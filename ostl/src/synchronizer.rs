@@ -43,6 +43,11 @@ where
         }
     }
 
+    /// Returns the synchronization strategy used by this synchronizer.
+    pub fn strategy(&self) -> SynchronizationStrategy {
+        self.strategy
+    }
+
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
     ///
