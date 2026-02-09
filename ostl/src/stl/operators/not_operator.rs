@@ -99,4 +99,12 @@ mod tests {
         let expected_ids: HashSet<&'static str> = vec!["x"].into_iter().collect();
         assert_eq!(ids, expected_ids);
     }
+
+    #[test]
+    fn not_display() {
+        let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
+        let not: Not<f64, f64> = Not::new(Box::new(atomic));
+        let display_str = format!("{}", not);
+        assert_eq!(display_str, "¬(x > 10)");
+    }
 }

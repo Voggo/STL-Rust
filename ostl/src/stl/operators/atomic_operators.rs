@@ -217,27 +217,32 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn atomic_with_variables_robustness() {
-    //     let mut vars = Variables::new();
-    //     vars.set("A", 10.0);
-    //     let mut atomic = Atomic::<f64>::new_greater_than_var("x", "A", vars);
-    //     atomic.get_signal_identifiers();
+    #[test]
+    fn atomic_with_variables_robustness() {
+        let vars = Variables::new();
+        vars.set("A", 10.0);
+        let mut atomic = Atomic::<f64>::new_greater_than_var("x", "A", vars);
+        atomic.get_signal_identifiers();
 
-    //     let step1 = Step::new("x", 15.0, Duration::from_secs(5));
-    //     let robustness = atomic.update(&step1);
-    //     assert_eq!(
-    //         robustness,
-    //         vec![Step::new("output", -5.0, Duration::from_secs(5))]
-    //     );
-    //     vars.set("A", 16.0);
-    //     let step2 = Step::new("x", 8.0, Duration::from_secs(6));
-    //     let robustness2 = atomic.update(&step2);
-    //     assert_eq!(
-    //         robustness2,
-    //         vec![Step::new("output", 1.0, Duration::from_secs(8))]
-    //     );
-    // }
+        let step1 = Step::new("x", 15.0, Duration::from_secs(5));
+        let robustness = atomic.update(&step1);
+        assert_eq!(
+            robustness,
+            vec![Step::new("output", 5.0, Duration::from_secs(5))]
+        );
+
+        let vars = Variables::new();
+        vars.set("A", 10.0);
+        let mut atomic = Atomic::<f64>::new_less_than_var("x", "A", vars);
+        atomic.get_signal_identifiers();
+
+        let step1 = Step::new("x", 15.0, Duration::from_secs(5));
+        let robustness = atomic.update(&step1);
+        assert_eq!(
+            robustness,
+            vec![Step::new("output", -5.0, Duration::from_secs(5))]
+        );
+    }
 
     #[test]
     fn atomic_signal_identifiers() {
