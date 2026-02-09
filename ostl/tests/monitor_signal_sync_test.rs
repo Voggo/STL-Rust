@@ -21,7 +21,7 @@ fn test_signal_interleaving(
     interpolation_strategy: SynchronizationStrategy,
 ) {
     // test that outputs are correctly produced when signals are interleaved over multiple timesteps
-    let steps = vec![
+    let steps = [
         Step::new("x", 1.0, Duration::from_secs(0)),
         Step::new("y", 1.0, Duration::from_secs(0)),
         Step::new("x", 1.0, Duration::from_secs(2)),
