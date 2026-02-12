@@ -245,3 +245,106 @@ impl FormulaDefinition {
         out.trim_end().to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stl::core::TimeInterval;
+    use std::time::Duration;
+
+    #[test]
+    fn test_true_false_display_and_tree() {
+        let t = FormulaDefinition::True;
+        let f = FormulaDefinition::False;
+        assert_eq!(format!("{}", t), "True");
+        assert_eq!(t.to_tree_string(0), "True");
+        assert_eq!(format!("{}", f), "False");
+        assert_eq!(f.to_tree_string(0), "False");
+    }
+
+    #[test]
+    fn test_predicates_and_not() {
+        let gt = FormulaDefinition::GreaterThan("x", 5.0);
+        let lt = FormulaDefinition::LessThan("y", 2.5);
+        let not = FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan("z", 1.0)));
+
+        assert_eq!(format!("{}", gt), "x > 5");
+        assert_eq!(gt.to_tree_string(0), "x > 5");
+
+        assert_eq!(format!("{}", lt), "y < 2.5");
+        assert_eq!(lt.to_tree_string(0), "y < 2.5");
+
+        assert_eq!(format!("{}", not), "¬(z > 1)");
+        assert_eq!(not.to_tree_string(0), "Not\n    └── z > 1");
+    }
+
+    #[test]
+    fn test_logical_binary_and_or_implies() {
+        let a = FormulaDefinition::GreaterThan("x", 1.0);
+        let b = FormulaDefinition::LessThan("y", 2.0);
+
+        let and = FormulaDefinition::And(Box::new(a.clone()), Box::new(b.clone()));
+        let or = FormulaDefinition::Or(Box::new(a.clone()), Box::new(b.clone()));
+        let imp = FormulaDefinition::Implies(Box::new(a.clone()), Box::new(b.clone()));
+
+        assert_eq!(format!("{}", and), "(x > 1) ∧ (y < 2)");
+        assert_eq!(and.to_tree_string(0), "And\n    ├── x > 1\n    └── y < 2");
+
+        assert_eq!(format!("{}", or), "(x > 1) v (y < 2)");
+        assert_eq!(or.to_tree_string(0), "Or\n    ├── x > 1\n    └── y < 2");
+
+        assert_eq!(format!("{}", imp), "(x > 1) → (y < 2)");
+        assert_eq!(
+            imp.to_tree_string(0),
+            "Implies\n    ├── x > 1\n    └── y < 2"
+        );
+    }
+
+    #[test]
+    fn test_temporal_and_until() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(2),
+        };
+        let ev = FormulaDefinition::Eventually(interval, Box::new(FormulaDefinition::True));
+        let gl = FormulaDefinition::Globally(
+            TimeInterval {
+                start: Duration::from_secs(1),
+                end: Duration::from_secs(3),
+            },
+            Box::new(FormulaDefinition::False),
+        );
+        let until = FormulaDefinition::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(5),
+            },
+            Box::new(FormulaDefinition::GreaterThan("a", 0.0)),
+            Box::new(FormulaDefinition::LessThan("b", 10.0)),
+        );
+
+        assert_eq!(format!("{}", ev), "F[0, 2](True)");
+        assert_eq!(ev.to_tree_string(0), "Eventually[0,2]\n    └── True");
+
+        assert_eq!(format!("{}", gl), "G[1, 3](False)");
+        assert_eq!(gl.to_tree_string(0), "Globally[1,3]\n    └── False");
+
+        assert_eq!(format!("{}", until), "(a > 0) U[0, 5] (b < 10)");
+        assert_eq!(
+            until.to_tree_string(0),
+            "Until[0,5]\n    ├── a > 0\n    └── b < 10"
+        );
+    }
+
+    #[test]
+    fn test_variable_predicates() {
+        let gt_var = FormulaDefinition::GreaterThanVar("x", "A");
+        let lt_var = FormulaDefinition::LessThanVar("y", "B");
+
+        assert_eq!(format!("{}", gt_var), "x > $A");
+        assert_eq!(gt_var.to_tree_string(0), "x > $A");
+
+        assert_eq!(format!("{}", lt_var), "y < $B");
+        assert_eq!(lt_var.to_tree_string(0), "y < $B");
+    }
+}

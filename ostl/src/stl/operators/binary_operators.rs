@@ -456,6 +456,56 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn test_binary_display() {
+        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("y", 5.0);
+        let and = And::<f64, RingBuffer<f64>, f64, false, false>::new(
+            Box::new(atomic1.clone()),
+            Box::new(atomic2.clone()),
+            None,
+            None,
+        );
+        let or = Or::<f64, RingBuffer<f64>, f64, false, false>::new(
+            Box::new(atomic1),
+            Box::new(atomic2),
+            None,
+            None,
+        );
+
+        assert_eq!(and.to_string(), "(x > 10) ∧ (y < 5)");
+        assert_eq!(or.to_string(), "(x > 10) v (y < 5)");
+    }
+
+    #[test]
+    fn test_update_wrong_signal() {
+        let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
+        let atomic2 = Atomic::<f64>::new_less_than("y", 5.0);
+        let mut and = And::<f64, RingBuffer<f64>, f64, false, false>::new(
+            Box::new(atomic1.clone()),
+            Box::new(atomic2.clone()),
+            None,
+            None,
+        );
+        and.get_signal_identifiers();
+
+        let step = Step::new("z", 15.0, Duration::from_secs(5));
+        let robustness = and.update(&step);
+        assert_eq!(robustness.len(), 0);
+
+        let mut or = Or::<f64, RingBuffer<f64>, f64, false, false>::new(
+            Box::new(atomic1),
+            Box::new(atomic2),
+            None,
+            None,
+        );
+        or.get_signal_identifiers();
+
+        let step = Step::new("z", 15.0, Duration::from_secs(5));
+        let robustness = or.update(&step);
+        assert_eq!(robustness.len(), 0);
+    }
+
+    #[test]
     fn and_operator_robustness_strict() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);

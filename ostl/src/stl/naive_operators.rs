@@ -551,8 +551,32 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    mod stl_formula_tests {
+        use super::*;
+
+        #[test]
+        fn test_get_max_lookahead() {
+            let formula: StlFormula<f64, RingBuffer<f64>, f64> = StlFormula::new(
+                StlOperator::Globally(
+                    TimeInterval {
+                        start: Duration::from_secs(1),
+                        end: Duration::from_secs(2),
+                    },
+                    Box::new(StlOperator::False),
+                ),
+                RingBuffer::new(),
+            );
+
+            assert_eq!(formula.get_max_lookahead(), Duration::from_secs(2));
+        }
+    }
+
     use super::*;
-    use crate::ring_buffer::{RingBuffer, Step};
+    use crate::{
+        ring_buffer::{RingBuffer, Step},
+        stl::naive_operators::StlFormula,
+    };
     use std::time::Duration;
 
     // Helper to create a signal from a vector of values and timestamps
@@ -567,6 +591,10 @@ mod tests {
     #[test]
     fn atomic_greater_than_robustness() {
         let formula = StlOperator::GreaterThan("x", 10.0);
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "x > 10");
+
         let signal = create_signal(vec![15.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -585,6 +613,10 @@ mod tests {
     #[test]
     fn atomic_less_than_robustness() {
         let formula = StlOperator::LessThan("x", 10.0);
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "x < 10");
+
         let signal = create_signal(vec![5.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -603,6 +635,10 @@ mod tests {
     #[test]
     fn atomic_true_robustness() {
         let formula = StlOperator::True;
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "True");
+
         let signal = create_signal(vec![0.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -614,6 +650,10 @@ mod tests {
     #[test]
     fn atomic_false_robustness() {
         let formula = StlOperator::False;
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "False");
+
         let signal = create_signal(vec![0.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -629,6 +669,10 @@ mod tests {
     #[test]
     fn not_operator_robustness() {
         let formula = StlOperator::Not(Box::new(StlOperator::GreaterThan("x", 10.0)));
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Not\n  x > 10");
+
         let signal = create_signal(vec![15.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -643,6 +687,10 @@ mod tests {
             Box::new(StlOperator::GreaterThan("x", 10.0)),
             Box::new(StlOperator::LessThan("x", 20.0)),
         );
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "And\n  x > 10\n  x < 20");
+
         let signal = create_signal(vec![15.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -657,6 +705,9 @@ mod tests {
             Box::new(StlOperator::GreaterThan("x", 10.0)),
             Box::new(StlOperator::LessThan("x", 5.0)),
         );
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Or\n  x > 10\n  x < 5");
         let signal = create_signal(vec![15.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -671,6 +722,10 @@ mod tests {
             Box::new(StlOperator::GreaterThan("x", 10.0)),
             Box::new(StlOperator::LessThan("x", 20.0)),
         );
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Implies\n  x > 10\n  x < 20");
+
         let signal = create_signal(vec![15.0], vec![5]);
         let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
         assert_eq!(
@@ -688,6 +743,9 @@ mod tests {
             },
             Box::new(StlOperator::GreaterThan("x", 10.0)),
         );
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Eventually [0 - 4]\n  x > 10");
 
         // Case 1: Not enough data
         let signal1 = create_signal(vec![15.0, 12.0], vec![0, 2]); // Max timestamp is 2, need up to 4
@@ -730,6 +788,9 @@ mod tests {
             },
             Box::new(StlOperator::GreaterThan("x", 10.0)),
         );
+
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Always [0 - 4]\n  x > 10");
 
         // Case 1: Not enough data
         let signal1 = create_signal(vec![15.0, 12.0], vec![0, 2]); // Max timestamp is 2, need up to 4

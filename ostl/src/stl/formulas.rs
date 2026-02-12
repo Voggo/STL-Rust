@@ -90,3 +90,26 @@ pub fn get_formulas(ids: &[usize]) -> Vec<(usize, FormulaDefinition)> {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_formulas() {
+        let all_formulas = get_formulas(&[]);
+        assert_eq!(all_formulas.len(), 21);
+    }
+
+    #[test]
+    fn test_get_formulas_with_ids() {
+        let selected_formulas = get_formulas(&[1, 4, 10, 13, 16, 19]);
+        assert_eq!(selected_formulas.len(), 6);
+        assert_eq!(selected_formulas[0].0, 1);
+        assert_eq!(selected_formulas[1].0, 4);
+        assert_eq!(selected_formulas[2].0, 10);
+        assert_eq!(selected_formulas[3].0, 13);
+        assert_eq!(selected_formulas[4].0, 16);
+        assert_eq!(selected_formulas[5].0, 19);
+    }
+}
