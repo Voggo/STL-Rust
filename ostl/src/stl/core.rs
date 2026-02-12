@@ -633,4 +633,40 @@ mod variables_tests {
         assert_eq!(removed, Some(5.0));
         assert!(!vars.contains("x"));
     }
+
+    #[test]
+    fn test_variables_clear() {
+        let vars = Variables::new();
+        vars.set("a", 1.0);
+        vars.set("b", 2.0);
+        assert!(!vars.is_empty());
+
+        vars.clear();
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_variables_len() {
+        let vars = Variables::new();
+        assert_eq!(vars.len(), 0);
+
+        vars.set("a", 1.0);
+        vars.set("b", 2.0);
+        assert_eq!(vars.len(), 2);
+    }
+
+    #[test]
+    fn test_variables_names_iter() {
+        let vars = Variables::new();
+        vars.set("a", 1.0);
+        vars.set("b", 2.0);
+
+        let names = vars.names();
+        assert!(names.contains(&"a"));
+        assert!(names.contains(&"b"));
+
+        let iter = vars.iter();
+        assert!(iter.contains(&("a", 1.0)));
+        assert!(iter.contains(&("b", 2.0)));
+    }
 }

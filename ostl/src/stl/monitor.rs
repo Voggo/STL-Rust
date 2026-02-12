@@ -10,7 +10,6 @@ use crate::stl::operators::not_operator::Not;
 use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
 use crate::stl::operators::until_operator::Until;
 use crate::synchronizer::{Interpolatable, SynchronizationStrategy, Synchronizer};
-use std::any::TypeId;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::time::Duration;
@@ -483,27 +482,10 @@ where
     }
 
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str> {
-        let identifier: &'static str = if TypeId::of::<Y>() == TypeId::of::<bool>() {
-            "bool"
-        } else if TypeId::of::<Y>() == TypeId::of::<f64>() {
-            "f64"
-        } else {
-            "RobustnessInterval"
-        };
-
         let mut formula_def = self
             .formula
             .clone()
             .ok_or("Formula definition is required")?;
-
-        // Validate semantics matches output type Y
-        // (This check is theoretically redundant due to the type system now, but kept for safety)
-        match (self.semantics, identifier) {
-            (Semantics::Rosi, "RobustnessInterval") => {}
-            (Semantics::Robustness, "f64") => {}
-            (Semantics::StrictSatisfaction | Semantics::EagerSatisfaction, "bool") => {}
-            _ => return Err("Semantics does not match output type Y"),
-        }
 
         let root_operator = match (self.algorithm, self.semantics) {
             (Algorithm::Incremental, _) => {
@@ -915,6 +897,16 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "update_batch requires at least one step")]
+    fn test_batch_update_empty() {
+        let formula = stl!(G[0,2] (x > 10.0));
+        let mut monitor = StlMonitor::builder().formula(formula).build().unwrap();
+        let steps: std::collections::HashMap<&'static str, Vec<Step<f64>>> =
+            std::collections::HashMap::new();
+        monitor.update_batch(&steps);
+    }
+
+    #[test]
     fn test_monitor_display_and_getters() {
         use crate::stl::parse_stl;
 
@@ -984,5 +976,128 @@ mod tests {
         assert!(display_output.contains("Algorithm: Incremental"));
         assert!(display_output.contains("Semantics: StrictSatisfaction"));
         assert!(!display_output.contains("Variables:")); // Should not appear
+    }
+
+    mod monitor_output_tests {
+
+        use super::*;
+
+        #[test]
+        fn test_monitor_output_display() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+
+            let sync_result =
+                SyncStepResult::new(sync_step.clone(), vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+            let monitor_output_empty: MonitorOutput<f64, bool> = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![],
+            };
+
+            let display_str = format!("{}", monitor_output);
+            assert!(display_str.contains("t=1s: true"));
+            assert!(display_str.contains("t=2s: false"));
+
+            let display_empty_str = format!("{}", monitor_output_empty);
+            assert!(display_empty_str.contains("No verdicts available"));
+        }
+
+        #[test]
+        fn test_monitor_has_outputs() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step = Step::new("output", true, Duration::from_secs(1));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            assert!(monitor_output.has_outputs());
+        }
+
+        #[test]
+        fn test_monitor_total_outputs() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            assert_eq!(monitor_output.total_outputs(), 2);
+        }
+
+        #[test]
+        fn test_monitor_is_empty() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let sync_result: SyncStepResult<f64, bool> = SyncStepResult::new(sync_step, vec![]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            assert!(!monitor_output.is_empty());
+
+            // exhaust the iter
+            let mut iter = monitor_output.outputs_iter();
+            assert!(iter.next().is_none());
+        }
+
+        #[test]
+        fn test_monitor_latest_verdict_at() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let output_step2_ = Step::new("output", true, Duration::from_secs(2));
+            let sync_result =
+                SyncStepResult::new(sync_step, vec![output_step1, output_step2, output_step2_]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let verdict = monitor_output.latest_verdict_at(Duration::from_secs(1));
+            assert!(verdict.is_some());
+            assert!(verdict.unwrap().value);
+
+            let verdict2 = monitor_output.latest_verdict_at(Duration::from_secs(2));
+            assert!(verdict2.is_some());
+            assert!(verdict2.unwrap().value); // should return the latest verdict at t=2, which is true
+
+            let verdict3 = monitor_output.latest_verdict_at(Duration::from_secs(3));
+            assert!(verdict3.is_none());
+        }
+    }
+
+    mod syncstep_result_tests {
+        use super::*;
+
+        #[test]
+        fn test_sync_step_has_outputs() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step = Step::new("output", true, Duration::from_secs(1));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step]);
+
+            assert!(sync_result.has_outputs());
+        }
     }
 }

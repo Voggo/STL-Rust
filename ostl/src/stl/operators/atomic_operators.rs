@@ -150,7 +150,35 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::time::Duration;
 
-    // Atomic operators
+    #[test]
+    fn atomic_unexisting_identifier() {
+        let mut atomic = Atomic::<f64>::new_greater_than("x", 10.0);
+        atomic.get_signal_identifiers();
+        let step = Step::new("y", 15.0, Duration::from_secs(5));
+        let robustness = atomic.update(&step);
+        assert!(robustness.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "Variable 'A' not found in context")]
+    fn atomics_gt_variables_not_in_context() {
+        let vars = Variables::new();
+        let mut atomic = Atomic::<f64>::new_greater_than_var("x", "A", vars);
+        atomic.get_signal_identifiers();
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
+        atomic.update(&step);
+    }
+
+    #[test]
+    #[should_panic(expected = "Variable 'A' not found in context")]
+    fn atomics_lt_variables_not_in_context() {
+        let vars = Variables::new();
+        let mut atomic = Atomic::<f64>::new_less_than_var("x", "A", vars);
+        atomic.get_signal_identifiers();
+        let step = Step::new("x", 15.0, Duration::from_secs(5));
+        atomic.update(&step);
+    }
+
     #[test]
     fn atomic_greater_than_robustness() {
         let mut atomic = Atomic::<f64>::new_greater_than("x", 10.0);
@@ -260,5 +288,22 @@ mod tests {
         let mut atomic_false = Atomic::<f64>::new_false();
         let ids_false = atomic_false.get_signal_identifiers();
         assert_eq!(ids_false.len(), 0);
+    }
+
+    #[test]
+    fn atomic_display() {
+        let atomic_gt = Atomic::<f64>::new_greater_than("x", 10.0);
+        assert_eq!(format!("{}", atomic_gt), "x > 10");
+        let atomic_lt = Atomic::<f64>::new_less_than("y", 5.0);
+        assert_eq!(format!("{}", atomic_lt), "y < 5");
+        let vars = Variables::new();
+        let atomic_gt_var = Atomic::<f64>::new_greater_than_var("x", "A", vars.clone());
+        assert_eq!(format!("{}", atomic_gt_var), "x > $A");
+        let atomic_lt_var = Atomic::<f64>::new_less_than_var("y", "B", vars);
+        assert_eq!(format!("{}", atomic_lt_var), "y < $B");
+        let atomic_true = Atomic::<f64>::new_true();
+        assert_eq!(format!("{}", atomic_true), "True");
+        let atomic_false = Atomic::<f64>::new_false();
+        assert_eq!(format!("{}", atomic_false), "False");
     }
 }

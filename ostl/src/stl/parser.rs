@@ -562,55 +562,31 @@ mod tests {
     #[test]
     fn test_simple_greater_than() {
         let result = parse_stl("x > 5").unwrap();
-        match result {
-            FormulaDefinition::GreaterThan(sig, val) => {
-                assert_eq!(sig, "x");
-                assert_eq!(val, 5.0);
-            }
-            _ => panic!("Expected GreaterThan, got {:?}", result),
-        }
+        assert_eq!(result, FormulaDefinition::GreaterThan("x", 5.0));
     }
 
     #[test]
     fn test_simple_less_than() {
         let result = parse_stl("y < 3.5").unwrap();
-        match result {
-            FormulaDefinition::LessThan(sig, val) => {
-                assert_eq!(sig, "y");
-                assert!((val - 3.5).abs() < 1e-10);
-            }
-            _ => panic!("Expected LessThan, got {:?}", result),
-        }
+        assert_eq!(result, FormulaDefinition::LessThan("y", 3.5));
     }
 
     #[test]
     fn test_greater_equal() {
         let result = parse_stl("x >= 5").unwrap();
-        match result {
-            FormulaDefinition::Not(inner) => match *inner {
-                FormulaDefinition::LessThan(sig, val) => {
-                    assert_eq!(sig, "x");
-                    assert_eq!(val, 5.0);
-                }
-                _ => panic!("Expected LessThan inside Not"),
-            },
-            _ => panic!("Expected Not(LessThan)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::LessThan("x", 5.0)))
+        );
     }
 
     #[test]
     fn test_less_equal() {
         let result = parse_stl("x <= 5").unwrap();
-        match result {
-            FormulaDefinition::Not(inner) => match *inner {
-                FormulaDefinition::GreaterThan(sig, val) => {
-                    assert_eq!(sig, "x");
-                    assert_eq!(val, 5.0);
-                }
-                _ => panic!("Expected GreaterThan inside Not"),
-            },
-            _ => panic!("Expected Not(GreaterThan)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan("x", 5.0)))
+        );
     }
 
     #[test]
@@ -628,228 +604,313 @@ mod tests {
     #[test]
     fn test_globally() {
         let result = parse_stl("G[0, 10](x > 5)").unwrap();
-        match result {
-            FormulaDefinition::Globally(interval, inner) => {
-                assert_eq!(interval.start, Duration::from_secs(0));
-                assert_eq!(interval.end, Duration::from_secs(10));
-                assert!(matches!(*inner, FormulaDefinition::GreaterThan(..)));
-            }
-            _ => panic!("Expected Globally"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0))
+            )
+        );
     }
 
     #[test]
     fn test_globally_keyword() {
         let result = parse_stl("globally[0, 10](x > 5)").unwrap();
-        assert!(matches!(result, FormulaDefinition::Globally(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0))
+            )
+        );
     }
 
     #[test]
     fn test_eventually() {
         let result = parse_stl("F[0, 5](y < 3)").unwrap();
-        match result {
-            FormulaDefinition::Eventually(interval, inner) => {
-                assert_eq!(interval.start, Duration::from_secs(0));
-                assert_eq!(interval.end, Duration::from_secs(5));
-                assert!(matches!(*inner, FormulaDefinition::LessThan(..)));
-            }
-            _ => panic!("Expected Eventually"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5)
+                },
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_eventually_keyword() {
         let result = parse_stl("eventually[0, 5](y < 3)").unwrap();
-        assert!(matches!(result, FormulaDefinition::Eventually(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5)
+                },
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_and_symbols() {
         let result = parse_stl("x > 5 && y < 3").unwrap();
-        match result {
-            FormulaDefinition::And(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::LessThan(..)));
-            }
-            _ => panic!("Expected And"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_and_keyword() {
         let result = parse_stl("x > 5 and y < 3").unwrap();
-        assert!(matches!(result, FormulaDefinition::And(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_or_symbols() {
         let result = parse_stl("x > 5 || y < 3").unwrap();
-        match result {
-            FormulaDefinition::Or(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::LessThan(..)));
-            }
-            _ => panic!("Expected Or"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Or(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_or_keyword() {
         let result = parse_stl("x > 5 or y < 3").unwrap();
-        assert!(matches!(result, FormulaDefinition::Or(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Or(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_not_symbol() {
         let result = parse_stl("!(x > 5)").unwrap();
-        match result {
-            FormulaDefinition::Not(inner) => {
-                assert!(matches!(*inner, FormulaDefinition::GreaterThan(..)));
-            }
-            _ => panic!("Expected Not"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan("x", 5.0)))
+        );
     }
 
     #[test]
     fn test_not_keyword() {
         let result = parse_stl("not(x > 5)").unwrap();
-        assert!(matches!(result, FormulaDefinition::Not(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan("x", 5.0)))
+        );
     }
 
     #[test]
     fn test_implies_symbol() {
         let result = parse_stl("x > 5 -> y < 3").unwrap();
-        match result {
-            FormulaDefinition::Implies(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::LessThan(..)));
-            }
-            _ => panic!("Expected Implies"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Implies(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_implies_keyword() {
         let result = parse_stl("x > 5 implies y < 3").unwrap();
-        assert!(matches!(result, FormulaDefinition::Implies(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Implies(
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_until_symbol() {
         let result = parse_stl("x > 5 U[0, 10] y < 3").unwrap();
-        match result {
-            FormulaDefinition::Until(interval, left, right) => {
-                assert_eq!(interval.start, Duration::from_secs(0));
-                assert_eq!(interval.end, Duration::from_secs(10));
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::LessThan(..)));
-            }
-            _ => panic!("Expected Until"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Until(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_until_keyword() {
         let result = parse_stl("x > 5 until[0, 10] y < 3").unwrap();
-        assert!(matches!(result, FormulaDefinition::Until(..)));
+        assert_eq!(
+            result,
+            FormulaDefinition::Until(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+                Box::new(FormulaDefinition::LessThan("y", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_nested_temporal() {
         let result = parse_stl("G[0, 10](F[0, 5](x > 0))").unwrap();
-        match result {
-            FormulaDefinition::Globally(_, inner) => {
-                assert!(matches!(*inner, FormulaDefinition::Eventually(..)));
-            }
-            _ => panic!("Expected Globally(Eventually(..))"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::Eventually(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(5)
+                    },
+                    Box::new(FormulaDefinition::GreaterThan("x", 0.0))
+                ))
+            )
+        );
     }
 
     #[test]
     fn test_complex_formula() {
         let result = parse_stl("G[0, 10](x > 5) && F[0, 5](y < 3)").unwrap();
-        match result {
-            FormulaDefinition::And(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::Globally(..)));
-                assert!(matches!(*right, FormulaDefinition::Eventually(..)));
-            }
-            _ => panic!("Expected And(Globally, Eventually)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::Globally(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(10)
+                    },
+                    Box::new(FormulaDefinition::GreaterThan("x", 5.0))
+                )),
+                Box::new(FormulaDefinition::Eventually(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(5)
+                    },
+                    Box::new(FormulaDefinition::LessThan("y", 3.0))
+                ))
+            )
+        );
     }
 
     #[test]
     fn test_precedence_and_or() {
         // "and" binds tighter than "or": a || b && c == a || (b && c)
         let result = parse_stl("x > 1 || y > 2 && z > 3").unwrap();
-        match result {
-            FormulaDefinition::Or(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::And(..)));
-            }
-            _ => panic!("Expected Or(_, And(..))"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Or(
+                Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::GreaterThan("y", 2.0)),
+                    Box::new(FormulaDefinition::GreaterThan("z", 3.0))
+                ))
+            )
+        );
     }
 
     #[test]
     fn test_precedence_implies() {
         // Implies has lowest precedence: a && b -> c == (a && b) -> c
         let result = parse_stl("x > 1 && y > 2 -> z > 3").unwrap();
-        match result {
-            FormulaDefinition::Implies(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::And(..)));
-                assert!(matches!(*right, FormulaDefinition::GreaterThan(..)));
-            }
-            _ => panic!("Expected Implies(And(..), _)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Implies(
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                    Box::new(FormulaDefinition::GreaterThan("y", 2.0))
+                )),
+                Box::new(FormulaDefinition::GreaterThan("z", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_parentheses_override_precedence() {
         let result = parse_stl("(x > 1 || y > 2) && z > 3").unwrap();
-        match result {
-            FormulaDefinition::And(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::Or(..)));
-                assert!(matches!(*right, FormulaDefinition::GreaterThan(..)));
-            }
-            _ => panic!("Expected And(Or(..), _)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::Or(
+                    Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                    Box::new(FormulaDefinition::GreaterThan("y", 2.0))
+                )),
+                Box::new(FormulaDefinition::GreaterThan("z", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_chained_and() {
         // Left associative: a && b && c == (a && b) && c
         let result = parse_stl("x > 1 && y > 2 && z > 3").unwrap();
-        match result {
-            FormulaDefinition::And(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::And(..)));
-                assert!(matches!(*right, FormulaDefinition::GreaterThan(..)));
-            }
-            _ => panic!("Expected And(And(..), _)"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::And(
+                    Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                    Box::new(FormulaDefinition::GreaterThan("y", 2.0))
+                )),
+                Box::new(FormulaDefinition::GreaterThan("z", 3.0))
+            )
+        );
     }
 
     #[test]
     fn test_implies_right_associative() {
         // Right associative: a -> b -> c == a -> (b -> c)
         let result = parse_stl("x > 1 -> y > 2 -> z > 3").unwrap();
-        match result {
-            FormulaDefinition::Implies(left, right) => {
-                assert!(matches!(*left, FormulaDefinition::GreaterThan(..)));
-                assert!(matches!(*right, FormulaDefinition::Implies(..)));
-            }
-            _ => panic!("Expected Implies(_, Implies(..))"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Implies(
+                Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                Box::new(FormulaDefinition::Implies(
+                    Box::new(FormulaDefinition::GreaterThan("y", 2.0)),
+                    Box::new(FormulaDefinition::GreaterThan("z", 3.0))
+                ))
+            )
+        );
     }
 
     #[test]
     fn test_negative_number() {
         let result = parse_stl("x > -5").unwrap();
-        match result {
-            FormulaDefinition::GreaterThan(_, val) => {
-                assert_eq!(val, -5.0);
-            }
-            _ => panic!("Expected GreaterThan"),
-        }
+        assert_eq!(result, FormulaDefinition::GreaterThan("x", -5.0));
     }
 
     #[test]
@@ -886,124 +947,72 @@ mod tests {
     #[test]
     fn test_decimal_interval() {
         let result = parse_stl("G[0.5, 10.5](x > 5)").unwrap();
-        match result {
-            FormulaDefinition::Globally(interval, _) => {
-                assert_eq!(interval.start, Duration::from_secs_f64(0.5));
-                assert_eq!(interval.end, Duration::from_secs_f64(10.5));
-            }
-            _ => panic!("Expected Globally"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Globally(
+                TimeInterval {
+                    start: Duration::from_secs_f64(0.5),
+                    end: Duration::from_secs_f64(10.5)
+                },
+                Box::new(FormulaDefinition::GreaterThan("x", 5.0))
+            )
+        );
     }
 
     #[test]
     fn test_signal_with_underscore() {
         let result = parse_stl("my_signal > 5").unwrap();
-        match result {
-            FormulaDefinition::GreaterThan(sig, _) => {
-                assert_eq!(sig, "my_signal");
-            }
-            _ => panic!("Expected GreaterThan"),
-        }
-    }
-
-    #[test]
-    fn test_formula_matching_macro_syntax() {
-        // This test verifies the parser accepts the same syntax as the stl! macro
-        let formulas = vec![
-            "G[0,5]((signal>5) and ((x>0)U[0,2](true)))",
-            "eventually[0, 2](x > 0) and (globally[0, 2](x > 0))",
-            "(F[0, 2](x > 5)) && (G[0, 2](x > 0))",
-            "x > 0 && y < 10",
-            "x > 0 || y < 10",
-            "x > 0 and y < 10",
-        ];
-
-        for formula_str in formulas {
-            let result = parse_stl(formula_str);
-            assert!(
-                result.is_ok(),
-                "Failed to parse: {}\nError: {:?}",
-                formula_str,
-                result.err()
-            );
-        }
+        assert_eq!(result, FormulaDefinition::GreaterThan("my_signal", 5.0));
     }
 
     #[test]
     fn test_variable_greater_than_with_dollar() {
         let result = parse_stl("x > $threshold").unwrap();
-        match result {
-            FormulaDefinition::GreaterThanVar(sig, var) => {
-                assert_eq!(sig, "x");
-                assert_eq!(var, "threshold");
-            }
-            _ => panic!("Expected GreaterThanVar, got {:?}", result),
-        }
+        assert_eq!(result, FormulaDefinition::GreaterThanVar("x", "threshold"));
     }
 
     #[test]
     fn test_variable_less_than_with_dollar() {
         let result = parse_stl("temperature < $MAX_TEMP").unwrap();
-        match result {
-            FormulaDefinition::LessThanVar(sig, var) => {
-                assert_eq!(sig, "temperature");
-                assert_eq!(var, "MAX_TEMP");
-            }
-            _ => panic!("Expected LessThanVar, got {:?}", result),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::LessThanVar("temperature", "MAX_TEMP")
+        );
     }
 
     #[test]
     fn test_variable_without_dollar() {
         // Variables can also be used without $ prefix
         let result = parse_stl("x > A").unwrap();
-        match result {
-            FormulaDefinition::GreaterThanVar(sig, var) => {
-                assert_eq!(sig, "x");
-                assert_eq!(var, "A");
-            }
-            _ => panic!("Expected GreaterThanVar, got {:?}", result),
-        }
+        assert_eq!(result, FormulaDefinition::GreaterThanVar("x", "A"));
     }
 
     #[test]
     fn test_variable_in_temporal_formula() {
         let result = parse_stl("F[0,10](x > $threshold)").unwrap();
-        match result {
-            FormulaDefinition::Eventually(_, inner) => match *inner {
-                FormulaDefinition::GreaterThanVar(sig, var) => {
-                    assert_eq!(sig, "x");
-                    assert_eq!(var, "threshold");
-                }
-                _ => panic!("Expected GreaterThanVar inside Eventually"),
-            },
-            _ => panic!("Expected Eventually"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(10)
+                },
+                Box::new(FormulaDefinition::GreaterThanVar("x", "threshold"))
+            )
+        );
     }
 
     #[test]
     fn test_variable_mixed_with_constant() {
         // Formula with both a variable and a constant
         let result = parse_stl("x > $A && y < 10").unwrap();
-        match result {
-            FormulaDefinition::And(left, right) => {
-                match *left {
-                    FormulaDefinition::GreaterThanVar(sig, var) => {
-                        assert_eq!(sig, "x");
-                        assert_eq!(var, "A");
-                    }
-                    _ => panic!("Expected GreaterThanVar on left"),
-                }
-                match *right {
-                    FormulaDefinition::LessThan(sig, val) => {
-                        assert_eq!(sig, "y");
-                        assert_eq!(val, 10.0);
-                    }
-                    _ => panic!("Expected LessThan on right"),
-                }
-            }
-            _ => panic!("Expected And"),
-        }
+        assert_eq!(
+            result,
+            FormulaDefinition::And(
+                Box::new(FormulaDefinition::GreaterThanVar("x", "A")),
+                Box::new(FormulaDefinition::LessThan("y", 10.0))
+            )
+        );
     }
 
     #[test]
@@ -1013,5 +1022,29 @@ mod tests {
         assert_eq!(vars.len(), 2);
         assert!(vars.contains(&"threshold"));
         assert!(vars.contains(&"limit"));
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let result = parse_stl("G[0, 10](x > 5");
+        assert!(result.is_err());
+        let error = format!("{}", result.err().unwrap());
+        assert!(error.contains("Expected ')'"));
+    }
+
+    #[test]
+    fn test_parse_error_negative_interval() {
+        let result = parse_stl("G[-1, 10](x > 5)");
+        assert!(result.is_err());
+        let error = format!("{}", result.err().unwrap());
+        assert!(error.contains("non-negative"));
+    }
+
+    #[test]
+    fn test_parse_error_interval_bounds() {
+        let result = parse_stl("G[10, 5](x > 5)");
+        assert!(result.is_err());
+        let error = format!("{}", result.err().unwrap());
+        assert!(error.contains("Invalid interval"));
     }
 }
