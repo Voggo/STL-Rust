@@ -7,7 +7,7 @@ use fixtures::signals::*;
 use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessInterval;
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{Algorithm, Robustness, Rosi, StlMonitor};
+use ostl::stl::monitor::{Algorithm, DelayedQuantitative, Rosi, StlMonitor};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<S
                 // build a robustness monitor for comparison
                 let mut strict_monitor = StlMonitor::builder()
                     .formula(formula.clone())
-                    .semantics(Robustness)
+                    .semantics(DelayedQuantitative)
                     .algorithm(Algorithm::Incremental)
                     .build()
                     .unwrap();

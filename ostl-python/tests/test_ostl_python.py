@@ -164,7 +164,7 @@ class TestParseFormula:
     def test_with_monitor(self):
         """Test using parse_formula with a monitor."""
         formula = ostl.parse_formula("G[0, 5](x > 0.5)")
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
         output = monitor.update("x", 1.0, 0.0)
         # Test new MonitorOutput properties
         assert output.input_signal == "x"
@@ -275,13 +275,13 @@ class TestMonitorCreation:
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula)
         assert monitor is not None
-        assert "Robustness" in repr(monitor)
+        assert "DelayedQuantitative" in repr(monitor)
 
     def test_boolean_monitor_incremental_eager(self):
         """Test boolean monitor with explicit parameters."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor_eager = ostl.Monitor(
-            formula, semantics="EagerSatisfaction", algorithm="Incremental"
+            formula, semantics="EagerQualitative", algorithm="Incremental"
         )
         assert monitor_eager is not None
 
@@ -289,32 +289,34 @@ class TestMonitorCreation:
         """Test boolean monitor with incremental algorithm and strict semantics."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor_strict = ostl.Monitor(
-            formula, semantics="StrictSatisfaction", algorithm="Incremental"
+            formula, semantics="DelayedQualitative", algorithm="Incremental"
         )
         assert monitor_strict is not None
 
     def test_boolean_monitor_naive(self):
         """Test boolean monitor with naive algorithm."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction", algorithm="Naive")
+        monitor = ostl.Monitor(
+            formula, semantics="DelayedQualitative", algorithm="Naive"
+        )
         assert monitor is not None
 
     def test_quantitative_monitor(self):
         """Test quantitative monitor."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
         assert monitor is not None
-        assert "Robustness" in repr(monitor)
+        assert "DelayedQuantitative" in repr(monitor)
 
-    def test_robustness_monitor(self):
-        """Test robustness interval monitor."""
+    def test_DelayedQuantitative_monitor(self):
+        """Test Rosi monitor."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
         assert monitor is not None
         assert "Rosi" in repr(monitor)
 
-    def test_robustness_monitor_eager(self):
-        """Test robustness monitor (rosi semantics)."""
+    def test_DelayedQuantitative_monitor_eager(self):
+        """Test Rosi monitor."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
         assert monitor is not None
@@ -326,7 +328,7 @@ class TestMonitorUpdate:
     def test_boolean_update(self):
         """Test boolean monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -361,7 +363,7 @@ class TestMonitorUpdate:
     def test_quantitative_update(self):
         """Test quantitative monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -379,8 +381,8 @@ class TestMonitorUpdate:
                 out = eval_dict["outputs"][0]
                 assert isinstance(out["value"], float)
 
-    def test_robustness_update(self):
-        """Test robustness monitor update."""
+    def test_Rosi_update(self):
+        """Test Rosi monitor update."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
@@ -406,7 +408,7 @@ class TestMonitorUpdate:
     def test_multiple_updates(self):
         """Test multiple sequential updates."""
         formula = ostl.Formula.always(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         for t in range(5):
             output = monitor.update("x", 10.0, float(t))
@@ -418,7 +420,7 @@ class TestMonitorUpdate:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         output1 = monitor.update("x", 10.0, 0.0)
         assert output1.input_signal == "x"
@@ -433,11 +435,9 @@ class TestBatchUpdate:
     def test_batch_update_single_signal(self):
         """Test batch update with a single signal."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
-        steps = {
-            "x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]  # (value, timestamp)
-        }
+        steps = {"x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]}  # (value, timestamp)
 
         output = monitor.update_batch(steps)
 
@@ -454,33 +454,29 @@ class TestBatchUpdate:
         assert verdicts[1][1] is True
         assert verdicts[2][1] is False
 
-    def test_batch_update_robustness(self):
-        """Test batch update with robustness semantics."""
+    def test_batch_update_DelayedQuantitative(self):
+        """Test batch update with DelayedQuantitative semantics."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
-        steps = {
-            "x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]
-        }
+        steps = {"x": [(5.0, 0.0), (15.0, 1.0), (8.0, 2.0)]}
 
         output = monitor.update_batch(steps)
 
         # Check verdicts
         verdicts = output.finalize()
         assert len(verdicts) == 3
-        # Robustness: value - threshold
+        # DelayedQuantitative: value - threshold
         assert verdicts[0][1] == -5.0  # 5.0 - 10.0
-        assert verdicts[1][1] == 5.0   # 15.0 - 10.0
+        assert verdicts[1][1] == 5.0  # 15.0 - 10.0
         assert verdicts[2][1] == -2.0  # 8.0 - 10.0
 
     def test_batch_update_rosi(self):
-        """Test batch update with RoSI semantics."""
+        """Test batch update with Rosi semantics."""
         formula = ostl.Formula.gt("x", 10.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
-        steps = {
-            "x": [(5.0, 0.0), (15.0, 1.0)]
-        }
+        steps = {"x": [(5.0, 0.0), (15.0, 1.0)]}
 
         output = monitor.update_batch(steps)
         verdicts = output.finalize()
@@ -495,12 +491,9 @@ class TestBatchUpdate:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
-        steps = {
-            "x": [(10.0, 0.0), (8.0, 2.0)],
-            "y": [(5.0, 1.0), (3.0, 3.0)]
-        }
+        steps = {"x": [(10.0, 0.0), (8.0, 2.0)], "y": [(5.0, 1.0), (3.0, 3.0)]}
 
         output = monitor.update_batch(steps)
         assert output is not None
@@ -510,12 +503,10 @@ class TestBatchUpdate:
     def test_batch_update_out_of_order_timestamps(self):
         """Test that batch update handles out-of-order timestamps correctly."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         # Provide steps out of chronological order
-        steps = {
-            "x": [(15.0, 2.0), (5.0, 0.0), (8.0, 1.0)]  # Out of order
-        }
+        steps = {"x": [(15.0, 2.0), (5.0, 0.0), (8.0, 1.0)]}  # Out of order
 
         output = monitor.update_batch(steps)
 
@@ -531,7 +522,7 @@ class TestBatchUpdate:
     def test_batch_update_empty_raises_error(self):
         """Test that empty batch raises ValueError."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         with pytest.raises(ValueError, match="at least one step"):
             monitor.update_batch({})
@@ -539,7 +530,7 @@ class TestBatchUpdate:
     def test_batch_update_empty_lists_raises_error(self):
         """Test that batch with empty lists raises ValueError."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         with pytest.raises(ValueError, match="at least one step"):
             monitor.update_batch({"x": []})
@@ -547,7 +538,7 @@ class TestBatchUpdate:
     def test_batch_update_to_dict(self):
         """Test that batch update output can be converted to dict."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         steps = {"x": [(15.0, 0.0), (5.0, 1.0)]}
         output = monitor.update_batch(steps)
@@ -561,7 +552,7 @@ class TestBatchUpdate:
     def test_batch_update_has_outputs(self):
         """Test has_outputs and total_outputs methods on batch output."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         steps = {"x": [(15.0, 0.0), (5.0, 1.0), (20.0, 2.0)]}
         output = monitor.update_batch(steps)
@@ -572,7 +563,7 @@ class TestBatchUpdate:
     def test_batch_update_display(self):
         """Test that batch output can be displayed via __str__."""
         formula = ostl.Formula.gt("x", 10.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         steps = {"x": [(15.0, 0.0)]}
         output = monitor.update_batch(steps)
@@ -598,21 +589,23 @@ class TestErrorHandling:
         formula = ostl.Formula.gt("x", 5.0)
 
         with pytest.raises(ValueError, match="Invalid algorithm"):
-            ostl.Monitor(formula, semantics="strict", algorithm="invalid")
+            ostl.Monitor(formula, semantics="DelayedQualitative", algorithm="invalid")
 
     def test_naive_algorithm_with_eager(self):
         """Test that naive algorithm with eager semantics raises error."""
         formula = ostl.Formula.gt("x", 5.0)
 
         with pytest.raises(ValueError, match="Naive algorithm does not support"):
-            ostl.Monitor(formula, semantics="EagerSatisfaction", algorithm="Naive")
+            ostl.Monitor(formula, semantics="EagerQualitative", algorithm="Naive")
 
     def test_invalid_synchronization(self):
         """Test that invalid synchronization raises ValueError."""
         formula = ostl.Formula.gt("x", 5.0)
 
         with pytest.raises(ValueError, match="Invalid synchronization"):
-            ostl.Monitor(formula, semantics="strict", synchronization="invalid")
+            ostl.Monitor(
+                formula, semantics="DelayedQualitative", synchronization="invalid"
+            )
 
 
 class TestsynchronizationStrategies:
@@ -621,21 +614,27 @@ class TestsynchronizationStrategies:
     def test_zoh_synchronization(self):
         """Test zero-order hold synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction", synchronization="ZeroOrderHold")
+        monitor = ostl.Monitor(
+            formula, semantics="DelayedQualitative", synchronization="ZeroOrderHold"
+        )
         assert monitor is not None
         assert "ZeroOrderHold" in repr(monitor)
 
     def test_linear_synchronization(self):
         """Test linear synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction", synchronization="Linear")
+        monitor = ostl.Monitor(
+            formula, semantics="DelayedQualitative", synchronization="Linear"
+        )
         assert monitor is not None
         assert "Linear" in repr(monitor)
 
     def test_none_synchronization(self):
         """Test no synchronization."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction", synchronization="None")
+        monitor = ostl.Monitor(
+            formula, semantics="DelayedQualitative", synchronization="None"
+        )
         assert monitor is not None
         assert "None" in repr(monitor)
 
@@ -644,28 +643,32 @@ class TestsynchronizationStrategies:
         formula = ostl.Formula.gt("x", 5.0)
 
         monitor_zoh = ostl.Monitor(
-            formula, semantics="Robustness", synchronization="ZeroOrderHold"
+            formula, semantics="DelayedQuantitative", synchronization="ZeroOrderHold"
         )
         assert monitor_zoh is not None
 
         monitor_linear = ostl.Monitor(
-            formula, semantics="Robustness", synchronization="Linear"
+            formula, semantics="DelayedQuantitative", synchronization="Linear"
         )
         assert monitor_linear is not None
 
         monitor_none = ostl.Monitor(
-            formula, semantics="Robustness", synchronization="None"
+            formula, semantics="DelayedQuantitative", synchronization="None"
         )
         assert monitor_none is not None
 
     def test_synchronization_with_rosi(self):
-        """Test synchronization strategies work with rosi semantics."""
+        """Test synchronization strategies work with Rosi semantics."""
         formula = ostl.Formula.gt("x", 5.0)
 
-        monitor_zoh = ostl.Monitor(formula, semantics="Rosi", synchronization="ZeroOrderHold")
+        monitor_zoh = ostl.Monitor(
+            formula, semantics="Rosi", synchronization="ZeroOrderHold"
+        )
         assert monitor_zoh is not None
 
-        monitor_linear = ostl.Monitor(formula, semantics="Rosi", synchronization="Linear")
+        monitor_linear = ostl.Monitor(
+            formula, semantics="Rosi", synchronization="Linear"
+        )
         assert monitor_linear is not None
 
         monitor_none = ostl.Monitor(formula, semantics="Rosi", synchronization="None")
@@ -678,7 +681,7 @@ class TestTemporalFormulas:
     def test_always_produces_verdicts(self):
         """Test that Always formula eventually produces verdicts."""
         formula = ostl.Formula.always(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         # Feed data points
         outputs = []
@@ -693,7 +696,7 @@ class TestTemporalFormulas:
     def test_eventually_produces_verdicts(self):
         """Test that Eventually formula produces verdicts."""
         formula = ostl.Formula.eventually(0.0, 2.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         outputs = []
         for t in range(5):
@@ -708,7 +711,7 @@ class TestTemporalFormulas:
         f1 = ostl.Formula.gt("x", 0.0)
         f2 = ostl.Formula.gt("x", 10.0)
         formula = ostl.Formula.until(0.0, 3.0, f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         outputs = []
         # Start with low value, then high
@@ -731,7 +734,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("x", 15.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         # Value in range should satisfy
         result = monitor.update("x", 10.0, 0.0)
@@ -742,7 +745,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 100.0)
         f2 = ostl.Formula.lt("x", 5.0)
         formula = ostl.Formula.or_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         result = monitor.update("x", 2.0, 0.0)
         assert result is not None
@@ -751,7 +754,7 @@ class TestBooleanOperators:
         """Test NOT operator."""
         f = ostl.Formula.gt("x", 5.0)
         formula = ostl.Formula.not_(f)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         result = monitor.update("x", 2.0, 0.0)
         assert result is not None
@@ -761,7 +764,7 @@ class TestBooleanOperators:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.implies(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         result = monitor.update("x", 10.0, 0.0)
         assert result is not None
@@ -773,7 +776,7 @@ class TestEvaluationStructure:
     def test_evaluation_has_sync_step_info(self):
         """Test that evaluations include sync step information."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         output = monitor.update("x", 10.0, 0.0)
         result = output.to_dict()
@@ -817,7 +820,7 @@ class TestMonitorOutputFormatting:
     def test_str_with_verdicts(self):
         """Test __str__ when verdicts are available."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -832,7 +835,7 @@ class TestMonitorOutputFormatting:
     def test_str_without_verdicts(self):
         """Test __str__ when no verdicts are available yet."""
         formula = ostl.Formula.always(0.0, 10.0, ostl.Formula.gt("x", 5.0))
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         # First update may not produce verdicts yet
         output = monitor.update("x", 10.0, 0.0)
@@ -846,7 +849,7 @@ class TestMonitorOutputFormatting:
     def test_repr_format(self):
         """Test __repr__ returns Rust Debug format."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -859,7 +862,7 @@ class TestMonitorOutputFormatting:
     def test_str_multiple_verdicts(self):
         """Test __str__ with multiple verdicts produces multiple lines."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         # Multiple updates
         for t in range(5):
@@ -875,7 +878,7 @@ class TestMonitorOutputFormatting:
     def test_finalize_method(self):
         """Test finalize() method returns list of (timestamp, value) tuples."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -887,13 +890,13 @@ class TestMonitorOutputFormatting:
             assert len(item) == 2
             # First element is timestamp (float)
             assert isinstance(item[0], float)
-            # Second element is value (float for Robustness)
+            # Second element is value (float for DelayedQuantitative)
             assert isinstance(item[1], float)
 
     def test_finalize_with_bool_semantics(self):
         """Test finalize() with boolean semantics."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -901,10 +904,10 @@ class TestMonitorOutputFormatting:
         for item in verdicts:
             assert isinstance(item, tuple)
             assert isinstance(item[0], float)  # timestamp
-            assert isinstance(item[1], bool)   # value
+            assert isinstance(item[1], bool)  # value
 
     def test_finalize_with_rosi_semantics(self):
-        """Test finalize() with RoSI semantics."""
+        """Test finalize() with Rosi semantics."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
@@ -921,7 +924,7 @@ class TestMonitorOutputFormatting:
     def test_helper_methods(self):
         """Test has_outputs, total_outputs, is_empty methods."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
@@ -937,13 +940,14 @@ class TestMonitorOutputFormatting:
     def test_properties(self):
         """Test input_signal, input_timestamp, input_value properties."""
         formula = ostl.Formula.gt("x", 5.0)
-        monitor = ostl.Monitor(formula, semantics="Robustness")
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("test_signal", 42.5, 1.5)
 
         assert output.input_signal == "test_signal"
         assert output.input_timestamp == 1.5
         assert output.input_value == 42.5
+
 
 class TestMonitorGetSignalIdentifiers:
     """Test getting signal identifiers from the monitor."""
@@ -953,7 +957,7 @@ class TestMonitorGetSignalIdentifiers:
         f1 = ostl.Formula.gt("x", 5.0)
         f2 = ostl.Formula.lt("y", 10.0)
         formula = ostl.Formula.and_(f1, f2)
-        monitor = ostl.Monitor(formula, semantics="StrictSatisfaction")
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         signals = monitor.get_signal_identifiers()
         assert isinstance(signals, set)
@@ -1072,9 +1076,9 @@ class TestMonitorWithVariables:
         formula = ostl.parse_formula("x > $threshold")
         monitor = ostl.Monitor(
             formula,
-            semantics="StrictSatisfaction",
+            semantics="DelayedQualitative",
             algorithm="Incremental",
-            variables=vars
+            variables=vars,
         )
 
         # Value above threshold should be True
@@ -1093,20 +1097,20 @@ class TestMonitorWithVariables:
         assert len(verdicts2) == 1
         assert verdicts2[0][1] == False
 
-    def test_monitor_with_variables_robustness(self):
-        """Test a monitor with variables using robustness semantics."""
+    def test_monitor_with_variables_DelayedQuantitative(self):
+        """Test a monitor with variables using DelayedQuantitative semantics."""
         vars = ostl.Variables()
         vars.set("threshold", 5.0)
 
         formula = ostl.parse_formula("x > $threshold")
         monitor = ostl.Monitor(
             formula,
-            semantics="Robustness",
+            semantics="DelayedQuantitative",
             algorithm="Incremental",
-            variables=vars
+            variables=vars,
         )
 
-        # Robustness = 10 - 5 = 5
+        # DelayedQuantitative = 10 - 5 = 5
         output = monitor.update("x", 10.0, 1.0)
         verdicts = output.finalize()
         assert len(verdicts) == 1
@@ -1116,7 +1120,7 @@ class TestMonitorWithVariables:
         # Update threshold
         vars.set("threshold", 15.0)
 
-        # Robustness = 10 - 15 = -5
+        # DelayedQuantitative = 10 - 15 = -5
         output2 = monitor.update("x", 10.0, 2.0)
         verdicts2 = output2.finalize()
         assert len(verdicts2) == 1
@@ -1129,11 +1133,7 @@ class TestMonitorWithVariables:
         vars.set("B", 2.0)
 
         formula = ostl.parse_formula("x > $A && y < $B")
-        monitor = ostl.Monitor(
-            formula,
-            semantics="StrictSatisfaction",
-            variables=vars
-        )
+        monitor = ostl.Monitor(formula, semantics="DelayedQualitative", variables=vars)
 
         # Get variables back
         retrieved_vars = monitor.get_variables()
@@ -1146,11 +1146,7 @@ class TestMonitorWithVariables:
         vars.set("limit", 5.0)
 
         formula = ostl.parse_formula("F[0, 2](x > $limit)")
-        monitor = ostl.Monitor(
-            formula,
-            semantics="Robustness",
-            variables=vars
-        )
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative", variables=vars)
 
         # Feed some data points
         output = monitor.update("x", 3.0, 0.0)  # Below threshold
@@ -1172,12 +1168,14 @@ class TestMonitorWithVariables:
         with pytest.raises(BaseException) as exc_info:
             monitor = ostl.Monitor(
                 formula,
-                semantics="StrictSatisfaction",
+                semantics="DelayedQualitative",
                 algorithm="Naive",
-                variables=vars
+                variables=vars,
             )
         # Check that the error message mentions naive or variable
-        assert "naive" in str(exc_info.value).lower() or "Variable" in str(exc_info.value)
+        assert "naive" in str(exc_info.value).lower() or "Variable" in str(
+            exc_info.value
+        )
 
 
 class TestMonitorGetters:
@@ -1186,39 +1184,41 @@ class TestMonitorGetters:
     def test_get_algorithm(self):
         """Test getting the algorithm from a monitor."""
         formula = ostl.parse_formula("x > 5")
-        
+
         monitor_inc = ostl.Monitor(formula, algorithm="Incremental")
         assert monitor_inc.get_algorithm() == "Incremental"
-        
-        monitor_naive = ostl.Monitor(formula, algorithm="Naive", semantics="Robustness")
+
+        monitor_naive = ostl.Monitor(
+            formula, algorithm="Naive", semantics="DelayedQuantitative"
+        )
         assert monitor_naive.get_algorithm() == "Naive"
 
     def test_get_semantics(self):
         """Test getting the semantics from a monitor."""
         formula = ostl.parse_formula("x > 5")
-        
-        monitor_rob = ostl.Monitor(formula, semantics="Robustness")
-        assert monitor_rob.get_semantics() == "Robustness"
-        
-        monitor_strict = ostl.Monitor(formula, semantics="StrictSatisfaction")
-        assert monitor_strict.get_semantics() == "StrictSatisfaction"
-        
-        monitor_eager = ostl.Monitor(formula, semantics="EagerSatisfaction")
-        assert monitor_eager.get_semantics() == "EagerSatisfaction"
-        
+
+        monitor_rob = ostl.Monitor(formula, semantics="DelayedQuantitative")
+        assert monitor_rob.get_semantics() == "DelayedQuantitative"
+
+        monitor_strict = ostl.Monitor(formula, semantics="DelayedQualitative")
+        assert monitor_strict.get_semantics() == "DelayedQualitative"
+
+        monitor_eager = ostl.Monitor(formula, semantics="EagerQualitative")
+        assert monitor_eager.get_semantics() == "EagerQualitative"
+
         monitor_rosi = ostl.Monitor(formula, semantics="Rosi")
         assert monitor_rosi.get_semantics() == "Rosi"
 
     def test_get_synchronization_strategy(self):
         """Test getting the synchronization strategy from a monitor."""
         formula = ostl.parse_formula("x > 5")
-        
+
         monitor_zoh = ostl.Monitor(formula, synchronization="ZeroOrderHold")
         assert monitor_zoh.get_synchronization_strategy() == "ZeroOrderHold"
-        
+
         monitor_linear = ostl.Monitor(formula, synchronization="Linear")
         assert monitor_linear.get_synchronization_strategy() == "Linear"
-        
+
         monitor_none = ostl.Monitor(formula, synchronization="None")
         assert monitor_none.get_synchronization_strategy() == "None"
 
@@ -1226,7 +1226,7 @@ class TestMonitorGetters:
         """Test getting the specification string from a monitor."""
         formula = ostl.parse_formula("G[0,5](x > 10)")
         monitor = ostl.Monitor(formula)
-        
+
         spec = monitor.get_specification()
         assert "x" in spec
         assert "10" in spec
@@ -1238,12 +1238,12 @@ class TestMonitorGetters:
         formula1 = ostl.parse_formula("G[0,5](x > 10)")
         monitor1 = ostl.Monitor(formula1)
         assert monitor1.get_temporal_depth() == 5.0
-        
+
         # Multiple temporal operators - should return the max
         formula2 = ostl.parse_formula("G[0,5](x > 10) && F[0,3](y < 20)")
         monitor2 = ostl.Monitor(formula2)
         assert monitor2.get_temporal_depth() == 5.0
-        
+
         # Nested temporal operators
         formula3 = ostl.parse_formula("G[0,10](F[0,3](x > 5))")
         monitor3 = ostl.Monitor(formula3)
@@ -1257,7 +1257,7 @@ class TestMonitorGetters:
         signals1 = monitor1.get_signal_identifiers()
         assert "x" in signals1
         assert len(signals1) == 1
-        
+
         # Multiple signals
         formula2 = ostl.parse_formula("G[0,5](x > 10) && F[0,3](y < 20)")
         monitor2 = ostl.Monitor(formula2)
@@ -1276,16 +1276,16 @@ class TestMonitorDisplay:
         formula = ostl.parse_formula("G[0,5](x > 10) && y < 20")
         monitor = ostl.Monitor(
             formula,
-            semantics="Robustness",
+            semantics="DelayedQuantitative",
             algorithm="Incremental",
-            synchronization="Linear"
+            synchronization="Linear",
         )
-        
+
         display = str(monitor)
         assert "STL Monitor Configuration" in display
         assert "Specification:" in display
         assert "Algorithm: Incremental" in display
-        assert "Semantics: Robustness" in display
+        assert "Semantics: DelayedQuantitative" in display
         assert "Synchronization: Linear" in display
         assert "Temporal Depth:" in display
         assert "5s" in display
@@ -1295,14 +1295,10 @@ class TestMonitorDisplay:
         vars = ostl.Variables()
         vars.set("threshold", 10.0)
         vars.set("limit", 20.0)
-        
+
         formula = ostl.parse_formula("G[0,5](x > $threshold) && y < $limit")
-        monitor = ostl.Monitor(
-            formula,
-            semantics="Robustness",
-            variables=vars
-        )
-        
+        monitor = ostl.Monitor(formula, semantics="DelayedQuantitative", variables=vars)
+
         display = str(monitor)
         assert "STL Monitor Configuration" in display
         assert "Variables:" in display
@@ -1314,14 +1310,14 @@ class TestMonitorDisplay:
         formula = ostl.parse_formula("x > 5")
         monitor = ostl.Monitor(
             formula,
-            semantics="StrictSatisfaction",
+            semantics="DelayedQualitative",
             algorithm="Naive",
-            synchronization="None"
+            synchronization="None",
         )
-        
+
         repr_str = repr(monitor)
         assert "Monitor(" in repr_str
-        assert "semantics='StrictSatisfaction'" in repr_str
+        assert "semantics='DelayedQualitative'" in repr_str
         assert "algorithm='Naive'" in repr_str
         assert "synchronization='None'" in repr_str
 
@@ -1329,7 +1325,7 @@ class TestMonitorDisplay:
         """Test that print(monitor) works correctly."""
         formula = ostl.parse_formula("F[0,3](x > 5)")
         monitor = ostl.Monitor(formula)
-        
+
         # Should not raise an exception
         output = str(monitor)
         assert len(output) > 0

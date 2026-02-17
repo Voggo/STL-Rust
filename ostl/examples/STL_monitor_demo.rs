@@ -3,7 +3,7 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 
 use ostl::stl::formula_definition::FormulaDefinition;
-use ostl::stl::monitor::{Algorithm, EagerSatisfaction, StlMonitor};
+use ostl::stl::monitor::{Algorithm, EagerQualitative, StlMonitor};
 
 use rand::rng;
 use rand::rngs::ThreadRng;
@@ -196,7 +196,7 @@ fn main() {
     // Build the monitor
     let mut monitor = StlMonitor::builder()
         .formula(formula)
-        .semantics(EagerSatisfaction)
+        .semantics(EagerQualitative)
         .algorithm(Algorithm::Incremental)
         .build()
         .unwrap();
@@ -204,7 +204,7 @@ fn main() {
     // Build a second monitor that checks an "eventually" property on the same signal
     let mut monitor_eventually = StlMonitor::builder()
         .formula(get_eventually_formula())
-        .semantics(EagerSatisfaction)
+        .semantics(EagerQualitative)
         .algorithm(Algorithm::Incremental)
         .build()
         .unwrap();

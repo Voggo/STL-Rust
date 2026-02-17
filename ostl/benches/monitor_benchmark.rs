@@ -3,7 +3,7 @@ use criterion::{
     AxisScale, Criterion, PlotConfiguration, Throughput, criterion_group, criterion_main,
 };
 use ostl::ring_buffer::Step;
-use ostl::stl::monitor::{Algorithm, Robustness, Rosi, StlMonitor, StrictSatisfaction};
+use ostl::stl::monitor::{Algorithm, DelayedQualitative, DelayedQuantitative, Rosi, StlMonitor};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -67,7 +67,7 @@ fn benchmark_monitors(c: &mut Criterion) {
         // Create a temp monitor to get the specification string for the group name
         let temp = StlMonitor::builder()
             .formula(formula.clone())
-            .semantics(StrictSatisfaction)
+            .semantics(DelayedQualitative)
             .build()
             .unwrap();
         let spec_str = temp.specification();
@@ -120,7 +120,7 @@ fn benchmark_monitors(c: &mut Criterion) {
                         || {
                             let monitor = StlMonitor::builder()
                                 .formula(formula.clone())
-                                .semantics(Robustness)
+                                .semantics(DelayedQuantitative)
                                 .algorithm(Algorithm::Incremental)
                                 .build()
                                 .unwrap();

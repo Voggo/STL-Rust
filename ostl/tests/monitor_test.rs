@@ -6,7 +6,7 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::RobustnessSemantics;
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
-    Algorithm, EagerSatisfaction, Robustness, StlMonitor, StrictSatisfaction,
+    Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, StlMonitor,
 };
 use pretty_assertions::assert_eq;
 use rstest::rstest;
@@ -76,7 +76,7 @@ fn test_f64_strict(
     #[case] expected: Vec<Vec<Step<f64>>>,
     #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
 ) {
-    run_monitor_test(formulas, signal, strategy, Robustness, expected);
+    run_monitor_test(formulas, signal, strategy, DelayedQuantitative, expected);
 }
 
 #[rstest]
@@ -96,7 +96,7 @@ fn test_bool_strict(
     #[case] expected: Vec<Vec<Step<bool>>>,
     #[values(Algorithm::Naive, Algorithm::Incremental)] strategy: Algorithm,
 ) {
-    run_monitor_test(formulas, signal, strategy, StrictSatisfaction, expected);
+    run_monitor_test(formulas, signal, strategy, DelayedQualitative, expected);
 }
 
 #[rstest]
@@ -118,5 +118,5 @@ fn test_bool_eager(
     #[case] expected: Vec<Vec<Step<bool>>>,
     #[values(Algorithm::Incremental)] strategy: Algorithm,
 ) {
-    run_monitor_test(formulas, signal, strategy, EagerSatisfaction, expected);
+    run_monitor_test(formulas, signal, strategy, EagerQualitative, expected);
 }

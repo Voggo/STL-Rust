@@ -2,7 +2,8 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::{RobustnessInterval, TimeInterval, Variables};
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
-    Algorithm, EagerSatisfaction, MonitorOutput, Robustness, Rosi, StlMonitor, StrictSatisfaction,
+    Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, MonitorOutput, Rosi,
+    StlMonitor,
 };
 use ostl::stl::parse_stl;
 use ostl::synchronizer::SynchronizationStrategy;
@@ -442,8 +443,8 @@ impl PyVariables {
 // 4. Monitor Wrapper
 // -----------------------------------------------------------------------------
 enum InnerMonitor {
-    StrictSatisfaction(StlMonitor<f64, bool>),
-    EagerSatisfaction(StlMonitor<f64, bool>),
+    DelayedQualitative(StlMonitor<f64, bool>),
+    EagerQualitative(StlMonitor<f64, bool>),
     Robustness(StlMonitor<f64, f64>),
     Rosi(StlMonitor<f64, RobustnessInterval>),
 }
@@ -463,7 +464,7 @@ struct Monitor {
 #[pymethods]
 impl Monitor {
     #[new]
-    #[pyo3(signature = (formula, semantics="Robustness", algorithm="Incremental", synchronization="ZeroOrderHold", variables=None))]
+    #[pyo3(signature = (formula, semantics="DelayedQuantitative", algorithm="Incremental", synchronization="ZeroOrderHold", variables=None))]
     fn new(
         formula: &Formula,
         semantics: &str,
@@ -500,45 +501,45 @@ impl Monitor {
 
         // Build monitor based on semantics
         match semantics {
-            "StrictSatisfaction" => {
+            "DelayedQualitative" => {
                 let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(StrictSatisfaction)
+                    .semantics(DelayedQualitative)
                     .synchronization_strategy(synchronization_strategy)
                     .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
-                    inner: InnerMonitor::StrictSatisfaction(m),
+                    inner: InnerMonitor::DelayedQualitative(m),
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                     variables: vars,
                 })
             }
-            "EagerSatisfaction" => {
+            "EagerQualitative" => {
                 let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(EagerSatisfaction)
+                    .semantics(EagerQualitative)
                     .synchronization_strategy(synchronization_strategy)
                     .variables(vars.inner.clone())
                     .build()
                     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
                 Ok(Monitor {
-                    inner: InnerMonitor::EagerSatisfaction(m),
+                    inner: InnerMonitor::EagerQualitative(m),
                     semantics: semantics.to_string(),
                     algorithm: algorithm.to_string(),
                     synchronization: synchronization.to_string(),
                     variables: vars,
                 })
             }
-            "Robustness" => {
+            "DelayedQuantitative" => {
                 let m = StlMonitor::builder()
                     .formula(formula.inner.clone())
                     .algorithm(algo)
-                    .semantics(Robustness)
+                    .semantics(DelayedQuantitative)
                     .synchronization_strategy(synchronization_strategy)
                     .variables(vars.inner.clone())
                     .build()
@@ -569,7 +570,7 @@ impl Monitor {
                 })
             }
             _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Invalid semantics. Use 'StrictSatisfaction', 'EagerSatisfaction', 'Robustness', or 'Rosi'",
+                "Invalid semantics. Use 'DelayedQualitative', 'EagerQualitative', 'DelayedQuantitative', or 'Rosi'",
             )),
         }
     }
@@ -585,7 +586,7 @@ impl Monitor {
                     inner: InnerMonitorOutput::Float(output),
                 }
             }
-            InnerMonitor::EagerSatisfaction(m) | InnerMonitor::StrictSatisfaction(m) => {
+            InnerMonitor::EagerQualitative(m) | InnerMonitor::DelayedQualitative(m) => {
                 let output = m.update(&step);
                 PyMonitorOutput {
                     inner: InnerMonitorOutput::Bool(output),
@@ -602,8 +603,8 @@ impl Monitor {
 
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         match &mut self.inner {
-            InnerMonitor::StrictSatisfaction(m) => m.signal_identifiers(),
-            InnerMonitor::EagerSatisfaction(m) => m.signal_identifiers(),
+            InnerMonitor::DelayedQualitative(m) => m.signal_identifiers(),
+            InnerMonitor::EagerQualitative(m) => m.signal_identifiers(),
             InnerMonitor::Robustness(m) => m.signal_identifiers(),
             InnerMonitor::Rosi(m) => m.signal_identifiers(),
         }
@@ -615,8 +616,8 @@ impl Monitor {
 
     fn get_specification(&self) -> String {
         match &self.inner {
-            InnerMonitor::StrictSatisfaction(m) => m.specification(),
-            InnerMonitor::EagerSatisfaction(m) => m.specification(),
+            InnerMonitor::DelayedQualitative(m) => m.specification(),
+            InnerMonitor::EagerQualitative(m) => m.specification(),
             InnerMonitor::Robustness(m) => m.specification(),
             InnerMonitor::Rosi(m) => m.specification(),
         }
@@ -636,8 +637,8 @@ impl Monitor {
 
     fn get_temporal_depth(&self) -> f64 {
         let duration = match &self.inner {
-            InnerMonitor::StrictSatisfaction(m) => m.temporal_depth(),
-            InnerMonitor::EagerSatisfaction(m) => m.temporal_depth(),
+            InnerMonitor::DelayedQualitative(m) => m.temporal_depth(),
+            InnerMonitor::EagerQualitative(m) => m.temporal_depth(),
             InnerMonitor::Robustness(m) => m.temporal_depth(),
             InnerMonitor::Rosi(m) => m.temporal_depth(),
         };
@@ -683,7 +684,7 @@ impl Monitor {
                     inner: InnerMonitorOutput::Float(output),
                 })
             }
-            InnerMonitor::EagerSatisfaction(m) | InnerMonitor::StrictSatisfaction(m) => {
+            InnerMonitor::EagerQualitative(m) | InnerMonitor::DelayedQualitative(m) => {
                 let output = m.update_batch(&rust_steps);
                 Ok(PyMonitorOutput {
                     inner: InnerMonitorOutput::Bool(output),
@@ -708,8 +709,8 @@ impl Monitor {
     fn __str__(&self) -> String {
         // Use the Rust Display implementation
         match &self.inner {
-            InnerMonitor::StrictSatisfaction(m) => format!("{}", m),
-            InnerMonitor::EagerSatisfaction(m) => format!("{}", m),
+            InnerMonitor::DelayedQualitative(m) => format!("{}", m),
+            InnerMonitor::EagerQualitative(m) => format!("{}", m),
             InnerMonitor::Robustness(m) => format!("{}", m),
             InnerMonitor::Rosi(m) => format!("{}", m),
         }
@@ -770,16 +771,16 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", "0.1.0")?;
     m.add("__doc__", "Online Signal Temporal Logic (STL) monitoring library.\n\n\
         This library provides efficient online monitoring of STL formulas with multiple semantics:\n\
-        - StrictSatisfaction/EagerSatisfaction: true/false evaluation\n\
-        - Robustness: robustness as a single float value\n\
+        - DelayedQualitative/EagerQualitative: true/false evaluation\n\
+        - DelayedQuantitative: robustness as a single float value\n\
         - Rosi: robustness as an interval (min, max)\n\n\
         Example using parse_formula (recommended):\n\
         -----------------------------------------\n\
         >>> import ostl_python\n\
         >>> # Parse formula using the same DSL syntax as Rust's stl! macro\n\
         >>> phi = ostl_python.parse_formula('G[0, 5](x > 0.5)')\n\
-        >>> # Create monitor with Robustness semantics\n\
-        >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
+        >>> # Create monitor with DelayedQuantitative semantics\n\
+        >>> monitor = ostl_python.Monitor(phi, semantics='DelayedQuantitative')\n\
         >>> # Feed data\n\
         >>> output = monitor.update('x', 1.0, 0.0)\n\
         >>> # Print using Rust's Display formatting\n\
@@ -791,8 +792,8 @@ fn ostl_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         >>> import ostl_python\n\
         >>> # Create formula: Always[0,5](x > 0.5)\n\
         >>> phi = ostl_python.Formula.always(0, 5, ostl_python.Formula.gt('x', 0.5))\n\
-        >>> # Create monitor with Robustness semantics\n\
-        >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')\n\
+        >>> # Create monitor with DelayedQuantitative semantics\n\
+        >>> monitor = ostl_python.Monitor(phi, semantics='DelayedQuantitative')\n\
         >>> # Feed data\n\
         >>> output = monitor.update('x', 1.0, 0.0)\n\
         >>> # Use __str__ and __repr__ for Rust-style formatting\n\
