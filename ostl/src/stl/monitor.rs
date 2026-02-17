@@ -24,11 +24,11 @@ pub enum Algorithm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Semantics {
-    Rosi,
+    RobustnessInterval,
     #[default]
-    Robustness,
-    StrictSatisfaction,
-    EagerSatisfaction,
+    DelayedQuantitative,
+    DelayedQualitative,
+    EagerQualitative,
 }
 
 /// Marker traits and structs for Type-Driven Semantics
@@ -46,40 +46,40 @@ pub mod semantic_markers {
     impl SemanticType for Rosi {
         type Output = RobustnessInterval;
         fn as_enum() -> Semantics {
-            Semantics::Rosi
+            Semantics::RobustnessInterval
         }
     }
 
     #[derive(Debug, Clone, Copy)]
-    pub struct Robustness;
-    impl SemanticType for Robustness {
+    pub struct DelayedQuantitative;
+    impl SemanticType for DelayedQuantitative {
         type Output = f64;
         fn as_enum() -> Semantics {
-            Semantics::Robustness
+            Semantics::DelayedQuantitative
         }
     }
 
     #[derive(Debug, Clone, Copy)]
-    pub struct StrictSatisfaction;
-    impl SemanticType for StrictSatisfaction {
+    pub struct DelayedQualitative;
+    impl SemanticType for DelayedQualitative {
         type Output = bool;
         fn as_enum() -> Semantics {
-            Semantics::StrictSatisfaction
+            Semantics::DelayedQualitative
         }
     }
 
     #[derive(Debug, Clone, Copy)]
-    pub struct EagerSatisfaction;
-    impl SemanticType for EagerSatisfaction {
+    pub struct EagerQualitative;
+    impl SemanticType for EagerQualitative {
         type Output = bool;
         fn as_enum() -> Semantics {
-            Semantics::EagerSatisfaction
+            Semantics::EagerQualitative
         }
     }
 }
 
 // Re-export markers for easier access like `monitor::StrictSatisfaction`
-pub use semantic_markers::{EagerSatisfaction, Robustness, Rosi, StrictSatisfaction};
+pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi};
 
 /// Represents the output of a single monitor update operation.
 #[derive(Clone, Debug, PartialEq)]
@@ -197,7 +197,7 @@ impl StlMonitor<f64, f64> {
         StlMonitorBuilder {
             formula: None,
             algorithm: Algorithm::default(),
-            semantics: Semantics::Robustness, // Default, but will be overwritten if semantics() is called
+            semantics: Semantics::DelayedQuantitative, // Default, but will be overwritten if semantics() is called
             synchronization_strategy: SynchronizationStrategy::default(),
             variables: Variables::new(),
             _phantom: std::marker::PhantomData,
@@ -496,10 +496,10 @@ where
                 );
                 self.initialize_operator(operator)
             }
-            (Algorithm::Naive, Semantics::StrictSatisfaction | Semantics::Robustness) => {
+            (Algorithm::Naive, Semantics::DelayedQualitative | Semantics::DelayedQuantitative) => {
                 self.build_naive_operator(formula_def.clone(), self.semantics)
             }
-            (Algorithm::Naive, Semantics::EagerSatisfaction | Semantics::Rosi) => {
+            (Algorithm::Naive, Semantics::EagerQualitative | Semantics::RobustnessInterval) => {
                 return Err("Naive algorithm does not support RoSI/Eaver evaluation");
             }
         };
@@ -589,8 +589,8 @@ where
     Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
 {
     // Determine configuration flags
-    let is_eager = matches!(semantics, Semantics::EagerSatisfaction);
-    let is_rosi = matches!(semantics, Semantics::Rosi);
+    let is_eager = matches!(semantics, Semantics::EagerQualitative);
+    let is_rosi = matches!(semantics, Semantics::RobustnessInterval);
 
     // We use `$( $arg:expr ),*` to capture arguments as a list.
     // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
@@ -679,7 +679,7 @@ mod tests {
         // Y is inferred as `bool` because of StrictSatisfaction
         let mut monitor = StlMonitor::builder()
             .formula(formula)
-            .semantics(StrictSatisfaction) // Use the marker struct
+            .semantics(DelayedQualitative) // Use the marker struct
             .algorithm(Algorithm::Incremental)
             .build()
             .unwrap();
@@ -710,14 +710,14 @@ mod tests {
         let mut monitor = StlMonitor::builder()
             .formula(formula.clone())
             .algorithm(Algorithm::Incremental)
-            .semantics(Robustness)
+            .semantics(DelayedQuantitative)
             .build()
             .unwrap();
 
         let mut monitor_naive = StlMonitor::builder()
             .formula(formula)
             .algorithm(Algorithm::Naive)
-            .semantics(Robustness)
+            .semantics(DelayedQuantitative)
             .build()
             .unwrap();
 
@@ -748,7 +748,7 @@ mod tests {
         // Build monitor with variables
         let mut monitor = StlMonitor::builder()
             .formula(formula)
-            .semantics(StrictSatisfaction)
+            .semantics(DelayedQualitative)
             .algorithm(Algorithm::Incremental)
             .variables(variables.clone())
             .build()
@@ -786,7 +786,7 @@ mod tests {
         // Build monitor with robustness semantics
         let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
             .formula(formula)
-            .semantics(Robustness)
+            .semantics(DelayedQuantitative)
             .algorithm(Algorithm::Incremental)
             .variables(variables.clone())
             .build()
@@ -821,7 +821,7 @@ mod tests {
 
         let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             .formula(formula)
-            .semantics(StrictSatisfaction)
+            .semantics(DelayedQualitative)
             .algorithm(Algorithm::Incremental)
             .variables(variables)
             .build()
@@ -845,7 +845,7 @@ mod tests {
         // This should panic because naive algorithm doesn't support variables
         let _monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             .formula(formula)
-            .semantics(StrictSatisfaction)
+            .semantics(DelayedQualitative)
             .algorithm(Algorithm::Naive)
             .variables(variables)
             .build()
@@ -917,7 +917,7 @@ mod tests {
 
         let mut monitor = StlMonitor::builder()
             .formula(formula)
-            .semantics(Robustness)
+            .semantics(DelayedQuantitative)
             .algorithm(Algorithm::Incremental)
             .synchronization_strategy(SynchronizationStrategy::Linear)
             .variables(variables)
@@ -926,7 +926,7 @@ mod tests {
 
         // Test getters
         assert_eq!(monitor.algorithm(), Algorithm::Incremental);
-        assert_eq!(monitor.semantics(), Semantics::Robustness);
+        assert_eq!(monitor.semantics(), Semantics::DelayedQuantitative);
         assert_eq!(
             monitor.synchronization_strategy(),
             SynchronizationStrategy::Linear
@@ -952,7 +952,7 @@ mod tests {
         let display_output = format!("{}", monitor);
         assert!(display_output.contains("STL Monitor Configuration"));
         assert!(display_output.contains("Algorithm: Incremental"));
-        assert!(display_output.contains("Semantics: Robustness"));
+        assert!(display_output.contains("Semantics: DelayedQuantitative"));
         assert!(display_output.contains("Synchronization: Linear"));
         assert!(display_output.contains("Temporal Depth: 5s"));
         assert!(display_output.contains("Variables:"));
@@ -965,7 +965,7 @@ mod tests {
 
         let monitor = StlMonitor::builder()
             .formula(formula)
-            .semantics(StrictSatisfaction)
+            .semantics(DelayedQualitative)
             .algorithm(Algorithm::Incremental)
             .build()
             .unwrap();
@@ -974,7 +974,7 @@ mod tests {
         let display_output = format!("{}", monitor);
         assert!(display_output.contains("STL Monitor Configuration"));
         assert!(display_output.contains("Algorithm: Incremental"));
-        assert!(display_output.contains("Semantics: StrictSatisfaction"));
+        assert!(display_output.contains("Semantics: DelayedQualitative"));
         assert!(!display_output.contains("Variables:")); // Should not appear
     }
 

@@ -33,15 +33,15 @@ for evaluation in result['evaluations']:
 
 The library supports four types of monitoring semantics:
 
-1. **StrictSatisfaction** (`semantics="StrictSatisfaction"`): Boolean satisfaction with strict evaluation
+1. **DelayedQualitative** (`semantics="DelayedQualitative"`): Boolean satisfaction with delayed evaluation
       - Returns: `True` or `False`
       - Waits for complete information before producing verdicts
 
-2. **EagerSatisfaction** (`semantics="EagerSatisfaction"`): Boolean satisfaction with eager evaluation
+2. **EagerQualitative** (`semantics="EagerQualitative"`): Boolean satisfaction with eager evaluation
       - Returns: `True` or `False`
       - Produces verdicts as soon as possible
 
-3. **Robustness** (`semantics="Robustness"`, default): Quantitative robustness as a single value
+3. **DelayedQuantitative** (`semantics="DelayedQuantitative"`, default): Quantitative robustness as a single value
       - Returns: Float value (positive = satisfied, negative = violated)
 
 4. **Rosi** (`semantics="Rosi"`): Robustness as an interval

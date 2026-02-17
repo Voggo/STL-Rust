@@ -152,7 +152,7 @@ mod tests {
         let steps = vec![
             Step {
                 signal: "B",
-                value: 1.0,
+                value: 0.0,
                 timestamp: Duration::from_secs(0),
             },
             Step {
@@ -191,7 +191,7 @@ mod tests {
             && (s.timestamp == Duration::from_secs(1)
                 || s.timestamp == Duration::from_secs(2)
                 || s.timestamp == Duration::from_secs(4))
-            && s.value == 1.0));
+            && s.value == 0.0));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 mod common;
 mod fixtures;
 #[cfg(test)]
-use ostl::stl::monitor::{Algorithm, EagerSatisfaction, Rosi, StlMonitor};
+use ostl::stl::monitor::{Algorithm, EagerQualitative, Rosi, StlMonitor};
 use rstest::rstest;
 
 use fixtures::formulas::formula_1;
@@ -17,7 +17,7 @@ fn test_monitor_build_fails_bool_naive_eager() {
     let _ = StlMonitor::builder()
         .formula(formula_1())
         .algorithm(Algorithm::Naive)
-        .semantics(EagerSatisfaction)
+        .semantics(EagerQualitative)
         .build()
         .unwrap();
 }

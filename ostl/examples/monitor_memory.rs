@@ -2,7 +2,7 @@ use ostl::ring_buffer::Step;
 use ostl::stl::core::TimeInterval;
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
-    Algorithm, EagerSatisfaction, Robustness, Rosi, StlMonitor, StrictSatisfaction,
+    Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi, StlMonitor,
 };
 use std::env;
 use std::time::Duration;
@@ -186,7 +186,7 @@ fn main() {
             let mut monitor = StlMonitor::builder()
                 .formula(formula)
                 .algorithm(algorithm)
-                .semantics(StrictSatisfaction)
+                .semantics(DelayedQualitative)
                 .build()
                 .unwrap();
             for step in signal {
@@ -197,7 +197,7 @@ fn main() {
             let mut monitor = StlMonitor::builder()
                 .formula(formula)
                 .algorithm(algorithm)
-                .semantics(EagerSatisfaction)
+                .semantics(EagerQualitative)
                 .build()
                 .unwrap();
             for step in signal {
@@ -208,7 +208,7 @@ fn main() {
             let mut monitor = StlMonitor::builder()
                 .formula(formula)
                 .algorithm(algorithm)
-                .semantics(Robustness)
+                .semantics(DelayedQuantitative)
                 .build()
                 .unwrap();
             for step in signal {

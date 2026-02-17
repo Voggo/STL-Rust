@@ -3,8 +3,8 @@ Online Signal Temporal Logic (STL) monitoring library.
 
 This library provides efficient online monitoring of STL formulas with multiple semantics:
 
-* StrictSatisfaction/EagerSatisfaction: classic true/false evaluation
-* Robustness: robustness as a single float value
+* DelayedQualitative/EagerQualitative: classic true/false evaluation
+* DelayedQuantitative: robustness as a single float value
 * Rosi: robustness as an interval (min, max)
 
 Examples using `parse_formula` with Rust-style DSL syntax:
@@ -12,8 +12,8 @@ Examples using `parse_formula` with Rust-style DSL syntax:
     >>> import ostl_python
     >>> # Parse formula using the same DSL syntax as Rust's stl! macro
     >>> phi = ostl_python.parse_formula('G[0, 5](x > 0.5)')
-    >>> # Create monitor with Robustness semantics
-    >>> monitor = ostl_python.Monitor(phi, semantics='Robustness')
+    >>> # Create monitor with DelayedQuantitative semantics
+    >>> monitor = ostl_python.Monitor(phi, semantics='DelayedQuantitative')
     >>> # Feed data
     >>> output = monitor.update('x', 1.0, 0.0)
     >>> # Print using Rust's Display formatting
@@ -114,7 +114,7 @@ class OutputDict(TypedDict):
 
     * bool for qualitative semantics
     * float for quantitative semantics
-    * tuple[float, float] for RoSI semantics (min, max)
+    * tuple[float, float] for Rosi semantics (min, max)
     """
 
 class EvaluationDict(TypedDict):
@@ -549,7 +549,7 @@ class Formula:
         """Return detailed representation of the formula."""
         ...
 
-SemanticsType = Literal["StrictSatisfaction", "EagerSatisfaction", "Robustness", "Rosi"]
+SemanticsType = Literal["DelayedQualitative", "EagerQualitative", "DelayedQuantitative", "Rosi"]
 AlgorithmType = Literal["Incremental", "Naive"]
 SynchronizationType = Literal["ZeroOrderHold", "Linear", "None"]
 
@@ -637,7 +637,7 @@ class MonitorOutput:
 
             * bool for qualitative semantics
             * float for robustness semantics
-            * tuple[float, float] for RoSI semantics
+            * tuple[float, float] for Rosi semantics
         """
         ...
 
@@ -681,7 +681,7 @@ class Monitor:
     Online STL monitor.
 
     Monitors signal traces against an STL formula and produces verdicts.
-    Supports multiple semantics (StrictSatisfaction, EagerSatisfaction, Robustness, Rosi),
+    Supports multiple semantics (DelayedQualitative, EagerQualitative, DelayedQuantitative, Rosi),
     algorithms (Incremental, Naive), and synchronization strategies (ZeroOrderHold, Linear, None).
 
     The monitor processes signals incrementally and produces verdicts when
@@ -698,7 +698,7 @@ class Monitor:
     def __init__(
         self,
         formula: Formula,
-        semantics: SemanticsType = "Robustness",
+        semantics: SemanticsType = "DelayedQuantitative",
         algorithm: AlgorithmType = "Incremental",
         synchronization: SynchronizationType = "ZeroOrderHold",
         variables: Union[Variables, None] = None,
@@ -710,9 +710,9 @@ class Monitor:
             formula: The STL formula to monitor
             semantics: Output semantics. Options:
 
-                * "StrictSatisfaction": Returns True/False with strict evaluation
-                * "EagerSatisfaction": Returns True/False with eager evaluation
-                * "Robustness": Returns float robustness value (+ = satisfied, - = violated, default)
+                * "DelayedQualitative": Returns True/False with delayed evaluation
+                * "EagerQualitative": Returns True/False with eager evaluation
+                * "DelayedQuantitative": Returns float robustness value (+ = satisfied, - = violated, default)
                 * "Rosi": Returns (min, max) robustness interval
 
             algorithm: Monitoring algorithm. Options:
@@ -732,7 +732,7 @@ class Monitor:
 
         Raises:
             ValueError: If invalid semantics, algorithm, or synchronization is specified
-            ValueError: If Naive algorithm is used with EagerSatisfaction (not supported)
+            ValueError: If Naive algorithm is used with EagerQualitative (not supported)
             ValueError: If Naive algorithm is used with variable predicates (not supported)
 
         Note:
@@ -740,13 +740,13 @@ class Monitor:
             for better performance.
 
         Examples:
-            >>> # StrictSatisfaction monitoring
-            >>> m1 = Monitor(phi, semantics="StrictSatisfaction", algorithm="Incremental")
+            >>> # DelayedQualitative monitoring
+            >>> m1 = Monitor(phi, semantics="DelayedQualitative", algorithm="Incremental")
             >>>
-            >>> # Robustness (quantitative)
-            >>> m2 = Monitor(phi, semantics="Robustness")
+            >>> # DelayedQuantitative (quantitative)
+            >>> m2 = Monitor(phi, semantics="DelayedQuantitative")
             >>>
-            >>> # Rosi intervals with eager evaluation
+            >>> # Rosi intervals
             >>> m3 = Monitor(phi, semantics="Rosi")
             >>>
             >>> # Using variables for dynamic thresholds
@@ -867,11 +867,11 @@ class Monitor:
         Get the semantics used by this monitor.
 
         Returns:
-            One of: "StrictSatisfaction", "EagerSatisfaction", "Robustness", or "Rosi"
+            One of: "DelayedQualitative", "EagerQualitative", "DelayedQuantitative", or "Rosi"
 
         Examples:
-            >>> monitor = Monitor(phi, semantics="Robustness")
-            >>> print(monitor.get_semantics())  # "Robustness"
+            >>> monitor = Monitor(phi, semantics="DelayedQuantitative")
+            >>> print(monitor.get_semantics())  # "DelayedQuantitative"
         """
         ...
 
@@ -956,7 +956,7 @@ class Monitor:
         This provides a detailed view of all monitor configuration including:
         - STL specification formula
         - Algorithm (Naive/Incremental)
-        - Semantics (Robustness/Rosi/StrictSatisfaction/EagerSatisfaction)
+        - Semantics (DelayedQuantitative/Rosi/DelayedQualitative/EagerQualitative)
         - Synchronization strategy
         - Temporal depth
         - Variables (if any are defined)
@@ -968,12 +968,12 @@ class Monitor:
             >>> phi = parse_formula("G[0,5](x > $threshold)")
             >>> vars = Variables()
             >>> vars.set("threshold", 10.0)
-            >>> monitor = Monitor(phi, semantics="Robustness", variables=vars)
+            >>> monitor = Monitor(phi, semantics="DelayedQuantitative", variables=vars)
             >>> print(monitor)
             STL Monitor Configuration:
               Specification: G[0s,5s](x > 10)
               Algorithm: Incremental
-              Semantics: Robustness
+              Semantics: DelayedQuantitative
               Synchronization: ZeroOrderHold
               Temporal Depth: 5s
               Variables:

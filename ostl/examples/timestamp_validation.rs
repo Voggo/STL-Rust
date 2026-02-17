@@ -1,5 +1,5 @@
 use ostl::ring_buffer::Step;
-use ostl::stl::monitor::{Robustness, StlMonitor};
+use ostl::stl::monitor::{DelayedQuantitative, StlMonitor};
 use ostl::stl::parse_stl;
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ fn main() {
     // Build the monitor with robustness semantics
     let mut monitor = StlMonitor::builder()
         .formula(formula)
-        .semantics(Robustness)
+        .semantics(DelayedQuantitative)
         .build()
         .unwrap();
 
