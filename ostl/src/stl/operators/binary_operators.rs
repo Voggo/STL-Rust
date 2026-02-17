@@ -37,14 +37,14 @@ where
 
                 l_curr = l_iter.next();
                 r_curr = r_iter.next();
-                *left_last_known = Step::new("", l.value, l.timestamp);
-                *right_last_known = Step::new("", r.value, r.timestamp);
+                *left_last_known = Step::new(l.signal, l.value, l.timestamp);
+                *right_last_known = Step::new(r.signal, r.value, r.timestamp);
             } else if l.timestamp < r.timestamp {
                 l_curr = l_iter.next();
-                *left_last_known = Step::new("", l.value, l.timestamp);
+                *left_last_known = Step::new(l.signal, l.value, l.timestamp);
             } else {
                 r_curr = r_iter.next();
-                *right_last_known = Step::new("", r.value, r.timestamp);
+                *right_last_known = Step::new(r.signal, r.value, r.timestamp);
             }
         }
 
@@ -64,13 +64,19 @@ where
                     let val = combine_op(l.value, r.value);
                     let ts = l.timestamp;
 
-                    *left_last_known = Step::new("", l.value, ts);
-                    *right_last_known = Step::new("", r.value, ts);
+                    *left_last_known = Step::new(l.signal, l.value, ts);
+                    *right_last_known = Step::new(r.signal, r.value, ts);
 
                     output_robustness.push(Step::new("output", val, ts));
 
                     left_cache.pop_front();
                     right_cache.pop_front();
+                } else if l.timestamp < r.timestamp {
+                    // Left is earlier - skip it and wait for matching right
+                    *left_last_known = left_cache.pop_front().unwrap();
+                } else {
+                    // Right is earlier - skip it and wait for matching left
+                    *right_last_known = right_cache.pop_front().unwrap();
                 }
             }
             // Only Left has data - we must wait for Right to potentially match or exceed Left's timestamp
