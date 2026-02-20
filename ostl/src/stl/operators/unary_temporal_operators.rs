@@ -1,3 +1,9 @@
+//! Unary temporal STL operators (`Eventually`, `Globally`).
+//!
+//! This module implements sliding-window temporal evaluation over an operand
+//! stream, with support for strict, eager, and refinable (RoSI) execution via
+//! const generics.
+
 use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
@@ -7,6 +13,10 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
+/// Removes dominated values from the back of a monotone cache.
+///
+/// This is used as a Lemire-style optimization for sliding min/max windows.
+/// `is_max = true` is used for `Eventually`; `is_max = false` for `Globally`.
 fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Y>, is_max: bool)
 where
     C: RingBufferTrait<Value = Y>,
@@ -22,6 +32,10 @@ where
 }
 
 #[derive(Clone)]
+/// Temporal eventually operator `F[a,b](φ)`.
+///
+/// For each evaluation timestamp `t`, this computes the operand aggregation over
+/// the window `[t + a, t + b]` using [`RobustnessSemantics::or`].
 pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
     operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -31,6 +45,10 @@ pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_EAGER, IS_ROSI> {
+    /// Creates a new `Eventually` operator.
+    ///
+    /// `max_lookahead` is computed as `interval.end + operand.get_max_lookahead()`.
+    /// Optional cache and evaluation buffer can be injected for state restore.
     pub fn new(
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -66,6 +84,12 @@ where
         self.max_lookahead
     }
 
+    /// Updates temporal state with one input sample and emits available outputs.
+    ///
+    /// Behavior depends on mode:
+    /// - strict (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
+    /// - eager (`IS_EAGER = true`): may finalize early on semantic `true`,
+    /// - RoSI (`IS_ROSI = true`): can emit intermediate refinable values using `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
@@ -190,12 +214,17 @@ where
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Returns the signal identifiers referenced by the operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
 
 #[derive(Clone)]
+/// Temporal globally operator `G[a,b](φ)`.
+///
+/// For each evaluation timestamp `t`, this computes the operand aggregation over
+/// the window `[t + a, t + b]` using [`RobustnessSemantics::and`].
 pub struct Globally<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
     operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
@@ -205,6 +234,10 @@ pub struct Globally<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EAGER, IS_ROSI> {
+    /// Creates a new `Globally` operator.
+    ///
+    /// `max_lookahead` is computed as `interval.end + operand.get_max_lookahead()`.
+    /// Optional cache and evaluation buffer can be injected for state restore.
     pub fn new(
         interval: TimeInterval,
         operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -240,6 +273,12 @@ where
         self.max_lookahead
     }
 
+    /// Updates temporal state with one input sample and emits available outputs.
+    ///
+    /// Behavior depends on mode:
+    /// - strict (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
+    /// - eager (`IS_EAGER = true`): may finalize early on semantic `false`,
+    /// - RoSI (`IS_ROSI = true`): can emit intermediate refinable values using `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let sub_robustness_vec = self.operand.update(step);
         let mut output_robustness = Vec::new();
@@ -361,6 +400,7 @@ where
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Globally<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Returns the signal identifiers referenced by the operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
@@ -369,6 +409,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     for Globally<T, Y, C, IS_EAGER, IS_ROSI>
 {
+    /// Formats as `G[start, end](operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -383,6 +424,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Formats as `F[start, end](operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

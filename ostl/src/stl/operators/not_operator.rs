@@ -1,3 +1,8 @@
+//! Unary logical negation operator.
+//!
+//! This module provides [`Not`], which wraps a single child operator and applies
+//! [`RobustnessSemantics::not`] to each emitted value.
+
 use crate::ring_buffer::Step;
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
@@ -7,12 +12,16 @@ use std::fmt::Display;
 use std::time::Duration;
 
 #[derive(Clone)]
+/// STL negation operator `¬φ`.
 pub struct Not<T, Y> {
     operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     max_lookahead: Duration,
 }
 
 impl<T, Y> Not<T, Y> {
+    /// Creates a new negation operator from a child operand.
+    ///
+    /// The resulting lookahead equals the child's lookahead.
     pub fn new(operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>) -> Self
     where
         T: Clone + 'static,
@@ -37,6 +46,7 @@ where
         self.max_lookahead
     }
 
+    /// Updates the child operator and negates each produced value.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let operand_updates = self.operand.update(step);
 
@@ -57,12 +67,14 @@ where
 }
 
 impl<T, Y> SignalIdentifier for Not<T, Y> {
+    /// Returns the signal identifiers of the wrapped operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
 
 impl<T, Y> Display for Not<T, Y> {
+    /// Formats as `¬(operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "¬({})", self.operand)
     }

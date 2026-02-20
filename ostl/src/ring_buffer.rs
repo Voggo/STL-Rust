@@ -1,13 +1,33 @@
+//! Ring-buffer primitives used by the STL monitor implementation.
+//!
+//! This module provides:
+//! - [`Step`], a timestamped signal sample,
+//! - [`RingBufferTrait`], an abstraction over ring-buffer-like storage, and
+//! - [`RingBuffer`], a `VecDeque`-backed implementation.
+//!
+//! It also includes [`guarded_prune`], a helper for pruning while protecting
+//! data needed by pending evaluations.
+
 use std::{collections::VecDeque, time::Duration};
 
+/// A single sampled value of a named signal at a given timestamp.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step<T> {
+    /// Signal identifier this step belongs to.
     pub signal: &'static str,
+    /// Sampled value for the signal.
     pub value: T,
+    /// Logical/event timestamp of this sample.
     pub timestamp: Duration,
 }
 
 impl<T> Step<T> {
+    /// Creates a new [`Step`].
+    ///
+    /// # Arguments
+    /// * `signal` - Signal identifier.
+    /// * `value` - Sample value.
+    /// * `timestamp` - Timestamp associated with the sample.
     pub fn new(signal: &'static str, value: T, timestamp: Duration) -> Self {
         Step {
             signal,
@@ -17,40 +37,57 @@ impl<T> Step<T> {
     }
 }
 
+/// Common interface for timestamped ring buffers.
+///
+/// Implementors are expected to maintain steps in ascending timestamp order.
 pub trait RingBufferTrait {
-    // The type of the value stored in the signal
+    /// The value type stored in each [`Step`].
     type Value;
 
-    // The container that holds the steps
+    /// The backing container type that stores steps.
     type Container: IntoIterator;
 
-    // A Generic Associated Type for the iterator.
-    // The <'a> here links the iterator's lifetime to the lifetime of `&'a self`.
+    /// Immutable iterator over stored steps.
     type Iter<'a>: Iterator<Item = &'a Step<Self::Value>>
     where
         Self: 'a;
 
+    /// Mutable iterator over stored steps.
     type IterMut<'a>: Iterator<Item = &'a mut Step<Self::Value>>
     where
         Self: 'a;
 
+    /// Creates an empty buffer.
     fn new() -> Self;
+    /// Returns `true` when the buffer contains no steps.
     fn is_empty(&self) -> bool;
+    /// Returns the number of stored steps.
     fn len(&self) -> usize;
+    /// Returns the newest step, if any.
     fn get_back(&self) -> Option<&Step<Self::Value>>;
+    /// Returns the oldest step, if any.
     fn get_front(&self) -> Option<&Step<Self::Value>>;
+    /// Removes and returns the oldest step.
     fn pop_front(&mut self) -> Option<Step<Self::Value>>;
+    /// Removes and returns the newest step.
     fn pop_back(&mut self) -> Option<Step<Self::Value>>;
 
+    /// Appends a step to the buffer.
     fn add_step(&mut self, step: Step<Self::Value>);
+    /// Replaces a step with matching timestamp.
+    ///
+    /// Returns `true` if a step was updated, `false` if no matching timestamp
+    /// was found.
     fn update_step(&mut self, step: Step<Self::Value>) -> bool;
 
     /// Prune steps older than `max_age` from the buffer.
     fn prune(&mut self, max_age: Duration);
 
+    /// Returns an iterator over all steps from oldest to newest.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
 }
 
+/// `VecDeque`-backed ring buffer for timestamped signal steps.
 #[derive(Clone, Debug)]
 pub struct RingBuffer<T> {
     steps: VecDeque<Step<T>>,
@@ -69,16 +106,24 @@ impl<T> RingBuffer<T>
 where
     T: Copy,
 {
+    /// Creates an empty [`RingBuffer`].
     pub fn new() -> Self {
         RingBuffer {
             steps: VecDeque::new(),
         }
     }
 
+    /// Appends a new step.
     pub fn add_step(&mut self, step: Step<T>) {
         self.steps.push_back(step);
     }
 
+    /// Replaces the step with the same timestamp.
+    ///
+    /// Returns `true` when a matching timestamp exists.
+    ///
+    /// This uses binary search and therefore assumes the internal storage is
+    /// sorted by timestamp.
     pub fn update_step(&mut self, step: Step<T>) -> bool {
         self.steps
             .binary_search_by(|s| s.timestamp.cmp(&step.timestamp))
@@ -88,6 +133,7 @@ where
             .is_ok()
     }
 
+    /// Returns an iterator over all stored steps from oldest to newest.
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Step<T>> {
         self.steps.iter()
     }

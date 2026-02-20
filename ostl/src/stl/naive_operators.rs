@@ -1,11 +1,26 @@
+//! Naive STL operator backend.
+//!
+//! This module provides a straightforward recursive evaluator used mainly for:
+//! - correctness comparison against the incremental engine, and
+//! - tests/debugging.
+//!
+//! ## Recommendation
+//! This backend is **not recommended** for production monitoring workloads.
+//! While it may use slightly less memory in some scenarios, it is typically
+//! significantly slower, especially for temporal operators (`G`, `F`, `U`).
+//!
+//! ## Limitations
+//! - No RoSI (`RobustnessInterval`) mode in the monitor builder.
+//! - No eager short-circuit evaluation mode (only delayed-style evaluation).
+
 use crate::ring_buffer::RingBufferTrait;
 use crate::ring_buffer::Step;
 use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait, TimeInterval};
 use std::fmt::Display;
 use std::time::Duration;
 
+/// Lightweight AST/operator representation used by the naive evaluator.
 #[derive(Debug, Clone)]
-
 pub enum StlOperator {
     // Boolean operators
     Not(Box<StlOperator>),
@@ -27,6 +42,7 @@ pub enum StlOperator {
     LessThan(&'static str, f64),    // signal name, threshold
 }
 
+/// Stateful wrapper around [`StlOperator`] for stream-based naive evaluation.
 #[derive(Debug, Clone)]
 pub struct StlFormula<T, C, Y>
 where
@@ -46,6 +62,7 @@ where
     C: RingBufferTrait<Value = T> + 'static,
     Y: RobustnessSemantics + 'static,
 {
+    /// Creates a new naive formula evaluator with an external signal buffer.
     pub fn new(formula: StlOperator, signal: C) -> Self {
         Self {
             formula,
@@ -78,6 +95,10 @@ where
         self.formula.get_max_lookahead()
     }
 
+    /// Ingests one sample and evaluates at the oldest newly-finalizable timestamp.
+    ///
+    /// The naive engine performs recursive evaluation over buffered samples and
+    /// returns at most one output step per call.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         self.signal.add_step(step.clone());
 
@@ -147,7 +168,7 @@ impl StlOperator {
             }
         }
     }
-    /// Recursively computes the maximum lookahead time required for the formula.
+    /// Recursively computes the maximum lookahead required by this formula.
     fn get_max_lookahead(&self) -> Duration {
         match self {
             StlOperator::Globally(interval, f) | StlOperator::Eventually(interval, f) => {
@@ -419,7 +440,7 @@ impl StlOperator {
         Some(Step::new("output", result, t_eval))
     }
 
-    /// Recursively generate a tree-like string representation of the formula.
+    /// Recursively generates a tree-like string representation of the formula.
     pub fn to_tree_string(&self, indent: usize) -> String {
         let padding = " ".repeat(indent);
         match self {
@@ -472,6 +493,7 @@ impl StlOperator {
     }
 }
 impl Display for StlOperator {
+    /// Formats the formula in compact mathematical notation.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -515,6 +537,7 @@ where
     C: RingBufferTrait<Value = T> + 'static,
     Y: RobustnessSemantics + 'static,
 {
+    /// Collects all signal identifiers referenced by the formula tree.
     fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
         let mut signals = std::collections::HashSet::new();
         fn collect_signals(

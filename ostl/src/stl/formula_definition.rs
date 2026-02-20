@@ -1,3 +1,8 @@
+//! Abstract syntax tree definition for Signal Temporal Logic (STL) formulas.
+//!
+//! [`FormulaDefinition`] models predicate, boolean, and temporal operators used
+//! by the monitor and parser layers.
+
 use crate::stl::core::{SignalIdentifier, TimeInterval};
 
 use std::fmt::Display;
@@ -16,17 +21,30 @@ pub enum FormulaDefinition {
     GreaterThanVar(&'static str, &'static str),
     /// Signal less than a variable: signal < var_name
     LessThanVar(&'static str, &'static str),
+    /// Boolean constant `True`.
     True,
+    /// Boolean constant `False`.
     False,
+    /// Boolean conjunction: `lhs ∧ rhs`.
     And(Box<FormulaDefinition>, Box<FormulaDefinition>),
+    /// Boolean disjunction: `lhs ∨ rhs`.
     Or(Box<FormulaDefinition>, Box<FormulaDefinition>),
+    /// Boolean negation: `¬f`.
     Not(Box<FormulaDefinition>),
+    /// Boolean implication: `lhs → rhs`.
     Implies(Box<FormulaDefinition>, Box<FormulaDefinition>),
+    /// Temporal eventually operator: `F[a,b] f`.
     Eventually(TimeInterval, Box<FormulaDefinition>),
+    /// Temporal globally operator: `G[a,b] f`.
     Globally(TimeInterval, Box<FormulaDefinition>),
+    /// Temporal until operator: `lhs U[a,b] rhs`.
     Until(TimeInterval, Box<FormulaDefinition>, Box<FormulaDefinition>),
 }
 
+/// Renders formulas using compact mathematical notation.
+///
+/// Temporal operators are printed as `F[start, end](...)`, `G[start, end](...)`,
+/// and `(...) U[start, end] (...)`, where interval bounds are shown in seconds.
 impl Display for FormulaDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -68,6 +86,10 @@ impl Display for FormulaDefinition {
 }
 
 impl SignalIdentifier for FormulaDefinition {
+    /// Returns all signal identifiers referenced by the formula.
+    ///
+    /// The traversal is recursive and collects unique signal names from both
+    /// constant and variable predicates.
     fn get_signal_identifiers(&mut self) -> std::collections::HashSet<&'static str> {
         let mut signals = std::collections::HashSet::new();
         fn collect_signals(
@@ -107,6 +129,8 @@ impl SignalIdentifier for FormulaDefinition {
 
 impl FormulaDefinition {
     /// Collects all variable identifiers used in the formula.
+    ///
+    /// Only variable predicates (`GreaterThanVar`/`LessThanVar`) contribute.
     pub fn get_variable_identifiers(&self) -> std::collections::HashSet<&'static str> {
         let mut variables = std::collections::HashSet::new();
         fn collect_variables(
@@ -144,6 +168,22 @@ impl FormulaDefinition {
         variables
     }
 
+    /// Builds an ASCII/Unicode tree representation of the formula Abastract Syntax Tree (AST).
+    ///
+    /// # Arguments
+    /// * `indent` - Number of leading spaces for the root node.
+    ///
+    /// # Returns
+    /// A multi-line string with `tree`-style connectors (`├──`, `└──`, `│`).
+    ///
+    /// # Example
+    /// A conjunction may look like:
+    ///
+    /// ```text
+    /// And
+    /// ├── x > 1
+    /// └── y < 2
+    /// ```
     pub fn to_tree_string(&self, indent: usize) -> String {
         // Produce a tree-like multi-line representation using characters similar to `tree`:
         // ├──  branch

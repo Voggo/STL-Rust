@@ -1,3 +1,11 @@
+//! Core STL abstractions shared across operators, parser, and monitor.
+//!
+//! This module defines:
+//! - time interval primitives ([`TimeInterval`]),
+//! - operator traits ([`StlOperatorTrait`], [`SignalIdentifier`]),
+//! - robustness domains ([`RobustnessSemantics`], [`RobustnessInterval`]), and
+//! - runtime variable bindings ([`Variables`]).
+
 use crate::ring_buffer::Step;
 use core::f64;
 use dyn_clone::{DynClone, clone_trait_object};
@@ -8,28 +16,49 @@ use std::ops::Neg;
 use std::ops::Sub;
 use std::time::Duration;
 
-// Time interval type
+/// Closed temporal interval $[start, end]$ used by STL temporal operators.
+///
+/// Both bounds are represented as [`Duration`] values and interpreted in the
+/// same logical time domain as incoming [`Step`] timestamps.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TimeInterval {
+    /// Lower bound of the interval.
     pub start: Duration,
+    /// Upper bound of the interval.
     pub end: Duration,
 }
 
-// stloperator trait
-// DynClone for cloning trait objects
+/// Common trait for all executable STL operators.
+///
+/// Implementations consume new input samples through [`StlOperatorTrait::update`]
+/// and may emit zero, one, or multiple output steps.
+///
+/// Trait objects are cloneable via [`dyn_clone`].
 pub trait StlOperatorTrait<T: Clone>: DynClone + Display + SignalIdentifier {
+    /// Output robustness domain (for example `f64`, `bool`, or [`RobustnessInterval`]).
     type Output;
 
+    /// Updates the operator with one input step and returns produced outputs.
+    ///
+    /// The returned vector may be empty if no output is available yet.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>>;
+
+    /// Returns the maximal lookahead required to finalize outputs.
+    ///
+    /// For temporal operators this is typically the interval end plus operand
+    /// lookahead; for atomic operators this is zero.
     fn get_max_lookahead(&self) -> Duration;
 }
 
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
+/// Trait for extracting referenced signal names from operator/formula trees.
 pub trait SignalIdentifier {
+    /// Collects all referenced signal identifiers.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str>;
 }
 
+/// Convenience trait alias combining execution and signal-introspection behavior.
 pub trait StlOperatorAndSignalIdentifier<T: Clone, Y>:
     StlOperatorTrait<T, Output = Y> + SignalIdentifier
 {
@@ -44,6 +73,11 @@ where
 
 clone_trait_object!(<T: Clone, Y> StlOperatorAndSignalIdentifier<T, Y>);
 
+/// Interval-valued robustness, represented as `(lower, upper)` bounds.
+///
+/// The bounds satisfy the intuitive interpretation that the true robustness lies
+/// somewhere in $[lower, upper]$. In this crate, this type is primarily used for
+/// RoSI intermediate reasoning.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RobustnessInterval(pub f64, pub f64);
 
@@ -103,14 +137,21 @@ impl Neg for RobustnessInterval {
     }
 }
 
-// Min, Max, Intersection traits
+/// Pointwise minimum operation for robustness domains.
 pub trait Min {
+    /// Returns the minimum combination of `self` and `other`.
     fn min(self, other: Self) -> Self;
 }
+
+/// Pointwise maximum operation for robustness domains.
 pub trait Max {
+    /// Returns the maximum combination of `self` and `other`.
     fn max(self, other: Self) -> Self;
 }
+
+/// Set-like intersection operation for interval-like domains.
 pub trait Intersection {
+    /// Returns the intersection of `self` and `other`.
     fn intersection(self, other: Self) -> Self;
 }
 
@@ -127,7 +168,9 @@ impl Max for RobustnessInterval {
 
 impl Intersection for RobustnessInterval {
     /// Calculates the intersection of two intervals.
-    /// Returns None if there is no overlap (the empty set).
+    ///
+    /// If there is no overlap, this implementation returns
+    /// `(-∞, +∞)` as an "unknown" sentinel used in the current design.
     fn intersection(self, other: Self) -> Self {
         let new_start = self.0.max(other.0);
         let new_end = self.1.min(other.1);
@@ -141,18 +184,38 @@ impl Intersection for RobustnessInterval {
     }
 }
 
-// should maybe just use refs for the operations
+/// Semantic operations required by STL operators for a robustness domain.
+///
+/// This trait abstracts the algebra used by boolean, quantitative (`f64`), and
+/// interval-valued (`RobustnessInterval`) monitoring.
 pub trait RobustnessSemantics: Clone + PartialEq {
+    /// Conjunction semantics.
     fn and(l: Self, r: Self) -> Self;
+    /// Disjunction semantics.
     fn or(l: Self, r: Self) -> Self;
+    /// Negation semantics.
     fn not(val: Self) -> Self;
+    /// Implication semantics.
     fn implies(antecedent: Self, consequent: Self) -> Self;
+
+    /// Identity element for eventuality aggregation.
     fn eventually_identity() -> Self;
+    /// Identity element for globally aggregation.
     fn globally_identity() -> Self;
+
+    /// Value representing a tautologically true atomic predicate.
     fn atomic_true() -> Self;
+    /// Value representing a tautologically false atomic predicate.
     fn atomic_false() -> Self;
+
+    /// Evaluates atomic predicate `value > c` in this semantics.
     fn atomic_greater_than(value: f64, c: f64) -> Self;
+    /// Evaluates atomic predicate `value < c` in this semantics.
     fn atomic_less_than(value: f64, c: f64) -> Self;
+
+    /// Representation of an unresolved/unknown value.
+    ///
+    /// Used by incremental temporal operators where windows are not yet closed.
     fn unknown() -> Self;
 
     /// Returns true if 'old' is strictly dominated by 'new' such that 'old'
@@ -522,7 +585,7 @@ pub struct Variables {
 }
 
 impl Variables {
-    /// Create a new empty variable context.
+    /// Creates a new empty variable context.
     pub fn new() -> Self {
         Self {
             inner: Rc::new(RefCell::new(HashMap::new())),
@@ -545,37 +608,41 @@ impl Variables {
         self.inner.borrow().get(name).copied()
     }
 
-    /// Check if a variable is defined.
+    /// Returns whether a variable is currently defined.
     pub fn contains(&self, name: &'static str) -> bool {
         self.inner.borrow().contains_key(name)
     }
 
-    /// Get all variable names.
+    /// Returns all currently defined variable names.
+    ///
+    /// The returned order is not specified.
     pub fn names(&self) -> Vec<&'static str> {
         self.inner.borrow().keys().copied().collect()
     }
 
-    /// Remove a variable.
+    /// Removes a variable and returns its previous value, if any.
     pub fn remove(&self, name: &'static str) -> Option<f64> {
         self.inner.borrow_mut().remove(name)
     }
 
-    /// Clear all variables.
+    /// Clears all stored variables.
     pub fn clear(&self) {
         self.inner.borrow_mut().clear();
     }
 
-    /// Check if the variable context is empty.
+    /// Returns `true` if no variables are stored.
     pub fn is_empty(&self) -> bool {
         self.inner.borrow().is_empty()
     }
 
-    /// Get the number of variables.
+    /// Returns the number of stored variables.
     pub fn len(&self) -> usize {
         self.inner.borrow().len()
     }
 
-    /// Iterate over all variable name-value pairs.
+    /// Returns a snapshot of all `(name, value)` pairs.
+    ///
+    /// This method clones entries into a `Vec` for ergonomic iteration.
     pub fn iter(&self) -> Vec<(&'static str, f64)> {
         self.inner.borrow().iter().map(|(k, v)| (*k, *v)).collect()
     }
