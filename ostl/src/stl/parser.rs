@@ -110,15 +110,19 @@ pub fn parse_stl(input: &str) -> Result<FormulaDefinition, ParseError> {
 
 /// Internal parser state.
 struct Parser<'a> {
+    /// Full input expression being parsed.
     input: &'a str,
+    /// Current byte offset into `input`.
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
+    /// Creates a parser at position `0`.
     fn new(input: &'a str) -> Self {
         Self { input, pos: 0 }
     }
 
+    /// Advances past ASCII/Unicode whitespace.
     fn skip_whitespace(&mut self) {
         while self.pos < self.input.len() {
             if let Some(c) = self.input[self.pos..].chars().next() {
@@ -133,14 +137,17 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns the current character without consuming it.
     fn peek(&self) -> Option<char> {
         self.input[self.pos..].chars().next()
     }
 
+    /// Returns the unparsed suffix.
     fn remaining(&self) -> &str {
         &self.input[self.pos..]
     }
 
+    /// Consumes one expected character after skipping whitespace.
     fn consume_char(&mut self, expected: char) -> Result<(), ParseError> {
         self.skip_whitespace();
         if self.peek() == Some(expected) {
@@ -154,6 +161,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses an identifier: `[A-Za-z_][A-Za-z0-9_]*`.
     fn parse_identifier(&mut self) -> Result<String, ParseError> {
         self.skip_whitespace();
         let start = self.pos;
@@ -183,6 +191,10 @@ impl<'a> Parser<'a> {
         Ok(self.input[start..self.pos].to_string())
     }
 
+    /// Parses a signed decimal number.
+    ///
+    /// Supported forms include integer and fractional literals (for example
+    /// `5`, `-2`, `0.75`, `-1.25`).
     fn parse_number(&mut self) -> Result<f64, ParseError> {
         self.skip_whitespace();
         let start = self.pos;
@@ -230,6 +242,9 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses an interval literal `[start, end]` into [`TimeInterval`].
+    ///
+    /// Interval bounds must be non-negative and satisfy `start <= end`.
     fn parse_interval(&mut self) -> Result<TimeInterval, ParseError> {
         self.consume_char('[')?;
         let start = self.parse_number()?;
@@ -258,6 +273,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a full formula using top-level precedence entrypoint.
     fn parse_formula(&mut self) -> Result<FormulaDefinition, ParseError> {
         self.parse_implication()
     }
@@ -514,6 +530,9 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses atomic primary expressions.
+    ///
+    /// Currently this accepts parenthesized sub-formulas.
     fn parse_primary(&mut self) -> Result<FormulaDefinition, ParseError> {
         self.skip_whitespace();
 

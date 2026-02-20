@@ -1,3 +1,23 @@
+//! Benchmark formula catalog.
+//!
+//! This module defines a stable set of STL formulas used by performance
+//! benchmarks. The IDs are intentionally fixed so benchmark runs can be compared
+//! across commits, machines, and algorithm/semantics variants.
+//!
+//! ## Benchmarking strategy
+//! The set mixes:
+//! - simple boolean/atomic cases,
+//! - temporal operators with increasing window sizes, and
+//! - deeply nested temporal/logical constructions.
+//!
+//! This gives coverage from low-overhead paths to stress cases that amplify
+//! temporal lookahead and operator composition costs.
+//!
+//! ## Reuse for custom benchmarks
+//! - Use [`get_formulas`] with an explicit ID subset for targeted experiments.
+//! - Keep IDs unchanged in your reports for reproducibility.
+//! - Compare the same IDs when testing new monitor configurations.
+
 use crate::stl;
 use crate::stl::core::TimeInterval;
 use crate::stl::formula_definition::FormulaDefinition;
@@ -5,6 +25,16 @@ use std::time::Duration;
 
 /// Returns the vector of Signal Temporal Logic formulas.
 /// If `ids` is not empty, returns only the formulas with the specified IDs.
+///
+/// # Formula groups
+/// - `1..=12`: basic and window-scaled formulas (`And`, `Or`, `Not`, `G`, `F`, `U`).
+/// - `13..=21`: nested/stress formulas with increasing structural depth.
+///
+/// # Arguments
+/// * `ids` - Empty slice returns all formulas; otherwise only listed IDs are returned.
+///
+/// # Returns
+/// Ordered `(id, formula)` pairs for deterministic benchmark setup.
 pub fn get_formulas(ids: &[usize]) -> Vec<(usize, FormulaDefinition)> {
     let mut formulas: Vec<(usize, FormulaDefinition)> = vec![
         // --- Basic Formulas (Lines 1-12) ---

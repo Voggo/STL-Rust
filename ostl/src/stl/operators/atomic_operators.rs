@@ -1,3 +1,9 @@
+//! Atomic STL operators.
+//!
+//! This module contains predicate leaves used by the STL operator tree.
+//! Atomic operators evaluate one input sample and emit one output sample in the
+//! selected robustness domain `Y`.
+
 use crate::ring_buffer::Step;
 use crate::stl::core::{RobustnessSemantics, SignalIdentifier, StlOperatorTrait, Variables};
 use std::collections::HashSet;
@@ -35,12 +41,19 @@ pub enum Atomic<Y> {
 }
 
 impl<Y> Atomic<Y> {
+    /// Creates an atomic predicate `signal_name < val`.
     pub fn new_less_than(signal_name: &'static str, val: f64) -> Self {
         Atomic::LessThan(signal_name, val, std::marker::PhantomData)
     }
+
+    /// Creates an atomic predicate `signal_name > val`.
     pub fn new_greater_than(signal_name: &'static str, val: f64) -> Self {
         Atomic::GreaterThan(signal_name, val, std::marker::PhantomData)
     }
+
+    /// Creates an atomic predicate `signal_name < $var_name`.
+    ///
+    /// The threshold is resolved from `vars` at evaluation time.
     pub fn new_less_than_var(
         signal_name: &'static str,
         var_name: &'static str,
@@ -48,6 +61,10 @@ impl<Y> Atomic<Y> {
     ) -> Self {
         Atomic::LessThanVar(signal_name, var_name, vars, std::marker::PhantomData)
     }
+
+    /// Creates an atomic predicate `signal_name > $var_name`.
+    ///
+    /// The threshold is resolved from `vars` at evaluation time.
     pub fn new_greater_than_var(
         signal_name: &'static str,
         var_name: &'static str,
@@ -55,9 +72,13 @@ impl<Y> Atomic<Y> {
     ) -> Self {
         Atomic::GreaterThanVar(signal_name, var_name, vars, std::marker::PhantomData)
     }
+
+    /// Creates a constant `True` atomic operator.
     pub fn new_true() -> Self {
         Atomic::True(std::marker::PhantomData)
     }
+
+    /// Creates a constant `False` atomic operator.
     pub fn new_false() -> Self {
         Atomic::False(std::marker::PhantomData)
     }
@@ -69,6 +90,14 @@ where
     Y: RobustnessSemantics + 'static,
 {
     type Output = Y;
+
+    /// Evaluates this atomic operator for the incoming sample.
+    ///
+    /// If the sample's signal identifier does not match the predicate signal,
+    /// no output is emitted.
+    ///
+    /// For variable-based predicates, this method panics if the variable is not
+    /// present in the provided [`Variables`] context.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let value = step.value.clone().into();
 
@@ -110,6 +139,9 @@ where
 }
 
 impl<Y> SignalIdentifier for Atomic<Y> {
+    /// Returns the referenced signal for predicate variants.
+    ///
+    /// Constant variants (`True`/`False`) return an empty set.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         match self {
@@ -126,6 +158,7 @@ impl<Y> SignalIdentifier for Atomic<Y> {
 }
 
 impl<Y> Display for Atomic<Y> {
+    /// Formats the atomic operator using formula-like notation.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Atomic::LessThan(signal_name, c, _) => write!(f, "{signal_name} < {c}"),

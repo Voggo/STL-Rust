@@ -1,3 +1,10 @@
+//! Multi-signal timestamp synchronization and interpolation.
+//!
+//! The monitor evaluates formulas against time-aligned samples. This module
+//! fills timestamp gaps per signal when required, based on a chosen
+//! [`SynchronizationStrategy`], and emits synchronized steps through a pending
+//! queue.
+
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::iter::Iterator;
 use std::ops::{Add, Mul, Sub};
@@ -5,14 +12,21 @@ use std::time::Duration;
 
 use crate::ring_buffer::Step;
 
+/// Strategy used to synthesize missing samples at known timeline timestamps.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SynchronizationStrategy {
-    None, // No interpolation
+    /// No synchronization/interpolation; forward only real input steps.
+    None,
     #[default]
-    ZeroOrderHold, // formula: v = v0
-    Linear, // formula: v = v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
+    /// Zero-order hold: $v(t) = v_0$.
+    ZeroOrderHold,
+    /// Linear interpolation: $v(t)=v_0 + (v_1-v_0) \cdot \frac{t-t_0}{t_1-t_0}$.
+    Linear,
 }
 
+/// Value requirements for synchronization interpolation.
+///
+/// Types must support affine interpolation via `+`, `-`, and scalar multiply by `f64`.
 pub trait Interpolatable:
     Copy + Add<Output = Self> + Sub<Output = Self> + Mul<f64, Output = Self>
 {
@@ -24,16 +38,21 @@ impl Interpolatable for f64 {}
 /// It maintains a timeline of all timestamps and the last known step for each active signal.
 /// A signal is considered active if it has received at least one step.
 pub struct Synchronizer<T> {
+    /// Synchronization/interpolation mode.
     strategy: SynchronizationStrategy,
+    /// Last seen real step per signal.
     last_steps: HashMap<&'static str, Step<T>>,
+    /// Global set of observed timestamps used as interpolation targets.
     timeline: BTreeSet<Duration>,
-    pub pending: VecDeque<Step<T>>, // Exposed so consumers can drain it
+    /// Queue of synchronized outputs to be drained by consumers.
+    pub pending: VecDeque<Step<T>>,
 }
 
 impl<T> Synchronizer<T>
 where
     T: Interpolatable,
 {
+    /// Creates a new synchronizer with the selected strategy.
     pub fn new(strategy: SynchronizationStrategy) -> Self {
         Self {
             strategy,
@@ -51,7 +70,8 @@ where
     /// Processes a new real step and generates interpolated steps if necessary.
     /// All resulting steps (interpolated + real) are added to `self.pending`.
     ///
-    /// Steps with non-strictly-increasing timestamps are ignored with a warning.
+    /// Timestamps must be strictly increasing per signal. Steps violating this
+    /// are ignored and a warning is printed.
     pub fn evaluate(&mut self, current_step: Step<T>) {
         let signal_id = current_step.signal;
         let current_time = current_step.timestamp;

@@ -1,3 +1,14 @@
+//! High-level STL monitor API.
+//!
+//! This module provides the user-facing monitor abstraction ([`StlMonitor`]) and
+//! its builder ([`StlMonitorBuilder`]). It bridges:
+//! - formula definitions ([`FormulaDefinition`]),
+//! - executable operator trees (incremental is strictly recommended, naive is mostly for testing), and
+//! - optional multi-signal synchronization.
+//!
+//! It also defines output containers ([`MonitorOutput`], [`SyncStepResult`]) and
+//! semantic selection markers used for type-driven output inference.
+
 use crate::ring_buffer::{RingBuffer, Step};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
@@ -17,17 +28,26 @@ use std::time::Duration;
 /// Defines the monitoring strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Algorithm {
+    /// Recursive naive evaluator (`naive_operators`) without incremental caches. (not recommended).
     Naive,
+    /// Incremental streaming evaluator (default).
     #[default]
     Incremental,
 }
 
+/// Monitoring semantics and evaluation mode.
+///
+/// This controls both the output domain and short-circuit/refinement behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Semantics {
+    /// Robustness Satisfaction interval (RoSI). (`RobustnessInterval`) with refinements.
     RobustnessInterval,
+    /// Delayed quantitative robustness (`f64`, default).
     #[default]
     DelayedQuantitative,
+    /// Delayed qualitative verdicts (`bool`).
     DelayedQualitative,
+    /// Eager qualitative verdicts (`bool`) with short-circuiting.
     EagerQualitative,
 }
 
@@ -36,11 +56,16 @@ pub mod semantic_markers {
     use super::Semantics;
     use crate::stl::core::RobustnessInterval;
 
+    /// Marker trait mapping a type-level semantic marker to runtime [`Semantics`]
+    /// and a concrete output type.
     pub trait SemanticType {
+        /// Concrete monitor output domain for this semantic family.
         type Output: super::RobustnessSemantics + 'static;
+        /// Runtime enum representation used in builder dispatch.
         fn as_enum() -> Semantics;
     }
 
+    /// Marker for RoSI interval semantics.
     #[derive(Debug, Clone, Copy)]
     pub struct Rosi;
     impl SemanticType for Rosi {
@@ -50,6 +75,7 @@ pub mod semantic_markers {
         }
     }
 
+    /// Marker for delayed quantitative semantics (`f64`).
     #[derive(Debug, Clone, Copy)]
     pub struct DelayedQuantitative;
     impl SemanticType for DelayedQuantitative {
@@ -59,6 +85,7 @@ pub mod semantic_markers {
         }
     }
 
+    /// Marker for delayed qualitative semantics (`bool`).
     #[derive(Debug, Clone, Copy)]
     pub struct DelayedQualitative;
     impl SemanticType for DelayedQualitative {
@@ -68,6 +95,7 @@ pub mod semantic_markers {
         }
     }
 
+    /// Marker for eager qualitative semantics (`bool`).
     #[derive(Debug, Clone, Copy)]
     pub struct EagerQualitative;
     impl SemanticType for EagerQualitative {
@@ -84,9 +112,13 @@ pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualita
 /// Represents the output of a single monitor update operation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MonitorOutput<T, Y> {
+    /// Signal name of the original input step that triggered this output object.
     pub input_signal: &'static str,
+    /// Timestamp of the original input step.
     pub input_timestamp: Duration,
+    /// Value of the original input step.
     pub input_value: T,
+    /// Per-synchronized-step evaluations produced during processing.
     pub evaluations: Vec<SyncStepResult<T, Y>>,
 }
 
@@ -112,21 +144,28 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Result of evaluating one synchronized step through the root operator.
 pub struct SyncStepResult<T, Y> {
+    /// Synchronized input step presented to the operator tree.
     pub sync_step: Step<T>,
+    /// Output steps emitted for this synchronized input step.
     pub outputs: Vec<Step<Y>>,
 }
 
 impl<T, Y> SyncStepResult<T, Y> {
+    /// Creates a new synchronized-step evaluation result.
     pub fn new(sync_step: Step<T>, outputs: Vec<Step<Y>>) -> Self {
         SyncStepResult { sync_step, outputs }
     }
+
+    /// Returns `true` if this synchronized step produced any outputs.
     pub fn has_outputs(&self) -> bool {
         !self.outputs.is_empty()
     }
 }
 
 impl<T, Y> MonitorOutput<T, Y> {
+    /// Creates a monitor output from an original input step and collected evaluations.
     pub fn new(input: &Step<T>, evaluations: Vec<SyncStepResult<T, Y>>) -> Self
     where
         T: Clone,
@@ -138,23 +177,35 @@ impl<T, Y> MonitorOutput<T, Y> {
             evaluations,
         }
     }
+
+    /// Returns `true` if at least one evaluation contains outputs.
     pub fn has_outputs(&self) -> bool {
         self.evaluations.iter().any(|e| !e.outputs.is_empty())
     }
+
+    /// Returns the total number of emitted output steps across all evaluations.
     pub fn total_outputs(&self) -> usize {
         self.evaluations.iter().map(|e| e.outputs.len()).sum()
     }
+
+    /// Returns `true` if no synchronized evaluations were recorded.
     pub fn is_empty(&self) -> bool {
         self.evaluations.is_empty()
     }
+
+    /// Iterates over all emitted output steps in evaluation order.
     pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Y>> {
         self.evaluations.iter().flat_map(|e| e.outputs.iter())
     }
+
+    /// Returns the latest emitted verdict for a given timestamp, if present.
     pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Y>> {
         self.outputs_iter()
             .filter(|s| s.timestamp == timestamp)
             .last()
     }
+
+    /// Returns all emitted output steps as a flat vector.
     pub fn all_outputs(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
@@ -164,6 +215,11 @@ impl<T, Y> MonitorOutput<T, Y> {
             .flat_map(|e| e.outputs.clone())
             .collect()
     }
+
+    /// Produces one finalized verdict per timestamp.
+    ///
+    /// If multiple outputs exist at the same timestamp (for example due to
+    /// refinement), the last one is retained.
     pub fn finalize(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
@@ -193,6 +249,9 @@ pub struct StlMonitor<T: Clone + Interpolatable, Y> {
 /// Entry point for the builder.
 /// This impl block enables `StlMonitor::builder()` to return a builder with default T=f64 and Y=f64.
 impl StlMonitor<f64, f64> {
+    /// Creates a builder with default input/output types (`T = f64`, `Y = f64`).
+    ///
+    /// Use [`StlMonitorBuilder::semantics`] to switch the output type.
     pub fn builder() -> StlMonitorBuilder<f64, f64> {
         StlMonitorBuilder {
             formula: None,
@@ -371,6 +430,7 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
 }
 
 impl<T: Clone + Interpolatable, Y> Display for StlMonitor<T, Y> {
+    /// Formats monitor configuration details for debugging and inspection.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "STL Monitor Configuration:")?;
         writeln!(f, "  Specification: {}", self.root_operator)?;
@@ -449,6 +509,15 @@ impl<T, Y> StlMonitorBuilder<T, Y> {
 
     /// Applies the semantics, switching the Builder's generic type `Y` to match the semantics.
     /// This allows inference of the output type (bool, f64, RobustnessInterval).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let monitor = StlMonitor::builder()
+    ///     .formula(formula)
+    ///     .semantics(DelayedQualitative) // Y becomes bool
+    ///     .build()?;
+    /// ```
     pub fn semantics<S: semantic_markers::SemanticType>(
         self,
         _marker: S,
@@ -481,6 +550,10 @@ where
         operator
     }
 
+    /// Builds a fully configured [`StlMonitor`].
+    ///
+    /// Returns an error if no formula was provided or when an unsupported
+    /// algorithm/semantics combination is requested.
     pub fn build(self) -> Result<StlMonitor<T, Y>, &'static str> {
         let mut formula_def = self
             .formula

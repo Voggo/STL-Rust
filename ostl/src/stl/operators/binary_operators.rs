@@ -1,3 +1,11 @@
+//! Binary STL operators (`And`, `Or`).
+//!
+//! This module combines two child operators while supporting three execution
+//! modes through const generics:
+//! - strict (`IS_EAGER = false`, `IS_ROSI = false`),
+//! - eager short-circuiting (`IS_EAGER = true`, `IS_ROSI = false`), and
+//! - refinable interval semantics (`IS_ROSI = true`).
+
 use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
@@ -7,6 +15,9 @@ use std::fmt::{Debug, Display};
 use std::time::Duration;
 
 /// A unified binary processor that handles Strict, Eager, and Refinable (RoSI) semantics correctly.
+///
+/// This helper consumes cached outputs from left/right sub-operators and emits
+/// timestamp-aligned combined outputs using `combine_op`.
 fn process_binary<C, Y, F, const IS_EAGER: bool, const IS_ROSI: bool>(
     left_cache: &mut C,
     right_cache: &mut C,
@@ -117,6 +128,9 @@ where
 }
 
 #[derive(Clone)]
+/// Logical conjunction operator.
+///
+/// Combines two operand streams with [`RobustnessSemantics::and`].
 pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -131,6 +145,9 @@ pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, IS_ROSI> {
+    /// Creates a new conjunction operator from left and right operands.
+    ///
+    /// If caches are `None`, empty caches are created.
     pub fn new(
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -171,6 +188,12 @@ where
         self.max_lookahead
     }
 
+    /// Updates both operands with the incoming sample and emits conjunction outputs.
+    ///
+    /// Output emission depends on execution mode:
+    /// - strict: only finalized timestamp-aligned outputs,
+    /// - eager: may short-circuit on semantic false,
+    /// - RoSI: allows refinements at already-seen timestamps.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
@@ -260,6 +283,7 @@ where
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for And<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Returns the union of signal identifiers from both operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         self.left_signals_set
@@ -273,6 +297,9 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 }
 
 #[derive(Clone)]
+/// Logical disjunction operator.
+///
+/// Combines two operand streams with [`RobustnessSemantics::or`].
 pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
     right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -287,6 +314,9 @@ pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, IS_ROSI> {
+    /// Creates a new disjunction operator from left and right operands.
+    ///
+    /// If caches are `None`, empty caches are created.
     pub fn new(
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
         right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -335,6 +365,12 @@ where
         self.max_lookahead
     }
 
+    /// Updates both operands with the incoming sample and emits disjunction outputs.
+    ///
+    /// Output emission depends on execution mode:
+    /// - strict: only finalized timestamp-aligned outputs,
+    /// - eager: may short-circuit on semantic true,
+    /// - RoSI: allows refinements at already-seen timestamps.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let check_relevance = |timestamp: Duration, last_time: Option<Duration>| -> bool {
             match last_time {
@@ -424,6 +460,7 @@ where
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Or<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Returns the union of signal identifiers from both operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         let mut ids = std::collections::HashSet::new();
         self.left_signals_set
@@ -439,6 +476,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     for And<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Formats as `(left) ∧ (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}) ∧ ({})", self.left, self.right)
     }
@@ -447,6 +485,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     for Or<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Formats as `(left) v (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}) v ({})", self.left, self.right)
     }

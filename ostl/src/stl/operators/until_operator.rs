@@ -1,3 +1,9 @@
+//! Temporal `Until` operator implementation.
+//!
+//! This module provides [`Until`], a stateful evaluator for `φ U[a,b] ψ` over
+//! streamed samples, supporting strict, eager, and refinable (RoSI) modes via
+//! const generics.
+
 use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
 use crate::stl::core::{
     RobustnessSemantics, SignalIdentifier, StlOperatorAndSignalIdentifier, StlOperatorTrait,
@@ -8,6 +14,14 @@ use std::fmt::Display;
 use std::time::Duration;
 
 #[derive(Clone)]
+/// Temporal until operator `φ U[a,b] ψ`.
+///
+/// For each evaluation timestamp `t`, this operator computes the usual STL until
+/// aggregation on the interval `[t + a, t + b]` using the selected robustness
+/// domain `Y`.
+///
+/// Internally it keeps per-operand caches and an evaluation task buffer so that
+/// results can be emitted incrementally as data arrives.
 pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     interval: TimeInterval,
     left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
@@ -22,6 +36,12 @@ pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
 }
 
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER, IS_ROSI> {
+    /// Creates a new `Until` operator.
+    ///
+    /// `max_lookahead` is computed as:
+    /// `interval.end + max(left.get_max_lookahead(), right.get_max_lookahead())`.
+    ///
+    /// If caches are `None`, empty caches are created.
     pub fn new(
         interval: TimeInterval,
         left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
@@ -49,7 +69,10 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
         }
     }
 
-    /// Helper to add a step to a cache, handling ROSI update-or-add semantics
+    /// Adds a step to a cache.
+    ///
+    /// In RoSI mode this performs update-or-insert by timestamp; otherwise it
+    /// appends the step.
     fn add_to_cache<const ROSI: bool>(cache: &mut C, step: Step<Y>)
     where
         C: RingBufferTrait<Value = Y>,
@@ -77,6 +100,18 @@ where
     fn get_max_lookahead(&self) -> Duration {
         self.max_lookahead
     }
+    /// Updates the operator with one input sample and emits newly available outputs.
+    ///
+    /// High-level flow:
+    /// 1. Update child operators and cache their outputs.
+    /// 2. Iterate pending evaluation timestamps and compute `Until` aggregation.
+    /// 3. Finalize/short-circuit/refine depending on mode.
+    /// 4. Prune caches and remove completed tasks.
+    ///
+    /// Mode behavior:
+    /// - strict (`IS_EAGER = false`, `IS_ROSI = false`): emit only finalized values,
+    /// - eager (`IS_EAGER = true`): may short-circuit on early `true`/`false`,
+    /// - RoSI (`IS_ROSI = true`): emit refinable intermediate values widened with `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
         let mut output_robustness = Vec::new();
 
@@ -253,6 +288,7 @@ where
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     for Until<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Returns the union of signal identifiers from left and right operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.left_signals_set
             .extend(self.left.get_signal_identifiers());
@@ -268,6 +304,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     for Until<T, C, Y, IS_EAGER, IS_ROSI>
 {
+    /// Formats as `(left) U[start, end] (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
