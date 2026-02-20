@@ -29,7 +29,7 @@
 //! let out1 = monitor.update(&Step::new("x", 7.0, Duration::from_secs(0)));
 //! let out2 = monitor.update(&Step::new("x", 6.0, Duration::from_secs(1)));
 //! let out3 = monitor.update(&Step::new("x", 4.0, Duration::from_secs(2)));
-//! 
+//!
 //! ```
 //!
 
