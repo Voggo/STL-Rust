@@ -106,7 +106,7 @@ pub mod semantic_markers {
     }
 }
 
-// Re-export markers for easier access like `monitor::StrictSatisfaction`
+// Re-export markers for easier access like `monitor::DelayedQualitative`
 pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi};
 
 /// Represents the output of a single monitor update operation.
@@ -304,29 +304,20 @@ impl<T, Y> MonitorOutput<T, Y> {
 
     /// Provides access to the internal synchronization-step evaluations.
     ///
-    /// This is an advanced API useful for debugging synchronization behavior.
-    pub fn sync_evaluations(&self) -> &[SyncStepResult<T, Y>] {
-        &self.evaluations
-    }
-}
-
-/// Allows `for verdict in &output` — iterates over finalized verdicts.
-impl<T, Y: Clone> IntoIterator for &MonitorOutput<T, Y> {
-    type Item = Step<Y>;
-    type IntoIter = std::vec::IntoIter<Step<Y>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.verdicts().into_iter()
-    }
-}
-
-/// Allows `for verdict in output` — consumes and iterates finalized verdicts.
-impl<T, Y> IntoIterator for MonitorOutput<T, Y> {
-    type Item = Step<Y>;
-    type IntoIter = std::vec::IntoIter<Step<Y>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.into_verdicts().into_iter()
+    /// If multiple outputs exist at the same timestamp (for example due to
+    /// refinement), the last one is retained.
+    pub fn finalize(&self) -> Vec<Step<Y>>
+    where
+        Y: Clone,
+    {
+        let mut latest_map = std::collections::BTreeMap::new();
+        for output in self.all_raw_outputs() {
+            latest_map.insert(output.timestamp, output.value.clone());
+        }
+        latest_map
+            .into_iter()
+            .map(|(ts, val)| Step::new(self.input_signal, val, ts))
+            .collect()
     }
 }
 
@@ -848,7 +839,7 @@ mod tests {
 
         // This is the syntax you requested:
         // T is defaulted to f64 by StlMonitor::builder()
-        // Y is inferred as `bool` because of StrictSatisfaction
+        // Y is inferred as `bool` because of DelayedQualitative
         let mut monitor = StlMonitor::builder()
             .formula(formula)
             .semantics(DelayedQualitative) // Use the marker struct

@@ -1,7 +1,7 @@
 //! Unary temporal STL operators (`Eventually`, `Globally`).
 //!
 //! This module implements sliding-window temporal evaluation over an operand
-//! stream, with support for strict, eager, and refinable (RoSI) execution via
+//! stream, with support for delayed, eager, and (RoSI) execution via
 //! const generics.
 
 use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
@@ -87,7 +87,7 @@ where
     /// Updates temporal state with one input sample and emits available outputs.
     ///
     /// Behavior depends on mode:
-    /// - strict (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
+    /// - delayed (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
     /// - eager (`IS_EAGER = true`): may finalize early on semantic `true`,
     /// - RoSI (`IS_ROSI = true`): can emit intermediate refinable values using `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
@@ -276,7 +276,7 @@ where
     /// Updates temporal state with one input sample and emits available outputs.
     ///
     /// Behavior depends on mode:
-    /// - strict (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
+    /// - delayed (`IS_ROSI = false`, `IS_EAGER = false`): emits only closed-window results,
     /// - eager (`IS_EAGER = true`): may finalize early on semantic `false`,
     /// - RoSI (`IS_ROSI = true`): can emit intermediate refinable values using `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {

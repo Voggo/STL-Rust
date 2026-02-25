@@ -60,17 +60,17 @@ fn run_monitor_test<Y, S>(
 }
 
 #[rstest]
-// --- f64 Strict Cases ---
+// --- f64 Delayed Cases ---
 // These run with Robustness and are tested against
 // both Naive and Incremental strategies.
-#[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_f64_strict())]
-#[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_strict())]
-#[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_f64_strict())]
-#[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_f64_strict())]
-#[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_f64_strict())]
-#[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_strict())]
-#[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_f64_strict())]
-fn test_f64_strict(
+#[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_f64_delayed())]
+#[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_f64_delayed())]
+#[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_f64_delayed())]
+#[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_f64_delayed())]
+#[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_f64_delayed())]
+#[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_f64_delayed())]
+#[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_f64_delayed())]
+fn test_f64_delayed(
     #[case] formulas: Vec<FormulaDefinition>,
     #[case] signal: Vec<Step<f64>>,
     #[case] expected: Vec<Vec<Step<f64>>>,
@@ -80,17 +80,17 @@ fn test_f64_strict(
 }
 
 #[rstest]
-// --- bool Strict Cases ---
-// These run with StrictSatisfaction and are tested against
+// --- bool Delayed Cases ---
+// These run with DelayedQualitative and are tested against
 // both Naive and Incremental strategies.
-#[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_strict())]
-#[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_strict())]
-#[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_bool_strict())]
-#[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_bool_strict())]
-#[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_strict())]
-#[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_strict())]
-#[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_strict())]
-fn test_bool_strict(
+#[case::f1_s1(vec![formula_1(), formula_1_alt(), formula_1_alt_2()], signal_1(), exp_f1_s1_bool_delayed())]
+#[case::f2_s2(vec![formula_2()], signal_2(), exp_f2_s2_bool_delayed())]
+#[case::f3_s3(vec![formula_3(), formula_3_alt()], signal_3(), exp_f3_s3_bool_delayed())]
+#[case::f6_s2(vec![formula_6(), formula_6_alt()], signal_2(), exp_f6_s2_bool_delayed())]
+#[case::f4_s3(vec![formula_4(), formula_5(), formula_5_alt()], signal_3(), exp_f4_s3_bool_delayed())]
+#[case::f7_s3(vec![formula_7()], signal_3(), exp_f7_s3_bool_delayed())]
+#[case::f8_s4(vec![formula_8()], signal_4(), exp_f8_s4_bool_delayed())]
+fn test_bool_delayed(
     #[case] formulas: Vec<FormulaDefinition>,
     #[case] signal: Vec<Step<f64>>,
     #[case] expected: Vec<Vec<Step<bool>>>,

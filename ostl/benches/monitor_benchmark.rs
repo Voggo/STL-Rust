@@ -85,9 +85,9 @@ fn benchmark_monitors(c: &mut Criterion) {
             let signal_size = signal.len();
             group.throughput(Throughput::Elements(signal_size as u64));
 
-            // // 1. Incremental bool Strict
+            // // 1. Incremental bool Delayed
             // group.bench_with_input(
-            //     criterion::BenchmarkId::new("Incremental_bool_Strict", signal_size),
+            //     criterion::BenchmarkId::new("Incremental_bool_Delayed", signal_size),
             //     signal,
             //     |b, signal| {
             //         b.iter_batched(
@@ -95,7 +95,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             //                 let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             //                     .formula(formula.clone())
             //                     .algorithm(Algorithm::Incremental)
-            //                     .semantics(Semantics::StrictSatisfaction)
+            //                     .semantics(Semantics::DelayedQualitative)
             //                     .build()
             //                     .unwrap();
             //                 (monitor, signal.clone())
@@ -111,9 +111,9 @@ fn benchmark_monitors(c: &mut Criterion) {
             //     },
             // );
 
-            // // 2. Incremental f64 Strict
+            // // 2. Incremental f64 Delayed
             group.bench_with_input(
-                criterion::BenchmarkId::new("Incremental_f64_Strict", signal_size),
+                criterion::BenchmarkId::new("Incremental_f64_Delayed", signal_size),
                 signal,
                 |b, signal| {
                     b.iter_batched(
@@ -136,11 +136,11 @@ fn benchmark_monitors(c: &mut Criterion) {
                 },
             );
 
-            // // If this formula is among the first 12, also run Naive strategy (strict) benchmarks
+            // // If this formula is among the first 12, also run Naive strategy (delayed) benchmarks
             // if id <= 11 {
-            //     // Naive bool Strict
+            //     // Naive bool Delayed
             //     group.bench_with_input(
-            //         criterion::BenchmarkId::new("Naive_bool_Strict", signal_size),
+            //         criterion::BenchmarkId::new("Naive_bool_Delayed", signal_size),
             //         signal,
             //         |b, signal| {
             //             b.iter_batched(
@@ -148,7 +148,7 @@ fn benchmark_monitors(c: &mut Criterion) {
             //                     let monitor: StlMonitor<f64, bool> = StlMonitor::builder()
             //                         .formula(formula.clone())
             //                         .algorithm(Algorithm::Naive)
-            //                         .semantics(Semantics::StrictSatisfaction)
+            //                         .semantics(Semantics::DelayedQualitative)
             //                         .build()
             //                         .unwrap();
             //                     (monitor, signal.clone())
@@ -163,9 +163,9 @@ fn benchmark_monitors(c: &mut Criterion) {
             //         },
             //     );
 
-            //     // Naive f64 Strict
+            //     // Naive f64 Delayed
             //     group.bench_with_input(
-            //         criterion::BenchmarkId::new("Naive_f64_Strict", signal_size),
+            //         criterion::BenchmarkId::new("Naive_f64_Delayed", signal_size),
             //         signal,
             //         |b, signal| {
             //             b.iter_batched(
