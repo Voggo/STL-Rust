@@ -17,6 +17,7 @@ use crate::stl::formula_definition::FormulaDefinition;
 use crate::stl::naive_operators::{StlFormula, StlOperator};
 use crate::stl::operators::atomic_operators::Atomic;
 use crate::stl::operators::binary_operators::{And, Or};
+use crate::stl::operators::compiled_operator::CompiledOperator;
 use crate::stl::operators::not_operator::Not;
 use crate::stl::operators::unary_temporal_operators::{Eventually, Globally};
 use crate::stl::operators::until_operator::Until;
@@ -779,76 +780,96 @@ where
     T: Into<f64> + Copy + 'static,
     Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
 {
-    // Determine configuration flags
-    let is_eager = matches!(semantics, Semantics::EagerQualitative);
-    let is_rosi = matches!(semantics, Semantics::RobustnessInterval);
-
-    // We use `$( $arg:expr ),*` to capture arguments as a list.
-    // We explicitly define <T, RingBuffer<Option<Y>>, Y...> to allow passing 'None' for caches.
-    macro_rules! dispatch_operator {
-        ($OpType:ident, $( $arg:expr ),* ) => {
-            match (is_eager, is_rosi) {
-                (true, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, true>::new( $( $arg ),* )),
-                (true, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, true, false>::new( $( $arg ),* )),
-                (false, true) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, true>::new( $( $arg ),* )),
-                (false, false) => Box::new($OpType::<T, RingBuffer<Y>, Y, false, false>::new( $( $arg ),* )),
-            }
-        };
+    match (
+        matches!(semantics, Semantics::EagerQualitative),
+        matches!(semantics, Semantics::RobustnessInterval),
+    ) {
+        (true, true) => Box::new(build_incremental_operator_static::<T, Y, true, true>(
+            formula, variables,
+        )),
+        (true, false) => Box::new(build_incremental_operator_static::<T, Y, true, false>(
+            formula, variables,
+        )),
+        (false, true) => Box::new(build_incremental_operator_static::<T, Y, false, true>(
+            formula, variables,
+        )),
+        (false, false) => Box::new(build_incremental_operator_static::<T, Y, false, false>(
+            formula, variables,
+        )),
     }
+}
 
+fn build_incremental_operator_static<T, Y, const IS_EAGER: bool, const IS_ROSI: bool>(
+    formula: FormulaDefinition,
+    variables: Variables,
+) -> CompiledOperator<T, Y, IS_EAGER, IS_ROSI>
+where
+    T: Into<f64> + Copy + 'static,
+    Y: RobustnessSemantics + Copy + 'static + std::fmt::Debug,
+{
     match formula {
-        FormulaDefinition::GreaterThan(s, c) => Box::new(Atomic::new_greater_than(s, c)),
-        FormulaDefinition::LessThan(s, c) => Box::new(Atomic::new_less_than(s, c)),
+        FormulaDefinition::GreaterThan(s, c) => {
+            CompiledOperator::Atomic(Atomic::new_greater_than(s, c))
+        }
+        FormulaDefinition::LessThan(s, c) => CompiledOperator::Atomic(Atomic::new_less_than(s, c)),
         FormulaDefinition::GreaterThanVar(s, var) => {
-            Box::new(Atomic::new_greater_than_var(s, var, variables.clone()))
+            CompiledOperator::Atomic(Atomic::new_greater_than_var(s, var, variables.clone()))
         }
         FormulaDefinition::LessThanVar(s, var) => {
-            Box::new(Atomic::new_less_than_var(s, var, variables.clone()))
+            CompiledOperator::Atomic(Atomic::new_less_than_var(s, var, variables.clone()))
         }
-        FormulaDefinition::True => Box::new(Atomic::new_true()),
-        FormulaDefinition::False => Box::new(Atomic::new_false()),
+        FormulaDefinition::True => CompiledOperator::Atomic(Atomic::new_true()),
+        FormulaDefinition::False => CompiledOperator::Atomic(Atomic::new_false()),
 
         FormulaDefinition::Not(op) => {
-            let child = build_incremental_operator(*op, semantics, variables);
-            Box::new(Not::new(child))
+            let child =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*op, variables);
+            CompiledOperator::Not(Not::new(Box::new(child)))
         }
 
         FormulaDefinition::And(l, r) => {
-            let left = build_incremental_operator(*l, semantics, variables.clone());
-            let right = build_incremental_operator(*r, semantics, variables);
-            dispatch_operator!(And, left, right, None, None)
+            let left =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*l, variables.clone());
+            let right = build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*r, variables);
+            CompiledOperator::And(And::new(Box::new(left), Box::new(right), None, None))
         }
 
         FormulaDefinition::Or(l, r) => {
-            let left = build_incremental_operator(*l, semantics, variables.clone());
-            let right = build_incremental_operator(*r, semantics, variables);
-            dispatch_operator!(Or, left, right, None, None)
+            let left =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*l, variables.clone());
+            let right = build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*r, variables);
+            CompiledOperator::Or(Or::new(Box::new(left), Box::new(right), None, None))
         }
 
         FormulaDefinition::Implies(l, r) => {
-            let not_left = Box::new(Not::new(build_incremental_operator(
-                *l,
-                semantics,
-                variables.clone(),
-            )));
-            let right = build_incremental_operator(*r, semantics, variables);
-            dispatch_operator!(Or, not_left, right, None, None)
+            let not_left =
+                CompiledOperator::Not(Not::new(Box::new(build_incremental_operator_static::<
+                    T,
+                    Y,
+                    IS_EAGER,
+                    IS_ROSI,
+                >(*l, variables.clone()))));
+            let right = build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*r, variables);
+            CompiledOperator::Or(Or::new(Box::new(not_left), Box::new(right), None, None))
         }
 
         FormulaDefinition::Eventually(i, op) => {
-            let child = build_incremental_operator(*op, semantics, variables);
-            dispatch_operator!(Eventually, i, child, None, None)
+            let child =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*op, variables);
+            CompiledOperator::Eventually(Eventually::new(i, Box::new(child), None, None))
         }
 
         FormulaDefinition::Globally(i, op) => {
-            let child = build_incremental_operator(*op, semantics, variables);
-            dispatch_operator!(Globally, i, child, None, None)
+            let child =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*op, variables);
+            CompiledOperator::Globally(Globally::new(i, Box::new(child), None, None))
         }
 
         FormulaDefinition::Until(i, l, r) => {
-            let left = build_incremental_operator(*l, semantics, variables.clone());
-            let right = build_incremental_operator(*r, semantics, variables);
-            dispatch_operator!(Until, i, left, right, None, None)
+            let left =
+                build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*l, variables.clone());
+            let right = build_incremental_operator_static::<T, Y, IS_EAGER, IS_ROSI>(*r, variables);
+            CompiledOperator::Until(Until::new(i, Box::new(left), Box::new(right), None, None))
         }
     }
 }

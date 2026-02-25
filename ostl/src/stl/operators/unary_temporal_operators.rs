@@ -11,6 +11,7 @@ use crate::stl::core::{
 };
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
 use std::time::Duration;
 
 /// Removes dominated values from the back of a monotone cache.
@@ -36,22 +37,32 @@ where
 ///
 /// For each evaluation timestamp `t`, this computes the operand aggregation over
 /// the window `[t + a, t + b]` using [`RobustnessSemantics::or`].
-pub struct Eventually<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
+pub struct Eventually<
+    T,
+    C,
+    Y,
+    const IS_EAGER: bool,
+    const IS_ROSI: bool,
+    O = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+> {
     interval: TimeInterval,
-    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    operand: O,
     cache: C,
     eval_buffer: BTreeSet<Duration>,
     max_lookahead: Duration,
+    _phantom: PhantomData<(T, Y)>,
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_EAGER, IS_ROSI> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O>
+    Eventually<T, C, Y, IS_EAGER, IS_ROSI, O>
+{
     /// Creates a new `Eventually` operator.
     ///
     /// `max_lookahead` is computed as `interval.end + operand.get_max_lookahead()`.
     /// Optional cache and evaluation buffer can be injected for state restore.
     pub fn new(
         interval: TimeInterval,
-        operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        operand: O,
         cache: Option<C>,
         eval_buffer: Option<BTreeSet<Duration>>,
     ) -> Self
@@ -59,24 +70,27 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_
         T: Clone + 'static,
         C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        O: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
-        Eventually {
+        Self {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_default(),
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
-    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> StlOperatorTrait<T>
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI, O>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + Debug + 'static,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -211,8 +225,11 @@ where
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
-    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> SignalIdentifier
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Returns the signal identifiers referenced by the operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
@@ -225,22 +242,32 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 ///
 /// For each evaluation timestamp `t`, this computes the operand aggregation over
 /// the window `[t + a, t + b]` using [`RobustnessSemantics::and`].
-pub struct Globally<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
+pub struct Globally<
+    T,
+    C,
+    Y,
+    const IS_EAGER: bool,
+    const IS_ROSI: bool,
+    O = Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+> {
     interval: TimeInterval,
-    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    operand: O,
     cache: C,
     eval_buffer: BTreeSet<Duration>,
     max_lookahead: Duration,
+    _phantom: PhantomData<(T, Y)>,
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EAGER, IS_ROSI> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O>
+    Globally<T, C, Y, IS_EAGER, IS_ROSI, O>
+{
     /// Creates a new `Globally` operator.
     ///
     /// `max_lookahead` is computed as `interval.end + operand.get_max_lookahead()`.
     /// Optional cache and evaluation buffer can be injected for state restore.
     pub fn new(
         interval: TimeInterval,
-        operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        operand: O,
         cache: Option<C>,
         eval_buffer: Option<BTreeSet<Duration>>,
     ) -> Self
@@ -248,24 +275,27 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EA
         T: Clone + 'static,
         C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        O: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
-        Globally {
+        Self {
             interval,
             operand,
             cache: cache.unwrap_or_else(|| C::new()),
             eval_buffer: eval_buffer.unwrap_or_default(),
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
-    for Globally<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> StlOperatorTrait<T>
+    for Globally<T, C, Y, IS_EAGER, IS_ROSI, O>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + Debug + 'static,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -397,8 +427,11 @@ where
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
-    for Globally<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> SignalIdentifier
+    for Globally<T, C, Y, IS_EAGER, IS_ROSI, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Returns the signal identifiers referenced by the operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
@@ -406,8 +439,11 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
-    for Globally<T, Y, C, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> Display
+    for Globally<T, C, Y, IS_EAGER, IS_ROSI, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Formats as `G[start, end](operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -421,8 +457,11 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
-    for Eventually<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, O> Display
+    for Eventually<T, C, Y, IS_EAGER, IS_ROSI, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Formats as `F[start, end](operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

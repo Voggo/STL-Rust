@@ -50,12 +50,38 @@ pub trait StlOperatorTrait<T: Clone>: DynClone + Display + SignalIdentifier {
     fn get_max_lookahead(&self) -> Duration;
 }
 
+impl<T, U> StlOperatorTrait<T> for Box<U>
+where
+    T: Clone,
+    U: StlOperatorTrait<T> + ?Sized,
+    Box<U>: Clone,
+{
+    type Output = U::Output;
+
+    fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
+        (**self).update(step)
+    }
+
+    fn get_max_lookahead(&self) -> Duration {
+        (**self).get_max_lookahead()
+    }
+}
+
 clone_trait_object!(<T: Clone, Y> StlOperatorTrait<T, Output = Y>);
 
 /// Trait for extracting referenced signal names from operator/formula trees.
 pub trait SignalIdentifier {
     /// Collects all referenced signal identifiers.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str>;
+}
+
+impl<U> SignalIdentifier for Box<U>
+where
+    U: SignalIdentifier + ?Sized,
+{
+    fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
+        (**self).get_signal_identifiers()
+    }
 }
 
 /// Convenience trait alias combining execution and signal-introspection behavior.

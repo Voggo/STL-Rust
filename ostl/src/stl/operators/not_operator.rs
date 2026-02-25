@@ -9,36 +9,41 @@ use crate::stl::core::{
 };
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 #[derive(Clone)]
 /// STL negation operator `¬φ`.
-pub struct Not<T, Y> {
-    operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+pub struct Not<T, Y, O = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>> {
+    operand: O,
     max_lookahead: Duration,
+    _phantom: PhantomData<(T, Y)>,
 }
 
-impl<T, Y> Not<T, Y> {
+impl<T, Y, O> Not<T, Y, O> {
     /// Creates a new negation operator from a child operand.
     ///
     /// The resulting lookahead equals the child's lookahead.
-    pub fn new(operand: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>) -> Self
+    pub fn new(operand: O) -> Self
     where
         T: Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        O: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = operand.get_max_lookahead();
-        Not {
+        Self {
             operand,
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<T, Y> StlOperatorTrait<T> for Not<T, Y>
+impl<T, Y, O> StlOperatorTrait<T> for Not<T, Y, O>
 where
     T: Clone + 'static,
     Y: RobustnessSemantics + 'static,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -66,14 +71,22 @@ where
     }
 }
 
-impl<T, Y> SignalIdentifier for Not<T, Y> {
+impl<T, Y, O> SignalIdentifier for Not<T, Y, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+{
     /// Returns the signal identifiers of the wrapped operand.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
         self.operand.get_signal_identifiers()
     }
 }
 
-impl<T, Y> Display for Not<T, Y> {
+impl<T, Y, O> Display for Not<T, Y, O>
+where
+    T: Clone,
+    O: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+{
     /// Formats as `¬(operand)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "¬({})", self.operand)

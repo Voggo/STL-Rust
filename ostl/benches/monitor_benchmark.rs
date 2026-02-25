@@ -18,7 +18,7 @@ fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
 where
     P: AsRef<Path>,
 {
-    let file = File::open(filename).expect("failed to read file: {filename}");
+    let file = File::open(filename).expect("failed to read file");
     let reader = io::BufReader::new(file);
     let mut signal = Vec::new();
     // we skip the first line which is the header
@@ -40,7 +40,7 @@ where
 /// Reads signals from the specified CSV files.
 pub fn get_signals_from_csv() -> Vec<Vec<Step<f64>>> {
     let filenames = [
-        "benches/signal_5000.csv",
+        "benches/signal_generation/signals/signal_5000.csv",
         // "benches/signal_10000.csv",
         // "benches/signal_20000.csv",
     ];

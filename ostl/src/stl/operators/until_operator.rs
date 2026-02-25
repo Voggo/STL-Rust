@@ -11,6 +11,7 @@ use crate::stl::core::{
 };
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -22,10 +23,18 @@ use std::time::Duration;
 ///
 /// Internally it keeps per-operand caches and an evaluation task buffer so that
 /// results can be emitted incrementally as data arrives.
-pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
+pub struct Until<
+    T,
+    C,
+    Y,
+    const IS_EAGER: bool,
+    const IS_ROSI: bool,
+    L = Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    R = Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+> {
     interval: TimeInterval,
-    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
-    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y> + 'static>,
+    left: L,
+    right: R,
     left_cache: C,
     right_cache: C,
     t_max: (Duration, Duration), // (left t_max, right t_max)
@@ -33,9 +42,12 @@ pub struct Until<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
+    _phantom: PhantomData<(T, Y)>,
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER, IS_ROSI> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R>
+    Until<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+{
     /// Creates a new `Until` operator.
     ///
     /// `max_lookahead` is computed as:
@@ -44,8 +56,8 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
     /// If caches are `None`, empty caches are created.
     pub fn new(
         interval: TimeInterval,
-        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+        left: L,
+        right: R,
         left_cache: Option<C>,
         right_cache: Option<C>,
     ) -> Self
@@ -53,9 +65,11 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
         T: Clone + 'static,
         C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        L: StlOperatorAndSignalIdentifier<T, Y>,
+        R: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = interval.end + left.get_max_lookahead().max(right.get_max_lookahead());
-        Until {
+        Self {
             interval,
             left,
             right,
@@ -66,6 +80,7 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 
@@ -88,12 +103,14 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
-    for Until<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> StlOperatorTrait<T>
+    for Until<T, C, Y, IS_EAGER, IS_ROSI, L, R>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + std::fmt::Debug,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -285,8 +302,12 @@ where
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
-    for Until<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> SignalIdentifier
+    for Until<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Returns the union of signal identifiers from left and right operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
@@ -301,8 +322,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
-    for Until<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> Display
+    for Until<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Formats as `(left) U[start, end] (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

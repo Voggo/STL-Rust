@@ -12,6 +12,7 @@ use crate::stl::core::{
 };
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
 use std::time::Duration;
 
 /// A unified binary processor that handles Delayed, Eager, and Refinable (RoSI) semantics correctly.
@@ -131,9 +132,17 @@ where
 /// Logical conjunction operator.
 ///
 /// Combines two operand streams with [`RobustnessSemantics::and`].
-pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+pub struct And<
+    T,
+    C,
+    Y,
+    const IS_EAGER: bool,
+    const IS_ROSI: bool,
+    L = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    R = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+> {
+    left: L,
+    right: R,
     left_cache: C,
     right_cache: C,
     last_eval_time: Option<Duration>,
@@ -142,22 +151,22 @@ pub struct And<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
+    _phantom: PhantomData<T>,
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, IS_ROSI> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R>
+    And<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+{
     /// Creates a new conjunction operator from left and right operands.
     ///
     /// If caches are `None`, empty caches are created.
-    pub fn new(
-        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache: Option<C>,
-        right_cache: Option<C>,
-    ) -> Self
+    pub fn new(left: L, right: R, left_cache: Option<C>, right_cache: Option<C>) -> Self
     where
         T: Clone + 'static,
         C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        L: StlOperatorAndSignalIdentifier<T, Y>,
+        R: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
         And {
@@ -171,16 +180,19 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> And<T, C, Y, IS_EAGER, 
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
-    for And<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> StlOperatorTrait<T>
+    for And<T, C, Y, IS_EAGER, IS_ROSI, L, R>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + Debug + Copy,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -280,8 +292,12 @@ where
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
-    for And<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> SignalIdentifier
+    for And<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Returns the union of signal identifiers from both operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
@@ -300,9 +316,17 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
 /// Logical disjunction operator.
 ///
 /// Combines two operand streams with [`RobustnessSemantics::or`].
-pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
-    left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-    right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+pub struct Or<
+    T,
+    C,
+    Y,
+    const IS_EAGER: bool,
+    const IS_ROSI: bool,
+    L = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+    R = Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
+> {
+    left: L,
+    right: R,
     left_cache: C,
     right_cache: C,
     last_eval_time: Option<Duration>,
@@ -311,22 +335,22 @@ pub struct Or<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> {
     left_signals_set: HashSet<&'static str>,
     right_signals_set: HashSet<&'static str>,
     max_lookahead: Duration,
+    _phantom: PhantomData<T>,
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, IS_ROSI> {
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R>
+    Or<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+{
     /// Creates a new disjunction operator from left and right operands.
     ///
     /// If caches are `None`, empty caches are created.
-    pub fn new(
-        left: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        right: Box<dyn StlOperatorAndSignalIdentifier<T, Y>>,
-        left_cache: Option<C>,
-        right_cache: Option<C>,
-    ) -> Self
+    pub fn new(left: L, right: R, left_cache: Option<C>, right_cache: Option<C>) -> Self
     where
         T: Clone + 'static,
         C: RingBufferTrait<Value = Y> + Clone + 'static,
         Y: RobustnessSemantics + 'static,
+        L: StlOperatorAndSignalIdentifier<T, Y>,
+        R: StlOperatorAndSignalIdentifier<T, Y>,
     {
         let max_lookahead = left.get_max_lookahead().max(right.get_max_lookahead());
         Or {
@@ -348,16 +372,19 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Or<T, C, Y, IS_EAGER, I
             left_signals_set: HashSet::new(),
             right_signals_set: HashSet::new(),
             max_lookahead,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> StlOperatorTrait<T>
-    for Or<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> StlOperatorTrait<T>
+    for Or<T, C, Y, IS_EAGER, IS_ROSI, L, R>
 where
     T: Clone + 'static,
     C: RingBufferTrait<Value = Y> + Clone + 'static,
     Y: RobustnessSemantics + 'static + Debug + Copy,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     type Output = Y;
 
@@ -457,8 +484,12 @@ where
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
-    for Or<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> SignalIdentifier
+    for Or<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Returns the union of signal identifiers from both operands.
     fn get_signal_identifiers(&mut self) -> HashSet<&'static str> {
@@ -473,8 +504,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> SignalIdentifier
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
-    for And<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> Display
+    for And<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Formats as `(left) ∧ (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -482,8 +517,12 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
     }
 }
 
-impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Display
-    for Or<T, C, Y, IS_EAGER, IS_ROSI>
+impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool, L, R> Display
+    for Or<T, C, Y, IS_EAGER, IS_ROSI, L, R>
+where
+    T: Clone,
+    L: Clone + StlOperatorAndSignalIdentifier<T, Y>,
+    R: Clone + StlOperatorAndSignalIdentifier<T, Y>,
 {
     /// Formats as `(left) v (right)`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
