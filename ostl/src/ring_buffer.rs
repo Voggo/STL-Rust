@@ -382,4 +382,44 @@ mod tests {
         let signal: RingBuffer<i32> = RingBuffer::default();
         assert!(signal.is_empty());
     }
+
+    #[test]
+    fn ring_prune_empty_buffer() {
+        let mut signal: RingBuffer<f64> = RingBuffer::new();
+        // Pruning an empty buffer should be a no-op
+        signal.prune(Duration::from_secs(1));
+        assert!(signal.is_empty());
+    }
+
+    #[test]
+    fn ring_update_step() {
+        let mut signal = RingBuffer::new();
+        signal.add_step(Step {
+            signal: "x",
+            value: 1,
+            timestamp: Duration::from_secs(1),
+        });
+        signal.add_step(Step {
+            signal: "x",
+            value: 2,
+            timestamp: Duration::from_secs(2),
+        });
+
+        // Update existing timestamp
+        let updated = signal.update_step(Step {
+            signal: "x",
+            value: 10,
+            timestamp: Duration::from_secs(1),
+        });
+        assert!(updated);
+        assert_eq!(signal.get_front().unwrap().value, 10);
+
+        // Update non-existing timestamp
+        let not_updated = signal.update_step(Step {
+            signal: "x",
+            value: 20,
+            timestamp: Duration::from_secs(5),
+        });
+        assert!(!not_updated);
+    }
 }

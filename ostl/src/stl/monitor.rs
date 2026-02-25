@@ -1277,6 +1277,141 @@ mod tests {
             let verdict3 = monitor_output.verdict_at(Duration::from_secs(3));
             assert!(verdict3.is_none());
         }
+
+        #[test]
+        fn test_into_verdicts() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let verdicts = monitor_output.into_verdicts();
+            assert_eq!(verdicts.len(), 2);
+            assert!(verdicts[0].value);
+            assert!(!verdicts[1].value);
+        }
+
+        #[test]
+        fn test_latest_verdict() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let latest = monitor_output.latest_verdict().unwrap();
+            assert!(!latest.value);
+            assert_eq!(latest.timestamp, Duration::from_secs(2));
+        }
+
+        #[test]
+        fn test_latest_verdict_empty() {
+            let monitor_output: MonitorOutput<f64, bool> = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![],
+            };
+            assert!(monitor_output.latest_verdict().is_none());
+        }
+
+        #[test]
+        fn test_sync_evaluations() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step = Step::new("output", true, Duration::from_secs(1));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let evals = monitor_output.sync_evaluations();
+            assert_eq!(evals.len(), 1);
+            assert!(evals[0].has_outputs());
+        }
+
+        #[test]
+        fn test_into_iterator_ref() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let steps: Vec<_> = (&monitor_output).into_iter().collect();
+            assert_eq!(steps.len(), 2);
+            assert!(steps[0].value);
+            assert!(!steps[1].value);
+        }
+
+        #[test]
+        fn test_into_iterator_owned() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", true, Duration::from_secs(1));
+            let output_step2 = Step::new("output", false, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let steps: Vec<Step<bool>> = monitor_output.into_iter().collect();
+            assert_eq!(steps.len(), 2);
+            assert!(steps[0].value);
+            assert!(!steps[1].value);
+        }
+
+        #[test]
+        fn test_is_pending_true() {
+            let monitor_output: MonitorOutput<f64, bool> = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![],
+            };
+            assert!(monitor_output.is_pending());
+        }
+
+        #[test]
+        fn test_for_loop_iteration() {
+            let sync_step = Step::new("x", 10.0, Duration::from_secs(1));
+            let output_step1 = Step::new("output", 5.0_f64, Duration::from_secs(1));
+            let output_step2 = Step::new("output", -3.0_f64, Duration::from_secs(2));
+            let sync_result = SyncStepResult::new(sync_step, vec![output_step1, output_step2]);
+            let monitor_output = MonitorOutput {
+                input_signal: "x",
+                input_timestamp: Duration::from_secs(1),
+                input_value: 10.0,
+                evaluations: vec![sync_result],
+            };
+
+            let mut count = 0;
+            for step in &monitor_output {
+                count += 1;
+                assert_eq!(step.signal, "output");
+            }
+            assert_eq!(count, 2);
+        }
     }
 
     mod syncstep_result_tests {

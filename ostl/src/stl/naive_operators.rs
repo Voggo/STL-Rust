@@ -847,4 +847,275 @@ mod tests {
             Some(Step::new("output", -5.0, Duration::from_secs(4)))
         );
     }
+
+    #[test]
+    fn until_operator_robustness() {
+        let formula = StlOperator::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(4),
+            },
+            Box::new(StlOperator::GreaterThan("x", 0.0)),
+            Box::new(StlOperator::GreaterThan("x", 10.0)),
+        );
+
+        // Case 1: Not enough data
+        let signal1 = create_signal(vec![5.0, 8.0], vec![0, 2]);
+        let robustness1 = formula.robustness_naive::<f64, _, f64>(&signal1, Duration::from_secs(0));
+        assert_eq!(robustness1, None);
+
+        // Case 2: Enough data - psi satisfied at t=2 (value=12 > 10)
+        let signal2 = create_signal(vec![5.0, 12.0, 3.0], vec![0, 2, 4]);
+        let robustness2 = formula.robustness_naive::<f64, _, f64>(&signal2, Duration::from_secs(0));
+        assert!(robustness2.is_some());
+    }
+
+    #[test]
+    fn implies_operator_tree_string() {
+        let formula = StlOperator::Implies(
+            Box::new(StlOperator::GreaterThan("x", 5.0)),
+            Box::new(StlOperator::LessThan("y", 10.0)),
+        );
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Implies\n  x > 5\n  y < 10");
+    }
+
+    #[test]
+    fn until_operator_tree_string() {
+        let formula = StlOperator::Until(
+            TimeInterval {
+                start: Duration::from_secs(1),
+                end: Duration::from_secs(5),
+            },
+            Box::new(StlOperator::GreaterThan("x", 0.0)),
+            Box::new(StlOperator::LessThan("y", 10.0)),
+        );
+        let tree_string = formula.to_tree_string(0);
+        assert_eq!(tree_string, "Until [1 - 5]\n  x > 0\n  y < 10");
+    }
+
+    #[test]
+    fn display_impl_all_operators() {
+        let gt = StlOperator::GreaterThan("x", 5.0);
+        assert_eq!(format!("{gt}"), "x > 5");
+
+        let lt = StlOperator::LessThan("y", 3.0);
+        assert_eq!(format!("{lt}"), "y < 3");
+
+        let t = StlOperator::True;
+        assert_eq!(format!("{t}"), "True");
+
+        let f = StlOperator::False;
+        assert_eq!(format!("{f}"), "False");
+
+        let not = StlOperator::Not(Box::new(StlOperator::GreaterThan("x", 1.0)));
+        assert_eq!(format!("{not}"), "¬(x > 1)");
+
+        let and = StlOperator::And(
+            Box::new(StlOperator::GreaterThan("x", 1.0)),
+            Box::new(StlOperator::LessThan("y", 2.0)),
+        );
+        assert_eq!(format!("{and}"), "(x > 1) ∧ (y < 2)");
+
+        let or = StlOperator::Or(
+            Box::new(StlOperator::GreaterThan("x", 1.0)),
+            Box::new(StlOperator::LessThan("y", 2.0)),
+        );
+        assert_eq!(format!("{or}"), "(x > 1) v (y < 2)");
+
+        let globally = StlOperator::Globally(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(10),
+            },
+            Box::new(StlOperator::GreaterThan("x", 5.0)),
+        );
+        assert_eq!(format!("{globally}"), "G[0, 10](x > 5)");
+
+        let eventually = StlOperator::Eventually(
+            TimeInterval {
+                start: Duration::from_secs(1),
+                end: Duration::from_secs(5),
+            },
+            Box::new(StlOperator::LessThan("y", 3.0)),
+        );
+        assert_eq!(format!("{eventually}"), "F[1, 5](y < 3)");
+
+        let until = StlOperator::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(10),
+            },
+            Box::new(StlOperator::GreaterThan("x", 1.0)),
+            Box::new(StlOperator::LessThan("y", 2.0)),
+        );
+        assert_eq!(format!("{until}"), "(x > 1) U[0, 10] (y < 2)");
+
+        let implies = StlOperator::Implies(
+            Box::new(StlOperator::GreaterThan("x", 1.0)),
+            Box::new(StlOperator::LessThan("y", 2.0)),
+        );
+        assert_eq!(format!("{implies}"), "(x > 1) → (y < 2)");
+    }
+
+    #[test]
+    fn get_signal_identifiers_naive() {
+        let mut formula: StlFormula<f64, RingBuffer<f64>, f64> = StlFormula::new(
+            StlOperator::And(
+                Box::new(StlOperator::GreaterThan("x", 5.0)),
+                Box::new(StlOperator::Until(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(5),
+                    },
+                    Box::new(StlOperator::LessThan("y", 10.0)),
+                    Box::new(StlOperator::Not(Box::new(StlOperator::GreaterThan(
+                        "z", 1.0,
+                    )))),
+                )),
+            ),
+            RingBuffer::new(),
+        );
+
+        let ids = formula.get_signal_identifiers();
+        assert!(ids.contains("x"));
+        assert!(ids.contains("y"));
+        assert!(ids.contains("z"));
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[test]
+    fn eval_naive_full_pipeline() {
+        // Test the full StlFormula eval_naive pipeline with Eventually
+        let mut formula: StlFormula<f64, RingBuffer<f64>, f64> = StlFormula::new(
+            StlOperator::Eventually(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(2),
+                },
+                Box::new(StlOperator::GreaterThan("x", 10.0)),
+            ),
+            RingBuffer::new(),
+        );
+
+        // Not enough data yet (timestamp 0 < max_lookahead 2)
+        let step1 = Step::new("x", 15.0, Duration::from_secs(0));
+        let result1 = formula.update(&step1);
+        assert!(result1.is_empty());
+
+        let step2 = Step::new("x", 12.0, Duration::from_secs(1));
+        let result2 = formula.update(&step2);
+        assert!(result2.is_empty());
+
+        // Now t=2, t_eval = 2-2 = 0
+        let step3 = Step::new("x", 8.0, Duration::from_secs(2));
+        let result3 = formula.update(&step3);
+        assert_eq!(result3.len(), 1);
+        assert_eq!(result3[0].timestamp, Duration::from_secs(0));
+    }
+
+    #[test]
+    fn eval_naive_display_formula() {
+        let formula: StlFormula<f64, RingBuffer<f64>, f64> = StlFormula::new(
+            StlOperator::Globally(
+                TimeInterval {
+                    start: Duration::from_secs(0),
+                    end: Duration::from_secs(5),
+                },
+                Box::new(StlOperator::GreaterThan("x", 10.0)),
+            ),
+            RingBuffer::new(),
+        );
+
+        let display = format!("{formula}");
+        assert_eq!(display, "G[0, 5](x > 10)");
+    }
+
+    #[test]
+    fn eval_naive_empty_signal_eventually() {
+        // Test evaluation of eventually with empty signal
+        let formula = StlOperator::Eventually(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(2),
+            },
+            Box::new(StlOperator::GreaterThan("x", 10.0)),
+        );
+        let signal: RingBuffer<f64> = RingBuffer::new();
+        let result = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(0));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn eval_naive_empty_signal_globally() {
+        let formula = StlOperator::Globally(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(2),
+            },
+            Box::new(StlOperator::GreaterThan("x", 10.0)),
+        );
+        let signal: RingBuffer<f64> = RingBuffer::new();
+        let result = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(0));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn eval_naive_empty_signal_until() {
+        let formula = StlOperator::Until(
+            TimeInterval {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(2),
+            },
+            Box::new(StlOperator::GreaterThan("x", 0.0)),
+            Box::new(StlOperator::GreaterThan("x", 10.0)),
+        );
+        let signal: RingBuffer<f64> = RingBuffer::new();
+        let result = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(0));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn less_than_robustness_via_naive() {
+        // Ensure LessThan is exercised through robustness_naive (line 216)
+        let formula = StlOperator::LessThan("x", 10.0);
+        let signal = create_signal(vec![7.0], vec![5]);
+        let robustness = formula.robustness_naive::<f64, _, f64>(&signal, Duration::from_secs(5));
+        assert_eq!(
+            robustness,
+            Some(Step::new("output", 3.0, Duration::from_secs(5)))
+        );
+    }
+
+    #[test]
+    fn get_signal_identifiers_implies_or_eventually_globally() {
+        let mut formula: StlFormula<f64, RingBuffer<f64>, f64> = StlFormula::new(
+            StlOperator::Implies(
+                Box::new(StlOperator::Or(
+                    Box::new(StlOperator::GreaterThan("a", 1.0)),
+                    Box::new(StlOperator::Globally(
+                        TimeInterval {
+                            start: Duration::from_secs(0),
+                            end: Duration::from_secs(1),
+                        },
+                        Box::new(StlOperator::LessThan("b", 2.0)),
+                    )),
+                )),
+                Box::new(StlOperator::Eventually(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(1),
+                    },
+                    Box::new(StlOperator::GreaterThan("c", 3.0)),
+                )),
+            ),
+            RingBuffer::new(),
+        );
+
+        let ids = formula.get_signal_identifiers();
+        assert!(ids.contains("a"));
+        assert!(ids.contains("b"));
+        assert!(ids.contains("c"));
+        assert_eq!(ids.len(), 3);
+    }
 }
