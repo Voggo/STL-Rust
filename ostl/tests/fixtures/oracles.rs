@@ -11,7 +11,7 @@ use crate::common::convert_f64_vec_to_bool_vec;
 // ---
 #[fixture]
 #[once]
-pub fn exp_f1_s1_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f1_s1_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],
         vec![],
@@ -21,8 +21,8 @@ pub fn exp_f1_s1_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f1_s1_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f1_s1_f64_strict())
+pub fn exp_f1_s1_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f1_s1_f64_delayed())
 }
 
 pub fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<bool>>> {
@@ -39,7 +39,7 @@ pub fn exp_f1_s1_bool_eager() -> Vec<Vec<Step<bool>>> {
     ]
 }
 
-pub fn exp_f2_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f2_s2_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],
         vec![],
@@ -55,8 +55,8 @@ pub fn exp_f2_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f2_s2_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f2_s2_f64_strict())
+pub fn exp_f2_s2_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f2_s2_f64_delayed())
 }
 
 pub fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<bool>>> {
@@ -83,7 +83,7 @@ pub fn exp_f2_s2_bool_eager() -> Vec<Vec<Step<bool>>> {
     ]
 }
 
-pub fn exp_f3_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f3_s3_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],
         vec![],
@@ -95,8 +95,8 @@ pub fn exp_f3_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f3_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f3_s3_f64_strict())
+pub fn exp_f3_s3_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f3_s3_f64_delayed())
 }
 
 pub fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
@@ -115,7 +115,7 @@ pub fn exp_f3_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
     ]
 }
 
-pub fn exp_f4_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f4_s3_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],
         vec![],
@@ -127,8 +127,8 @@ pub fn exp_f4_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f4_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f4_s3_f64_strict())
+pub fn exp_f4_s3_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f4_s3_f64_delayed())
 }
 
 pub fn exp_f4_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
@@ -179,7 +179,7 @@ pub fn exp_f6_s2_bool_eager() -> Vec<Vec<Step<bool>>> {
         vec![],
     ]
 }
-pub fn exp_f6_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f6_s2_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],
         vec![],
@@ -194,7 +194,7 @@ pub fn exp_f6_s2_f64_strict() -> Vec<Vec<Step<f64>>> {
         vec![Step::new("output", 1.0, Duration::from_secs(5))],
     ]
 }
-pub fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<bool>>> {
+pub fn exp_f6_s2_bool_delayed() -> Vec<Vec<Step<bool>>> {
     vec![
         vec![],
         vec![],
@@ -210,7 +210,7 @@ pub fn exp_f6_s2_bool_strict() -> Vec<Vec<Step<bool>>> {
     ]
 }
 
-pub fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f7_s3_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![Step::new("output", -5.0, Duration::from_secs(0))],
         vec![Step::new("output", 1.0, Duration::from_secs(1))],
@@ -222,15 +222,15 @@ pub fn exp_f7_s3_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f7_s3_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f7_s3_f64_strict())
+pub fn exp_f7_s3_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f7_s3_f64_delayed())
 }
 
 pub fn exp_f7_s3_bool_eager() -> Vec<Vec<Step<bool>>> {
-    exp_f7_s3_bool_strict()
+    exp_f7_s3_bool_delayed()
 }
 
-pub fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<f64>>> {
+pub fn exp_f8_s4_f64_delayed() -> Vec<Vec<Step<f64>>> {
     vec![
         vec![],                                                  // x@t=0
         vec![],                                                  // y@t=0
@@ -249,8 +249,8 @@ pub fn exp_f8_s4_f64_strict() -> Vec<Vec<Step<f64>>> {
     ]
 }
 
-pub fn exp_f8_s4_bool_strict() -> Vec<Vec<Step<bool>>> {
-    convert_f64_vec_to_bool_vec(exp_f8_s4_f64_strict())
+pub fn exp_f8_s4_bool_delayed() -> Vec<Vec<Step<bool>>> {
+    convert_f64_vec_to_bool_vec(exp_f8_s4_f64_delayed())
 }
 
 pub fn exp_f8_s4_bool_eager() -> Vec<Vec<Step<bool>>> {

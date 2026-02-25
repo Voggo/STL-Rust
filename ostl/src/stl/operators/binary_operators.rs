@@ -2,7 +2,7 @@
 //!
 //! This module combines two child operators while supporting three execution
 //! modes through const generics:
-//! - strict (`IS_EAGER = false`, `IS_ROSI = false`),
+//! - delayed (`IS_EAGER = false`, `IS_ROSI = false`),
 //! - eager short-circuiting (`IS_EAGER = true`, `IS_ROSI = false`), and
 //! - refinable interval semantics (`IS_ROSI = true`).
 
@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
-/// A unified binary processor that handles Strict, Eager, and Refinable (RoSI) semantics correctly.
+/// A unified binary processor that handles Delayed, Eager, and Refinable (RoSI) semantics correctly.
 ///
 /// This helper consumes cached outputs from left/right sub-operators and emits
 /// timestamp-aligned combined outputs using `combine_op`.
@@ -191,7 +191,7 @@ where
     /// Updates both operands with the incoming sample and emits conjunction outputs.
     ///
     /// Output emission depends on execution mode:
-    /// - strict: only finalized timestamp-aligned outputs,
+    /// - delayed: only finalized timestamp-aligned outputs,
     /// - eager: may short-circuit on semantic false,
     /// - RoSI: allows refinements at already-seen timestamps.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
@@ -265,12 +265,12 @@ where
         guarded_prune(&mut self.left_cache, lookahead, protected_ts);
         guarded_prune(&mut self.right_cache, lookahead, protected_ts);
 
-        // Update last_eval_time based on strictness semantics
+        // Update last_eval_time based on delayed semantics
         if let Some(eval_time) = if IS_ROSI {
             // For intervals, we track the *start* of the batch because we might re-evaluate it
             output.first().map(|step| step.timestamp)
         } else {
-            // For strict/bool, we track the *end* because everything before is finalized
+            // For delayed/bool, we track the *end* because everything before is finalized
             output.last().map(|step| step.timestamp)
         } {
             self.last_eval_time = Some(eval_time);
@@ -368,7 +368,7 @@ where
     /// Updates both operands with the incoming sample and emits disjunction outputs.
     ///
     /// Output emission depends on execution mode:
-    /// - strict: only finalized timestamp-aligned outputs,
+    /// - delayed: only finalized timestamp-aligned outputs,
     /// - eager: may short-circuit on semantic true,
     /// - RoSI: allows refinements at already-seen timestamps.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
@@ -442,12 +442,12 @@ where
         guarded_prune(&mut self.left_cache, lookahead, protected_ts);
         guarded_prune(&mut self.right_cache, lookahead, protected_ts);
 
-        // Update last_eval_time based on strictness semantics
+        // Update last_eval_time based on delayed semantics
         if let Some(eval_time) = if IS_ROSI {
             // For intervals, we track the *start* of the batch because we might re-evaluate it
             output.first().map(|step| step.timestamp)
         } else {
-            // For strict/bool, we track the *end* because everything before is finalized
+            // For delayed/bool, we track the *end* because everything before is finalized
             output.last().map(|step| step.timestamp)
         } {
             self.last_eval_time = Some(eval_time);
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn and_operator_robustness_strict() {
+    fn and_operator_robustness_delayed() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 20.0);
         let mut and = And::<f64, RingBuffer<f64>, f64, false, false>::new(
@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn or_operator_robustness_strict() {
+    fn or_operator_robustness_delayed() {
         let atomic1 = Atomic::<f64>::new_greater_than("x", 10.0);
         let atomic2 = Atomic::<f64>::new_less_than("x", 5.0);
         let mut or = Or::<f64, RingBuffer<f64>, f64, false, false>::new(

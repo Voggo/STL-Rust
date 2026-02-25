@@ -106,7 +106,7 @@ pub mod semantic_markers {
     }
 }
 
-// Re-export markers for easier access like `monitor::StrictSatisfaction`
+// Re-export markers for easier access like `monitor::DelayedQualitative`
 pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi};
 
 /// Represents the output of a single monitor update operation.
@@ -749,7 +749,7 @@ mod tests {
 
         // This is the syntax you requested:
         // T is defaulted to f64 by StlMonitor::builder()
-        // Y is inferred as `bool` because of StrictSatisfaction
+        // Y is inferred as `bool` because of DelayedQualitative
         let mut monitor = StlMonitor::builder()
             .formula(formula)
             .semantics(DelayedQualitative) // Use the marker struct

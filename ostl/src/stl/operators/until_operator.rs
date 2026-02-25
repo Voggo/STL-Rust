@@ -1,7 +1,7 @@
 //! Temporal `Until` operator implementation.
 //!
 //! This module provides [`Until`], a stateful evaluator for `φ U[a,b] ψ` over
-//! streamed samples, supporting strict, eager, and refinable (RoSI) modes via
+//! streamed samples, supporting delayed, eager, and refinable (RoSI) modes via
 //! const generics.
 
 use crate::ring_buffer::{RingBufferTrait, Step, guarded_prune};
@@ -109,7 +109,7 @@ where
     /// 4. Prune caches and remove completed tasks.
     ///
     /// Mode behavior:
-    /// - strict (`IS_EAGER = false`, `IS_ROSI = false`): emit only finalized values,
+    /// - delayed (`IS_EAGER = false`, `IS_ROSI = false`): emit only finalized values,
     /// - eager (`IS_EAGER = true`): may short-circuit on early `true`/`false`,
     /// - RoSI (`IS_ROSI = true`): emit refinable intermediate values widened with `unknown()`.
     fn update(&mut self, step: &Step<T>) -> Vec<Step<Self::Output>> {
@@ -227,14 +227,14 @@ where
             };
 
             // ---
-            // **State-based Eager/Strict/ROSI logic**
+            // **State-based Eager/delayed/ROSI logic**
             // ---
             let final_value: Option<Y>;
             let mut remove_task = false;
 
             if current_time >= t_eval + self.get_max_lookahead() {
                 // Case 1: Full window *and* child lookaheads have passed.
-                // This is a final, "closed" value for Strict mode.
+                // This is a final, "closed" value for delayed mode.
                 // (This also captures Eager results that were `false` until the end)
                 final_value = Some(max_robustness);
                 remove_task = true;
@@ -256,7 +256,7 @@ where
                 final_value = Some(intermediate_value);
                 // DO NOT remove task, it's not finished
             } else {
-                // Case 4: Cannot evaluate yet (e.g., Strict/Eager bool/f64 and window is still open)
+                // Case 4: Cannot evaluate yet (e.g., Delayed/Eager bool/f64 and window is still open)
                 // Since the buffer is time-ordered, we stop.
                 break;
             }

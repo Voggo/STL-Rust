@@ -26,7 +26,7 @@ fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<S
                     .unwrap();
 
                 // build a robustness monitor for comparison
-                let mut strict_monitor = StlMonitor::builder()
+                let mut delayed_monitor = StlMonitor::builder()
                     .formula(formula.clone())
                     .semantics(DelayedQuantitative)
                     .algorithm(Algorithm::Incremental)
@@ -39,28 +39,28 @@ fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<S
                     .iter()
                     .flat_map(|s| {
                         let rosi_output = monitor.update(s);
-                        let strict_output = strict_monitor.update(s);
+                        let delayed_output = delayed_monitor.update(s);
                         let rosi_outputs = rosi_output.all_outputs();
-                        let strict_outputs = strict_output.all_outputs();
+                        let delayed_outputs = delayed_output.all_outputs();
 
-                        // Validate strict vs RoSI for the first (final) strict step, if present
-                        if let Some(strict_step) = strict_outputs.first() {
-                            let strict_val = strict_step.value;
+                        // Validate delayed vs RoSI for the first finalized delayed step, if present
+                        if let Some(delayed_step) = delayed_outputs.first() {
+                            let delayed_val = delayed_step.value;
                             let rosi_step = rosi_outputs
                                 .iter()
-                                .find(|step| step.timestamp == strict_step.timestamp)
+                                .find(|step| step.timestamp == delayed_step.timestamp)
                                 .unwrap_or_else(|| panic!("No RoSI step found for timestamp {:?} at input step {:?}",
-                                    strict_step.timestamp, s.timestamp));
+                                    delayed_step.timestamp, s.timestamp));
                             let rosi_iv = rosi_step.value;
                             assert_eq!(
-                                strict_val, rosi_iv.0,
-                                "Final strict value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
-                                strict_val, rosi_iv.0, s.timestamp
+                                delayed_val, rosi_iv.0,
+                                "Final delayed value {:?} not equal to RoSI lower bound {:?} for step at timestamp {:?}",
+                                delayed_val, rosi_iv.0, s.timestamp
                             );
                             assert_eq!(
-                                strict_val, rosi_iv.1,
-                                "Final strict value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
-                                strict_val, rosi_iv.1, s.timestamp
+                                delayed_val, rosi_iv.1,
+                                "Final delayed value {:?} not equal to RoSI upper bound {:?} for step at timestamp {:?}",
+                                delayed_val, rosi_iv.1, s.timestamp
                             );
                         }
                         rosi_outputs.into_iter()
