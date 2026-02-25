@@ -554,4 +554,36 @@ mod tests {
         let expected_ids: HashSet<&'static str> = vec!["x"].into_iter().collect();
         assert_eq!(ids, expected_ids);
     }
+
+    #[test]
+    fn globally_display() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(1),
+            end: Duration::from_secs(5),
+        };
+        let atomic = Atomic::<f64>::new_greater_than("x", 10.0);
+        let globally = Globally::<f64, RingBuffer<f64>, f64, false, false>::new(
+            interval,
+            Box::new(atomic),
+            None,
+            None,
+        );
+        assert_eq!(format!("{globally}"), "G[1, 5](x > 10)");
+    }
+
+    #[test]
+    fn eventually_display() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(0),
+            end: Duration::from_secs(3),
+        };
+        let atomic = Atomic::<f64>::new_less_than("y", 5.0);
+        let eventually = Eventually::<f64, RingBuffer<f64>, f64, false, false>::new(
+            interval,
+            Box::new(atomic),
+            None,
+            None,
+        );
+        assert_eq!(format!("{eventually}"), "F[0, 3](y < 5)");
+    }
 }

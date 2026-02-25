@@ -387,4 +387,82 @@ mod tests {
         assert_eq!(format!("{}", lt_var), "y < $B");
         assert_eq!(lt_var.to_tree_string(0), "y < $B");
     }
+
+    #[test]
+    fn test_get_variables_nested() {
+        // Test that get_variable_identifiers traverses all nesting levels:
+        // Not, And, Or, Implies, Eventually, Globally, Until
+        let formula = FormulaDefinition::And(
+            Box::new(FormulaDefinition::Not(Box::new(
+                FormulaDefinition::GreaterThanVar("x", "A"),
+            ))),
+            Box::new(FormulaDefinition::Or(
+                Box::new(FormulaDefinition::Implies(
+                    Box::new(FormulaDefinition::LessThanVar("y", "B")),
+                    Box::new(FormulaDefinition::GreaterThanVar("z", "C")),
+                )),
+                Box::new(FormulaDefinition::Eventually(
+                    TimeInterval {
+                        start: Duration::from_secs(0),
+                        end: Duration::from_secs(1),
+                    },
+                    Box::new(FormulaDefinition::Globally(
+                        TimeInterval {
+                            start: Duration::from_secs(0),
+                            end: Duration::from_secs(2),
+                        },
+                        Box::new(FormulaDefinition::Until(
+                            TimeInterval {
+                                start: Duration::from_secs(0),
+                                end: Duration::from_secs(3),
+                            },
+                            Box::new(FormulaDefinition::LessThanVar("a", "D")),
+                            Box::new(FormulaDefinition::GreaterThanVar("b", "E")),
+                        )),
+                    )),
+                )),
+            )),
+        );
+
+        let vars = formula.get_variable_identifiers();
+        assert_eq!(vars.len(), 5);
+        assert!(vars.contains(&"A"));
+        assert!(vars.contains(&"B"));
+        assert!(vars.contains(&"C"));
+        assert!(vars.contains(&"D"));
+        assert!(vars.contains(&"E"));
+    }
+
+    #[test]
+    fn test_deeply_nested_tree_string() {
+        // Test deeply nested formula to exercise tree prefix formatting logic
+        let formula = FormulaDefinition::And(
+            Box::new(FormulaDefinition::Or(
+                Box::new(FormulaDefinition::GreaterThan("x", 1.0)),
+                Box::new(FormulaDefinition::LessThan("y", 2.0)),
+            )),
+            Box::new(FormulaDefinition::Not(Box::new(
+                FormulaDefinition::GreaterThan("z", 3.0),
+            ))),
+        );
+
+        let tree = formula.to_tree_string(0);
+        assert!(tree.contains("And"));
+        assert!(tree.contains("Or"));
+        assert!(tree.contains("Not"));
+        assert!(tree.contains("x > 1"));
+        assert!(tree.contains("y < 2"));
+        assert!(tree.contains("z > 3"));
+    }
+
+    #[test]
+    fn test_get_variables_no_variables() {
+        // Formula with no variable predicates
+        let formula = FormulaDefinition::And(
+            Box::new(FormulaDefinition::GreaterThan("x", 5.0)),
+            Box::new(FormulaDefinition::LessThan("y", 10.0)),
+        );
+        let vars = formula.get_variable_identifiers();
+        assert!(vars.is_empty());
+    }
 }

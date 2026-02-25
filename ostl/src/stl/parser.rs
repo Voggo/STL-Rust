@@ -1066,4 +1066,68 @@ mod tests {
         let error = format!("{}", result.err().unwrap());
         assert!(error.contains("Invalid interval"));
     }
+
+    #[test]
+    fn test_not_keyword_without_parens() {
+        // "not" followed by an atom without parentheses
+        let result = parse_stl("not x > 5").unwrap();
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThan("x", 5.0)))
+        );
+    }
+
+    #[test]
+    fn test_greater_equal_variable() {
+        // x >= $var → Not(LessThanVar(x, var))
+        let result = parse_stl("x >= $threshold").unwrap();
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::LessThanVar("x", "threshold")))
+        );
+    }
+
+    #[test]
+    fn test_less_equal_variable() {
+        // x <= $var → Not(GreaterThanVar(x, var))
+        let result = parse_stl("x <= $limit").unwrap();
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThanVar("x", "limit")))
+        );
+    }
+
+    #[test]
+    fn test_greater_equal_variable_without_dollar() {
+        // x >= VAR → Not(LessThanVar(x, VAR))
+        let result = parse_stl("x >= THRESHOLD").unwrap();
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::LessThanVar("x", "THRESHOLD")))
+        );
+    }
+
+    #[test]
+    fn test_less_equal_variable_without_dollar() {
+        // x <= VAR → Not(GreaterThanVar(x, VAR))
+        let result = parse_stl("x <= LIMIT").unwrap();
+        assert_eq!(
+            result,
+            FormulaDefinition::Not(Box::new(FormulaDefinition::GreaterThanVar("x", "LIMIT")))
+        );
+    }
+
+    #[test]
+    fn test_parse_error_invalid_number() {
+        // A standalone "." should fail to parse as a number
+        let result = parse_stl("x > .");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_error_not_an_identifier() {
+        // Starting with a digit is not a valid identifier
+        let result = parse_stl("123abc > 5");
+        assert!(result.is_err());
+    }
 }
