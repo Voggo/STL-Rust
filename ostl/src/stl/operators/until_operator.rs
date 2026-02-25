@@ -585,4 +585,22 @@ mod tests {
         let expected_ids: HashSet<&'static str> = vec!["x", "y"].into_iter().collect();
         assert_eq!(ids, expected_ids);
     }
+
+    #[test]
+    fn until_display() {
+        let interval = TimeInterval {
+            start: Duration::from_secs(1),
+            end: Duration::from_secs(5),
+        };
+        let atomic_left = Atomic::<f64>::new_greater_than("x", 0.0);
+        let atomic_right = Atomic::<f64>::new_less_than("y", 10.0);
+        let until = Until::<f64, RingBuffer<f64>, f64, false, false>::new(
+            interval,
+            Box::new(atomic_left),
+            Box::new(atomic_right),
+            None,
+            None,
+        );
+        assert_eq!(format!("{until}"), "(x > 0) U[1, 5] (y < 10)");
+    }
 }
