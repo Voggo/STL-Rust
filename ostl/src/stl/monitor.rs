@@ -302,22 +302,50 @@ impl<T, Y> MonitorOutput<T, Y> {
             .collect()
     }
 
-    /// Provides access to the internal synchronization-step evaluations.
+    /// Provides read-only access to the per-sync-step evaluation results.
     ///
-    /// If multiple outputs exist at the same timestamp (for example due to
-    /// refinement), the last one is retained.
-    pub fn finalize(&self) -> Vec<Step<Y>>
-    where
-        Y: Clone,
-    {
-        let mut latest_map = std::collections::BTreeMap::new();
-        for output in self.all_raw_outputs() {
-            latest_map.insert(output.timestamp, output.value.clone());
-        }
-        latest_map
+    /// Each [`SyncStepResult`] pairs a synchronized input step with
+    /// the output(s) produced by the formula for that step.
+    /// This is useful for advanced diagnostics or when building custom
+    /// output formats (e.g., the Python bindings' `to_dict()`).
+    pub fn sync_evaluations(&self) -> &[SyncStepResult<T, Y>] {
+        &self.evaluations
+    }
+}
+
+// ── IntoIterator implementations ────────────────────────────────────
+
+/// Iterating over `&MonitorOutput` yields references to the raw output steps
+/// (equivalent to calling [`raw_outputs()`](MonitorOutput::raw_outputs)).
+impl<'a, T, Y> IntoIterator for &'a MonitorOutput<T, Y> {
+    type Item = &'a Step<Y>;
+    type IntoIter = std::iter::FlatMap<
+        std::slice::Iter<'a, SyncStepResult<T, Y>>,
+        std::slice::Iter<'a, Step<Y>>,
+        fn(&'a SyncStepResult<T, Y>) -> std::slice::Iter<'a, Step<Y>>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.evaluations
+            .iter()
+            .flat_map(|e| e.outputs.iter() as std::slice::Iter<'a, Step<Y>>)
+    }
+}
+
+/// Iterating over an owned `MonitorOutput` yields owned output steps
+/// (consuming the output).
+impl<T, Y> IntoIterator for MonitorOutput<T, Y> {
+    type Item = Step<Y>;
+    type IntoIter = std::iter::FlatMap<
+        std::vec::IntoIter<SyncStepResult<T, Y>>,
+        std::vec::IntoIter<Step<Y>>,
+        fn(SyncStepResult<T, Y>) -> std::vec::IntoIter<Step<Y>>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.evaluations
             .into_iter()
-            .map(|(ts, val)| Step::new(self.input_signal, val, ts))
-            .collect()
+            .flat_map(|e| e.outputs.into_iter())
     }
 }
 
