@@ -106,7 +106,7 @@ pub mod semantic_markers {
     }
 }
 
-// Re-export markers for easier access like `monitor::StrictSatisfaction`
+// Re-export markers for easier access like `monitor::DelayedQualitative`
 pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi};
 
 /// Represents the output of a single monitor update operation.
@@ -218,8 +218,8 @@ impl<T, Y> MonitorOutput<T, Y> {
 
     /// Produces one finalized verdict per timestamp.
     ///
-    /// If multiple outputs exist at the same timestamp (for example due to
-    /// refinement), the last one is retained.
+    /// If multiple outputs exist at the same timestamp (due to RoSI),
+    /// the last one is retained.
     pub fn finalize(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
@@ -749,7 +749,7 @@ mod tests {
 
         // This is the syntax you requested:
         // T is defaulted to f64 by StlMonitor::builder()
-        // Y is inferred as `bool` because of StrictSatisfaction
+        // Y is inferred as `bool` because of DelayedQualitative
         let mut monitor = StlMonitor::builder()
             .formula(formula)
             .semantics(DelayedQualitative) // Use the marker struct
