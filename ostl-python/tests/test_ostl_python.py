@@ -447,7 +447,7 @@ class TestBatchUpdate:
         assert output.input_signal == "x"
 
         # Check verdicts
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) == 3
         # 5.0 > 10.0 = False, 15.0 > 10.0 = True, 8.0 > 10.0 = False
         assert verdicts[0][1] is False
@@ -464,7 +464,7 @@ class TestBatchUpdate:
         output = monitor.update_batch(steps)
 
         # Check verdicts
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) == 3
         # DelayedQuantitative: value - threshold
         assert verdicts[0][1] == -5.0  # 5.0 - 10.0
@@ -479,7 +479,7 @@ class TestBatchUpdate:
         steps = {"x": [(5.0, 0.0), (15.0, 1.0)]}
 
         output = monitor.update_batch(steps)
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) >= 1
         # RoSI returns tuples (min, max)
         for ts, val in verdicts:
@@ -512,7 +512,7 @@ class TestBatchUpdate:
 
         # Should still work - steps are sorted internally
         assert output is not None
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) == 3
         # Verdicts should be in chronological order
         assert verdicts[0][0] == 0.0
@@ -549,16 +549,16 @@ class TestBatchUpdate:
         assert "evaluations" in result
         assert isinstance(result["evaluations"], list)
 
-    def test_batch_update_has_outputs(self):
-        """Test has_outputs and total_outputs methods on batch output."""
+    def test_batch_update_has_verdicts(self):
+        """Test has_verdicts and total_raw_outputs methods on batch output."""
         formula = ostl.Formula.gt("x", 10.0)
         monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         steps = {"x": [(15.0, 0.0), (5.0, 1.0), (20.0, 2.0)]}
         output = monitor.update_batch(steps)
 
-        assert output.has_outputs() is True
-        assert output.total_outputs() == 3
+        assert output.has_verdicts() is True
+        assert output.total_raw_outputs() == 3
 
     def test_batch_update_display(self):
         """Test that batch output can be displayed via __str__."""
@@ -829,7 +829,7 @@ class TestMonitorOutputFormatting:
         # The format should be "t={timestamp}: {value}" or "No verdicts available"
         assert isinstance(str_repr, str)
         # If there are verdicts, they should contain 't='
-        if output.has_outputs():
+        if output.has_verdicts():
             assert "t=" in str_repr
 
     def test_str_without_verdicts(self):
@@ -843,7 +843,7 @@ class TestMonitorOutputFormatting:
         str_repr = str(output)
         assert isinstance(str_repr, str)
         # If no verdicts, should say so
-        if not output.has_outputs():
+        if not output.has_verdicts():
             assert "No verdicts available" in str_repr
 
     def test_repr_format(self):
@@ -868,21 +868,21 @@ class TestMonitorOutputFormatting:
         for t in range(5):
             output = monitor.update("x", 10.0, float(t))
 
-        # The final output should have multiple verdicts in finalize()
-        verdicts = output.finalize()
+        # The final output should have multiple verdicts in verdicts()
+        verdicts = output.verdicts()
         str_repr = str(output)
 
         # str representation should contain 't=' for each verdict
         assert isinstance(str_repr, str)
 
-    def test_finalize_method(self):
-        """Test finalize() method returns list of (timestamp, value) tuples."""
+    def test_verdicts_method(self):
+        """Test verdicts() method returns list of (timestamp, value) tuples."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert isinstance(verdicts, list)
 
         for item in verdicts:
@@ -893,27 +893,27 @@ class TestMonitorOutputFormatting:
             # Second element is value (float for DelayedQuantitative)
             assert isinstance(item[1], float)
 
-    def test_finalize_with_bool_semantics(self):
-        """Test finalize() with boolean semantics."""
+    def test_verdicts_with_bool_semantics(self):
+        """Test verdicts() with boolean semantics."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="DelayedQualitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         for item in verdicts:
             assert isinstance(item, tuple)
             assert isinstance(item[0], float)  # timestamp
             assert isinstance(item[1], bool)  # value
 
-    def test_finalize_with_rosi_semantics(self):
-        """Test finalize() with Rosi semantics."""
+    def test_verdicts_with_rosi_semantics(self):
+        """Test verdicts() with Rosi semantics."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="Rosi")
 
         output = monitor.update("x", 10.0, 0.0)
 
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         for item in verdicts:
             assert isinstance(item, tuple)
             assert isinstance(item[0], float)  # timestamp
@@ -922,20 +922,20 @@ class TestMonitorOutputFormatting:
             assert len(item[1]) == 2
 
     def test_helper_methods(self):
-        """Test has_outputs, total_outputs, is_empty methods."""
+        """Test has_verdicts, total_raw_outputs, is_pending methods."""
         formula = ostl.Formula.gt("x", 5.0)
         monitor = ostl.Monitor(formula, semantics="DelayedQuantitative")
 
         output = monitor.update("x", 10.0, 0.0)
 
         # Test method return types
-        assert isinstance(output.has_outputs(), bool)
-        assert isinstance(output.total_outputs(), int)
-        assert isinstance(output.is_empty(), bool)
+        assert isinstance(output.has_verdicts(), bool)
+        assert isinstance(output.total_raw_outputs(), int)
+        assert isinstance(output.is_pending(), bool)
 
-        # If has_outputs is True, total_outputs should be > 0
-        if output.has_outputs():
-            assert output.total_outputs() > 0
+        # If has_verdicts is True, total_raw_outputs should be > 0
+        if output.has_verdicts():
+            assert output.total_raw_outputs() > 0
 
     def test_properties(self):
         """Test input_signal, input_timestamp, input_value properties."""
@@ -1083,9 +1083,9 @@ class TestMonitorWithVariables:
 
         # Value above threshold should be True
         output = monitor.update("x", 10.0, 1.0)
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) == 1
-        # finalize returns (timestamp, value) tuples
+        # verdicts returns (timestamp, value) tuples
         assert verdicts[0][1] == True
 
         # Update threshold
@@ -1093,7 +1093,7 @@ class TestMonitorWithVariables:
 
         # Same value now below threshold should be False
         output2 = monitor.update("x", 10.0, 2.0)
-        verdicts2 = output2.finalize()
+        verdicts2 = output2.verdicts()
         assert len(verdicts2) == 1
         assert verdicts2[0][1] == False
 
@@ -1112,9 +1112,9 @@ class TestMonitorWithVariables:
 
         # DelayedQuantitative = 10 - 5 = 5
         output = monitor.update("x", 10.0, 1.0)
-        verdicts = output.finalize()
+        verdicts = output.verdicts()
         assert len(verdicts) == 1
-        # finalize returns (timestamp, value) tuples
+        # verdicts returns (timestamp, value) tuples
         assert verdicts[0][1] == 5.0
 
         # Update threshold
@@ -1122,7 +1122,7 @@ class TestMonitorWithVariables:
 
         # DelayedQuantitative = 10 - 15 = -5
         output2 = monitor.update("x", 10.0, 2.0)
-        verdicts2 = output2.finalize()
+        verdicts2 = output2.verdicts()
         assert len(verdicts2) == 1
         assert verdicts2[0][1] == -5.0
 
@@ -1155,7 +1155,7 @@ class TestMonitorWithVariables:
         output = monitor.update("x", 4.0, 3.0)
 
         # Should have verdicts
-        assert output.has_outputs()
+        assert output.has_verdicts()
 
     def test_variables_not_supported_in_naive(self):
         """Test that variables are not supported in naive algorithm."""

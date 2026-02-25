@@ -40,8 +40,8 @@ fn run_final_rosi_verdicts_check(formulas: Vec<FormulaDefinition>, signal: Vec<S
                     .flat_map(|s| {
                         let rosi_output = monitor.update(s);
                         let delayed_output = delayed_monitor.update(s);
-                        let rosi_outputs = rosi_output.all_outputs();
-                        let delayed_outputs = delayed_output.all_outputs();
+                        let rosi_outputs = rosi_output.all_raw_outputs();
+                        let delayed_outputs = delayed_output.all_raw_outputs();
 
                         // Validate delayed vs RoSI for the first finalized delayed step, if present
                         if let Some(delayed_step) = delayed_outputs.first() {
@@ -103,7 +103,7 @@ fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<
             for s in signal.clone() {
                 let output = monitor.update(&s);
 
-                for out_step in output.outputs_iter() {
+                for out_step in output.raw_outputs() {
                     let iv = out_step.value;
                     if let Some(prev) = last_intervals.get(&out_step.timestamp) {
                         // New lower bound must be >= previous lower bound
@@ -127,7 +127,7 @@ fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<
                     last_intervals.insert(out_step.timestamp, iv);
                 }
 
-                rosi_output.extend(output.all_outputs());
+                rosi_output.extend(output.all_raw_outputs());
             }
 
             rosi_output

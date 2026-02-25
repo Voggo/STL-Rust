@@ -110,6 +110,18 @@ pub mod semantic_markers {
 pub use semantic_markers::{DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi};
 
 /// Represents the output of a single monitor update operation.
+///
+/// # Accessing results
+///
+/// The most common way to access results is via [`verdicts()`](Self::verdicts),
+/// which returns one finalized verdict per timestamp (deduplicating refinements).
+///
+/// You can also iterate directly:
+/// ```ignore
+/// for verdict in &output {
+///     println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct MonitorOutput<T, Y> {
     /// Signal name of the original input step that triggered this output object.
@@ -118,16 +130,16 @@ pub struct MonitorOutput<T, Y> {
     pub input_timestamp: Duration,
     /// Value of the original input step.
     pub input_value: T,
-    /// Per-synchronized-step evaluations produced during processing.
-    pub evaluations: Vec<SyncStepResult<T, Y>>,
+    /// Internal per-synchronized-step evaluations (synchronization detail).
+    evaluations: Vec<SyncStepResult<T, Y>>,
 }
 
-impl<Y> Display for MonitorOutput<f64, Y>
+impl<T, Y> Display for MonitorOutput<T, Y>
 where
     Y: Debug + Clone,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let finalized = self.finalize();
+        let finalized = self.verdicts();
 
         if finalized.is_empty() {
             return write!(f, "No verdicts available");
@@ -178,35 +190,109 @@ impl<T, Y> MonitorOutput<T, Y> {
         }
     }
 
-    /// Returns `true` if at least one evaluation contains outputs.
-    pub fn has_outputs(&self) -> bool {
+    // ── Primary API (what most users need) ──────────────────────────
+
+    /// Returns one finalized verdict per timestamp.
+    ///
+    /// When multiple outputs exist at the same timestamp (e.g. due to
+    /// interval refinement in RoSI mode), the last (most refined) value
+    /// is retained.
+    ///
+    /// This is the **recommended** way to consume monitor results.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let output = monitor.update(&step);
+    /// for verdict in output.verdicts() {
+    ///     println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
+    /// }
+    /// ```
+    pub fn verdicts(&self) -> Vec<Step<Y>>
+    where
+        Y: Clone,
+    {
+        let mut latest_map = std::collections::BTreeMap::new();
+        for output in self.raw_outputs() {
+            latest_map.insert(output.timestamp, output.value.clone());
+        }
+        latest_map
+            .into_iter()
+            .map(|(ts, val)| Step::new(self.input_signal, val, ts))
+            .collect()
+    }
+
+    /// Consuming version of [`verdicts()`](Self::verdicts) — avoids cloning
+    /// when you own the output.
+    pub fn into_verdicts(self) -> Vec<Step<Y>> {
+        let signal = self.input_signal;
+        let mut latest_map = std::collections::BTreeMap::new();
+        for eval in self.evaluations {
+            for output in eval.outputs {
+                latest_map.insert(output.timestamp, output.value);
+            }
+        }
+        latest_map
+            .into_iter()
+            .map(|(ts, val)| Step::new(signal, val, ts))
+            .collect()
+    }
+
+    /// Returns `true` if at least one verdict was produced.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let output = monitor.update(&step);
+    /// if output.has_verdicts() {
+    ///     println!("Got results!");
+    /// }
+    /// ```
+    pub fn has_verdicts(&self) -> bool {
         self.evaluations.iter().any(|e| !e.outputs.is_empty())
     }
 
-    /// Returns the total number of emitted output steps across all evaluations.
-    pub fn total_outputs(&self) -> usize {
-        self.evaluations.iter().map(|e| e.outputs.len()).sum()
+    /// Returns the latest verdict at the given timestamp, if present.
+    ///
+    /// When refinement produces multiple values at the same timestamp,
+    /// the last (most refined) value is returned.
+    pub fn verdict_at(&self, timestamp: Duration) -> Option<&Y> {
+        self.raw_outputs()
+            .filter(|s| s.timestamp == timestamp)
+            .last()
+            .map(|s| &s.value)
     }
 
-    /// Returns `true` if no synchronized evaluations were recorded.
-    pub fn is_empty(&self) -> bool {
+    /// Returns the most recent verdict by timestamp, if any.
+    pub fn latest_verdict(&self) -> Option<&Step<Y>> {
+        self.raw_outputs().last()
+    }
+
+    /// Returns `true` if no synchronized evaluations occurred
+    /// (e.g. a multi-signal formula waiting for the other signal).
+    pub fn is_pending(&self) -> bool {
         self.evaluations.is_empty()
     }
 
-    /// Iterates over all emitted output steps in evaluation order.
-    pub fn outputs_iter(&self) -> impl Iterator<Item = &Step<Y>> {
+    // ── Advanced / diagnostic API ───────────────────────────────────
+
+    /// Iterates over all emitted output steps in evaluation order,
+    /// **including** intermediate refinements.
+    ///
+    /// Most users should prefer [`verdicts()`](Self::verdicts) instead.
+    pub fn raw_outputs(&self) -> impl Iterator<Item = &Step<Y>> {
         self.evaluations.iter().flat_map(|e| e.outputs.iter())
     }
 
-    /// Returns the latest emitted verdict for a given timestamp, if present.
-    pub fn latest_verdict_at(&self, timestamp: Duration) -> Option<&Step<Y>> {
-        self.outputs_iter()
-            .filter(|s| s.timestamp == timestamp)
-            .last()
+    /// Returns the total number of raw output steps (including refinements).
+    pub fn total_raw_outputs(&self) -> usize {
+        self.evaluations.iter().map(|e| e.outputs.len()).sum()
     }
 
-    /// Returns all emitted output steps as a flat vector.
-    pub fn all_outputs(&self) -> Vec<Step<Y>>
+    /// Returns all raw emitted output steps as a flat vector.
+    ///
+    /// Most users should prefer [`verdicts()`](Self::verdicts) instead.
+    pub fn all_raw_outputs(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
     {
@@ -216,22 +302,50 @@ impl<T, Y> MonitorOutput<T, Y> {
             .collect()
     }
 
-    /// Produces one finalized verdict per timestamp.
+    /// Provides read-only access to the per-sync-step evaluation results.
     ///
-    /// If multiple outputs exist at the same timestamp (due to RoSI),
-    /// the last one is retained.
-    pub fn finalize(&self) -> Vec<Step<Y>>
-    where
-        Y: Clone,
-    {
-        let mut latest_map = std::collections::BTreeMap::new();
-        for output in self.outputs_iter() {
-            latest_map.insert(output.timestamp, output.value.clone());
-        }
-        latest_map
+    /// Each [`SyncStepResult`] pairs a synchronized input step with
+    /// the output(s) produced by the formula for that step.
+    /// This is useful for advanced diagnostics or when building custom
+    /// output formats (e.g., the Python bindings' `to_dict()`).
+    pub fn sync_evaluations(&self) -> &[SyncStepResult<T, Y>] {
+        &self.evaluations
+    }
+}
+
+// ── IntoIterator implementations ────────────────────────────────────
+
+/// Iterating over `&MonitorOutput` yields references to the raw output steps
+/// (equivalent to calling [`raw_outputs()`](MonitorOutput::raw_outputs)).
+impl<'a, T, Y> IntoIterator for &'a MonitorOutput<T, Y> {
+    type Item = &'a Step<Y>;
+    type IntoIter = std::iter::FlatMap<
+        std::slice::Iter<'a, SyncStepResult<T, Y>>,
+        std::slice::Iter<'a, Step<Y>>,
+        fn(&'a SyncStepResult<T, Y>) -> std::slice::Iter<'a, Step<Y>>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.evaluations
+            .iter()
+            .flat_map(|e| e.outputs.iter() as std::slice::Iter<'a, Step<Y>>)
+    }
+}
+
+/// Iterating over an owned `MonitorOutput` yields owned output steps
+/// (consuming the output).
+impl<T, Y> IntoIterator for MonitorOutput<T, Y> {
+    type Item = Step<Y>;
+    type IntoIter = std::iter::FlatMap<
+        std::vec::IntoIter<SyncStepResult<T, Y>>,
+        std::vec::IntoIter<Step<Y>>,
+        fn(SyncStepResult<T, Y>) -> std::vec::IntoIter<Step<Y>>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.evaluations
             .into_iter()
-            .map(|(ts, val)| Step::new(self.input_signal, val, ts))
-            .collect()
+            .flat_map(|e| e.outputs.into_iter())
     }
 }
 
@@ -305,7 +419,11 @@ impl<T: Clone + Interpolatable, Y> StlMonitor<T, Y> {
     /// ```ignore
     /// let step = Step::new("temperature", 25.0, Duration::from_secs(1));
     /// let output = monitor.update(&step);
-    /// for verdict in output.finalize() {
+    /// for verdict in output.verdicts() {
+    ///     println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
+    /// }
+    /// // or simply:
+    /// for verdict in &output {
     ///     println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
     /// }
     /// ```
@@ -830,7 +948,7 @@ mod tests {
         // Test with value above threshold
         let step = Step::new("x", 10.0, Duration::from_secs(1));
         let output = monitor.update(&step);
-        let verdicts = output.finalize();
+        let verdicts = output.verdicts();
         assert_eq!(verdicts.len(), 1);
         assert!(verdicts[0].value);
 
@@ -840,7 +958,7 @@ mod tests {
         // Now the same value should be below threshold
         let step2 = Step::new("x", 10.0, Duration::from_secs(2));
         let output2 = monitor.update(&step2);
-        let verdicts2 = output2.finalize();
+        let verdicts2 = output2.verdicts();
         assert_eq!(verdicts2.len(), 1);
         assert!(!verdicts2[0].value);
     }
@@ -868,7 +986,7 @@ mod tests {
         // Test with value 10, threshold 5: robustness = 10 - 5 = 5
         let step = Step::new("x", 10.0, Duration::from_secs(1));
         let output = monitor.update(&step);
-        let verdicts = output.finalize();
+        let verdicts = output.verdicts();
         assert_eq!(verdicts.len(), 1);
         assert_eq!(verdicts[0].value, 5.0);
 
@@ -878,7 +996,7 @@ mod tests {
         // Now robustness = 10 - 15 = -5
         let step2 = Step::new("x", 10.0, Duration::from_secs(2));
         let output2 = monitor.update(&step2);
-        let verdicts2 = output2.finalize();
+        let verdicts2 = output2.verdicts();
         assert_eq!(verdicts2.len(), 1);
         assert_eq!(verdicts2[0].value, -5.0);
     }
@@ -956,7 +1074,7 @@ mod tests {
         );
 
         let output = monitor.update_batch(&steps);
-        let verdicts = output.finalize();
+        let verdicts = output.verdicts();
 
         assert_eq!(verdicts.len(), 4);
         assert!(verdicts[0].timestamp == Duration::from_secs(0));
@@ -1096,7 +1214,7 @@ mod tests {
                 evaluations: vec![sync_result],
             };
 
-            assert!(monitor_output.has_outputs());
+            assert!(monitor_output.has_verdicts());
         }
 
         #[test]
@@ -1112,7 +1230,7 @@ mod tests {
                 evaluations: vec![sync_result],
             };
 
-            assert_eq!(monitor_output.total_outputs(), 2);
+            assert_eq!(monitor_output.total_raw_outputs(), 2);
         }
 
         #[test]
@@ -1126,10 +1244,10 @@ mod tests {
                 evaluations: vec![sync_result],
             };
 
-            assert!(!monitor_output.is_empty());
+            assert!(!monitor_output.is_pending());
 
             // exhaust the iter
-            let mut iter = monitor_output.outputs_iter();
+            let mut iter = monitor_output.raw_outputs();
             assert!(iter.next().is_none());
         }
 
@@ -1148,15 +1266,15 @@ mod tests {
                 evaluations: vec![sync_result],
             };
 
-            let verdict = monitor_output.latest_verdict_at(Duration::from_secs(1));
+            let verdict = monitor_output.verdict_at(Duration::from_secs(1));
             assert!(verdict.is_some());
-            assert!(verdict.unwrap().value);
+            assert!(*verdict.unwrap());
 
-            let verdict2 = monitor_output.latest_verdict_at(Duration::from_secs(2));
+            let verdict2 = monitor_output.verdict_at(Duration::from_secs(2));
             assert!(verdict2.is_some());
-            assert!(verdict2.unwrap().value); // should return the latest verdict at t=2, which is true
+            assert!(*verdict2.unwrap()); // should return the latest verdict at t=2, which is true
 
-            let verdict3 = monitor_output.latest_verdict_at(Duration::from_secs(3));
+            let verdict3 = monitor_output.verdict_at(Duration::from_secs(3));
             assert!(verdict3.is_none());
         }
     }

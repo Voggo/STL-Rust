@@ -18,6 +18,9 @@ Examples using `parse_formula` with Rust-style DSL syntax:
     >>> output = monitor.update('x', 1.0, 0.0)
     >>> # Print using Rust's Display formatting
     >>> print(output)
+    >>> # Access verdicts
+    >>> for ts, val in output.verdicts():
+    ...     print(f"t={ts}: {val}")
     >>> # Access structured data
     >>> print(output.to_dict())
 
@@ -577,8 +580,8 @@ class MonitorOutput:
         t=5s: 0.5
         >>> # Access properties
         >>> print(output.input_signal, output.input_timestamp)
-        >>> # Get finalized verdicts
-        >>> for ts, val in output.finalize():
+        >>> # Get verdicts
+        >>> for ts, val in output.verdicts():
         ...     print(f"Verdict at {ts}: {val}")
     """
 
@@ -597,7 +600,7 @@ class MonitorOutput:
         """The value of the input signal."""
         ...
 
-    def has_outputs(self) -> bool:
+    def has_verdicts(self) -> bool:
         """
         Check if there are any output verdicts.
 
@@ -606,30 +609,29 @@ class MonitorOutput:
         """
         ...
 
-    def total_outputs(self) -> int:
+    def total_raw_outputs(self) -> int:
         """
-        Get the total number of output verdicts.
+        Get the total number of raw output verdicts across all evaluations.
 
         Returns:
-            The total count of output verdicts across all evaluations.
+            The total count of raw output verdicts.
         """
         ...
 
-    def is_empty(self) -> bool:
+    def is_pending(self) -> bool:
         """
-        Check if the evaluations list is empty.
+        Check if the evaluations list is empty (i.e., data is being buffered).
 
         Returns:
             True if no evaluations were triggered, False otherwise.
         """
         ...
 
-    def finalize(self) -> List[Tuple[float, Union[bool, float, Tuple[float, float]]]]:
+    def verdicts(self) -> List[Tuple[float, Union[bool, float, Tuple[float, float]]]]:
         """
         Get the finalized verdicts as a list of (timestamp, value) tuples.
 
-        This returns the latest verdict for each unique timestamp,
-        matching the behavior of Rust's `finalize()` method.
+        This returns the latest verdict for each unique timestamp.
 
         Returns:
             List of (timestamp, value) tuples. The value type depends on the
@@ -638,6 +640,42 @@ class MonitorOutput:
             * bool for qualitative semantics
             * float for robustness semantics
             * tuple[float, float] for Rosi semantics
+        """
+        ...
+
+    def has_outputs(self) -> bool:
+        """
+        .. deprecated::
+            Use :meth:`has_verdicts` instead.
+
+        Check if there are any output verdicts.
+        """
+        ...
+
+    def total_outputs(self) -> int:
+        """
+        .. deprecated::
+            Use :meth:`total_raw_outputs` instead.
+
+        Get the total number of output verdicts.
+        """
+        ...
+
+    def is_empty(self) -> bool:
+        """
+        .. deprecated::
+            Use :meth:`is_pending` instead.
+
+        Check if the evaluations list is empty.
+        """
+        ...
+
+    def finalize(self) -> List[Tuple[float, Union[bool, float, Tuple[float, float]]]]:
+        """
+        .. deprecated::
+            Use :meth:`verdicts` instead.
+
+        Get the finalized verdicts as a list of (timestamp, value) tuples.
         """
         ...
 
@@ -775,7 +813,7 @@ class Monitor:
 
             * Display/Debug formatting via `__str__()` and `__repr__()`
             * Properties: input_signal, input_timestamp, input_value
-            * Methods: has_outputs(), total_outputs(), is_empty(), finalize()
+            * Methods: has_verdicts(), total_raw_outputs(), is_pending(), verdicts()
             * Structured data access via `to_dict()`
 
         Note:
@@ -790,8 +828,8 @@ class Monitor:
             >>> print(output)
             >>> # Access properties
             >>> print(f"Input: {output.input_signal} at t={output.input_timestamp}")
-            >>> # Get finalized verdicts
-            >>> for ts, val in output.finalize():
+            >>> # Get verdicts
+            >>> for ts, val in output.verdicts():
             ...     print(f"Verdict at {ts}: {val}")
             >>> # Access as dictionary
             >>> d = output.to_dict()
