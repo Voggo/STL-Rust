@@ -26,9 +26,11 @@
 //!     .unwrap();
 //!
 //! // Stream updates
-//! let out1 = monitor.update(&Step::new("x", 7.0, Duration::from_secs(0)));
-//! let out2 = monitor.update(&Step::new("x", 6.0, Duration::from_secs(1)));
-//! let out3 = monitor.update(&Step::new("x", 4.0, Duration::from_secs(2)));
+//! let out1 = monitor.update(&Step::new("x", 7.0, Duration::from_secs(0))).finalized();
+//! let out2 = monitor.update(&Step::new("x", 6.0, Duration::from_secs(1))).finalized();
+//! let out3 = monitor.update(&Step::new("x", 4.0, Duration::from_secs(2))).finalized();
+//!
+//!
 //!
 //! ```
 //!

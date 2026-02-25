@@ -218,8 +218,8 @@ impl<T, Y> MonitorOutput<T, Y> {
 
     /// Produces one finalized verdict per timestamp.
     ///
-    /// If multiple outputs exist at the same timestamp (for example due to
-    /// refinement), the last one is retained.
+    /// If multiple outputs exist at the same timestamp (due to RoSI),
+    /// the last one is retained.
     pub fn finalize(&self) -> Vec<Step<Y>>
     where
         Y: Clone,
