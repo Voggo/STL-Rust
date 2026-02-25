@@ -59,8 +59,8 @@ fn main() {
     // ]);
     // let res = monitor.update_batch(&batch);
 
-    println!("Monitor Output:\n{}", res);
-    println!("Monitor Output:\n{:?}", res);
+    println!("Monitor Output (Display) :\n{}", res);
+    println!("Monitor Output (Debug) :\n{:?}", res);
     // let res = monitor.update(&Step::new("x", 2.0, Duration::from_secs(1)));
     // println!("Monitor Output:\n{}", res);
     // let res = monitor.update(&Step::new("x", -1.0, Duration::from_secs(2)));

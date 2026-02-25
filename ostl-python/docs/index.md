@@ -23,7 +23,12 @@ monitor = ostl.Monitor(formula, semantics="Rosi")
 
 # Feed data and get verdicts
 result = monitor.update("x", 1.0, 0.0)
-for evaluation in result['evaluations']:
+for ts, val in result.verdicts():
+    print(f"t={ts}: {val}")
+
+# Or access structured data via dictionary
+result_dict = result.to_dict()
+for evaluation in result_dict['evaluations']:
     print(evaluation['outputs'])
 ```
 

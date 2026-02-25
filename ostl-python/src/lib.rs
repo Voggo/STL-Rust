@@ -10,7 +10,6 @@ use ostl::synchronizer::SynchronizationStrategy;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyList, PyTuple};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
 use std::time::Duration;
 
 #[pyfunction]
@@ -241,35 +240,50 @@ impl PyMonitorOutput {
         }
     }
 
+    fn has_verdicts(&self) -> bool {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.has_verdicts(),
+            InnerMonitorOutput::Float(o) => o.has_verdicts(),
+            InnerMonitorOutput::Interval(o) => o.has_verdicts(),
+        }
+    }
+
+    fn total_raw_outputs(&self) -> usize {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.total_raw_outputs(),
+            InnerMonitorOutput::Float(o) => o.total_raw_outputs(),
+            InnerMonitorOutput::Interval(o) => o.total_raw_outputs(),
+        }
+    }
+
+    fn is_pending(&self) -> bool {
+        match &self.inner {
+            InnerMonitorOutput::Bool(o) => o.is_pending(),
+            InnerMonitorOutput::Float(o) => o.is_pending(),
+            InnerMonitorOutput::Interval(o) => o.is_pending(),
+        }
+    }
+
+    /// Deprecated: use has_verdicts() instead.
     fn has_outputs(&self) -> bool {
-        match &self.inner {
-            InnerMonitorOutput::Bool(o) => o.has_outputs(),
-            InnerMonitorOutput::Float(o) => o.has_outputs(),
-            InnerMonitorOutput::Interval(o) => o.has_outputs(),
-        }
+        self.has_verdicts()
     }
 
+    /// Deprecated: use total_raw_outputs() instead.
     fn total_outputs(&self) -> usize {
-        match &self.inner {
-            InnerMonitorOutput::Bool(o) => o.total_outputs(),
-            InnerMonitorOutput::Float(o) => o.total_outputs(),
-            InnerMonitorOutput::Interval(o) => o.total_outputs(),
-        }
+        self.total_raw_outputs()
     }
 
+    /// Deprecated: use is_pending() instead.
     fn is_empty(&self) -> bool {
-        match &self.inner {
-            InnerMonitorOutput::Bool(o) => o.is_empty(),
-            InnerMonitorOutput::Float(o) => o.is_empty(),
-            InnerMonitorOutput::Interval(o) => o.is_empty(),
-        }
+        self.is_pending()
     }
 
-    fn finalize(&self) -> PyResult<Py<PyList>> {
+    fn verdicts(&self) -> PyResult<Py<PyList>> {
         Python::attach(|py| {
             let list = match &self.inner {
                 InnerMonitorOutput::Bool(o) => {
-                    let verdicts = o.finalize();
+                    let verdicts = o.verdicts();
                     let items: Vec<_> = verdicts
                         .iter()
                         .map(|step| {
@@ -290,7 +304,7 @@ impl PyMonitorOutput {
                     PyList::new(py, items).unwrap()
                 }
                 InnerMonitorOutput::Float(o) => {
-                    let verdicts = o.finalize();
+                    let verdicts = o.verdicts();
                     let items: Vec<_> = verdicts
                         .iter()
                         .map(|step| {
@@ -311,7 +325,7 @@ impl PyMonitorOutput {
                     PyList::new(py, items).unwrap()
                 }
                 InnerMonitorOutput::Interval(o) => {
-                    let verdicts = o.finalize();
+                    let verdicts = o.verdicts();
                     let items: Vec<_> = verdicts
                         .iter()
                         .map(|step| {
@@ -337,11 +351,16 @@ impl PyMonitorOutput {
         })
     }
 
+    /// Deprecated: use verdicts() instead.
+    fn finalize(&self) -> PyResult<Py<PyList>> {
+        self.verdicts()
+    }
+
     fn __str__(&self) -> String {
         match &self.inner {
-            InnerMonitorOutput::Bool(o) => format_monitor_output(o),
+            InnerMonitorOutput::Bool(o) => format!("{}", o),
             InnerMonitorOutput::Float(o) => format!("{}", o),
-            InnerMonitorOutput::Interval(o) => format_monitor_output(o),
+            InnerMonitorOutput::Interval(o) => format!("{}", o),
         }
     }
 
@@ -352,22 +371,6 @@ impl PyMonitorOutput {
             InnerMonitorOutput::Interval(o) => format!("{:?}", o),
         }
     }
-}
-fn format_monitor_output<Y: Debug + Clone>(output: &MonitorOutput<f64, Y>) -> String {
-    let finalized = output.finalize();
-
-    if finalized.is_empty() {
-        return "No verdicts available".to_string();
-    }
-
-    let mut result = String::new();
-    for (i, step) in finalized.iter().enumerate() {
-        if i > 0 {
-            result.push('\n');
-        }
-        result.push_str(&format!("t={:?}: {:?}", step.timestamp, step.value));
-    }
-    result
 }
 
 // -----------------------------------------------------------------------------
@@ -716,7 +719,7 @@ impl Monitor {
         }
     }
 }
-fn convert_output_to_dict<Y, F>(
+fn convert_output_to_dict<Y: Clone, F>(
     py: Python,
     output: MonitorOutput<f64, Y>,
     val_mapper: F,
@@ -733,7 +736,7 @@ where
     let mut evaluations_list = Vec::new();
 
     // Iterate over all evaluations triggered by this input
-    for eval in output.evaluations {
+    for eval in output.sync_evaluations() {
         let eval_dict = PyDict::new(py);
 
         // Add sync step information
@@ -746,8 +749,8 @@ where
 
         let mut outputs_list = Vec::new();
 
-        for out_step in eval.outputs {
-            let val = out_step.value;
+        for out_step in &eval.outputs {
+            let val = out_step.value.clone();
             let output_dict = PyDict::new(py);
             output_dict.set_item("timestamp", out_step.timestamp.as_secs_f64())?;
             output_dict.set_item("value", val_mapper(val))?;

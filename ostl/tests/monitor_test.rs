@@ -44,7 +44,7 @@ fn run_monitor_test<Y, S>(
                 "Step at {:?}, Monitor Output: {:?}",
                 step.timestamp, &output
             );
-            all_results.push(output.all_outputs());
+            all_results.push(output.all_raw_outputs());
         }
 
         assert_eq!(

@@ -41,25 +41,25 @@ fn test_signal_interleaving(
 
     // feed step 0
     let out0 = monitor.update(&steps[0]);
-    assert_eq!(out0.finalize().len(), 0); // not enough data yet
+    assert_eq!(out0.verdicts().len(), 0); // not enough data yet
     // feed step 1
     let out1 = monitor.update(&steps[1]);
-    assert_eq!(out1.finalize().len(), 1); // now we have both signals at t=0
+    assert_eq!(out1.verdicts().len(), 1); // now we have both signals at t=0
     // feed step 2
     let out2 = monitor.update(&steps[2]);
-    assert_eq!(out2.finalize().len(), 1); // not enough data yet
+    assert_eq!(out2.verdicts().len(), 1); // not enough data yet
     // feed step 3
     let out3 = monitor.update(&steps[3]);
-    assert_eq!(out3.finalize().len(), 1); // not enough data yet
+    assert_eq!(out3.verdicts().len(), 1); // not enough data yet
     // feed step 4
     let out4 = monitor.update(&steps[4]);
-    assert_eq!(out4.finalize().len(), 1); // not enough data yet
+    assert_eq!(out4.verdicts().len(), 1); // not enough data yet
     // feed step 5
     let out5 = monitor.update(&steps[5]);
-    assert_eq!(out5.finalize().len(), 1); // not enough data yet
+    assert_eq!(out5.verdicts().len(), 1); // not enough data yet
     // feed step 6
     let out6 = monitor.update(&steps[6]);
-    assert_eq!(out6.finalize().len(), 5); // now we have both signals at t=10
+    assert_eq!(out6.verdicts().len(), 5); // now we have both signals at t=10
 }
 
 #[rstest]
@@ -93,7 +93,7 @@ fn test_synchronization(
 
     for step in combine_and_sort_steps(vec![x_steps, y_steps]) {
         let output = monitor.update(&step);
-        outputs.push(output.all_outputs());
+        outputs.push(output.all_raw_outputs());
     }
 
     // Check that we have outputs for all timestamps appearing in both x_steps and y_steps

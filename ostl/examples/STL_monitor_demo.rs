@@ -333,7 +333,7 @@ fn main() {
 
         // Combine outputs from both monitors and publish
         let mut outputs = Vec::new();
-        for out in result_x.outputs_iter() {
+        for out in result_x.raw_outputs() {
             let entry = OutputEntry {
                 // prefix signal name so the plot can distinguish monitors
                 signal: format!("spec1_/{}/{}", monitor.specification(), out.signal),
@@ -342,7 +342,7 @@ fn main() {
             };
             outputs.push(entry);
         }
-        for out in result_evt.outputs_iter() {
+        for out in result_evt.raw_outputs() {
             let entry = OutputEntry {
                 signal: format!(
                     "spec2_/{}/{}",
