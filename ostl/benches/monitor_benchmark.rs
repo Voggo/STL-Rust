@@ -3,7 +3,9 @@ use criterion::{
     AxisScale, Criterion, PlotConfiguration, Throughput, criterion_group, criterion_main,
 };
 use ostl::ring_buffer::Step;
-use ostl::stl::monitor::{Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi, StlMonitor};
+use ostl::stl::monitor::{
+    Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi, StlMonitor,
+};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -189,7 +191,7 @@ fn benchmark_monitors(c: &mut Criterion) {
                 );
             }
 
-             // 3. Incremental bool Eager
+            // 3. Incremental bool Eager
             group.bench_with_input(
                 criterion::BenchmarkId::new("Incremental_bool_Eager", signal_size),
                 signal,
