@@ -47,7 +47,7 @@ def generate_chirp_signal(duration, sampling_rate, start_frequency, end_frequenc
 
 if __name__ == '__main__':
     # --- Configuration ---
-    DURATION = 1000         # seconds
+    DURATION = 20         # seconds
     SAMPLING_RATE = 1  # Hz
     START_FREQUENCY = 0.1   # Hz
     END_FREQUENCY = 0.0001   # Hz
