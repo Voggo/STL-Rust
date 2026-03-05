@@ -1,0 +1,116 @@
+formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,benchmark_kind,interval_len
+1,"G[0,1] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.003983154080,0.000000199158,0.199158,globally,1
+2,"F[0,1] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.003668234220,0.000000183412,0.183412,eventually,1
+3,"G[0,101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004132455840,0.000000206623,0.206623,globally,101
+4,"F[0,101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004046111680,0.000000202306,0.202306,eventually,101
+5,"G[0,201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004310159180,0.000000215508,0.215508,globally,201
+6,"F[0,201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004362900780,0.000000218145,0.218145,eventually,201
+7,"G[0,301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004258864120,0.000000212943,0.212943,globally,301
+8,"F[0,301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004270343420,0.000000213517,0.213517,eventually,301
+9,"G[0,401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004152221660,0.000000207611,0.207611,globally,401
+10,"F[0,401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004180244160,0.000000209012,0.209012,eventually,401
+11,"G[0,501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004156101680,0.000000207805,0.207805,globally,501
+12,"F[0,501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004143397580,0.000000207170,0.207170,eventually,501
+13,"G[0,601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004132890800,0.000000206645,0.206645,globally,601
+14,"F[0,601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004160456660,0.000000208023,0.208023,eventually,601
+15,"G[0,701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004609605900,0.000000230480,0.230480,globally,701
+16,"F[0,701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004409784180,0.000000220489,0.220489,eventually,701
+17,"G[0,801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004291325020,0.000000214566,0.214566,globally,801
+18,"F[0,801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004220528340,0.000000211026,0.211026,eventually,801
+19,"G[0,901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004237317500,0.000000211866,0.211866,globally,901
+20,"F[0,901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004283305820,0.000000214165,0.214165,eventually,901
+21,"G[0,1001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004249412440,0.000000212471,0.212471,globally,1001
+22,"F[0,1001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004234871700,0.000000211744,0.211744,eventually,1001
+23,"G[0,1101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004227168340,0.000000211358,0.211358,globally,1101
+24,"F[0,1101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004229776660,0.000000211489,0.211489,eventually,1101
+25,"G[0,1201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004457746720,0.000000222887,0.222887,globally,1201
+26,"F[0,1201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004209082520,0.000000210454,0.210454,eventually,1201
+27,"G[0,1301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004305001600,0.000000215250,0.215250,globally,1301
+28,"F[0,1301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004237398320,0.000000211870,0.211870,eventually,1301
+29,"G[0,1401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004283999140,0.000000214200,0.214200,globally,1401
+30,"F[0,1401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004231334200,0.000000211567,0.211567,eventually,1401
+31,"G[0,1501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004300130020,0.000000215007,0.215007,globally,1501
+32,"F[0,1501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004229516660,0.000000211476,0.211476,eventually,1501
+33,"G[0,1601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004367877460,0.000000218394,0.218394,globally,1601
+34,"F[0,1601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004214094180,0.000000210705,0.210705,eventually,1601
+35,"G[0,1701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004377086620,0.000000218854,0.218854,globally,1701
+36,"F[0,1701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004263573280,0.000000213179,0.213179,eventually,1701
+37,"G[0,1801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004253743340,0.000000212687,0.212687,globally,1801
+38,"F[0,1801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004206875000,0.000000210344,0.210344,eventually,1801
+39,"G[0,1901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004256709160,0.000000212835,0.212835,globally,1901
+40,"F[0,1901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004235845820,0.000000211792,0.211792,eventually,1901
+41,"G[0,2001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004265359920,0.000000213268,0.213268,globally,2001
+42,"F[0,2001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004185580840,0.000000209279,0.209279,eventually,2001
+43,"G[0,2101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004259667520,0.000000212983,0.212983,globally,2101
+44,"F[0,2101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004218249120,0.000000210912,0.210912,eventually,2101
+45,"G[0,2201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004391658200,0.000000219583,0.219583,globally,2201
+46,"F[0,2201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004353811580,0.000000217691,0.217691,eventually,2201
+47,"G[0,2301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004188184180,0.000000209409,0.209409,globally,2301
+48,"F[0,2301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004128427520,0.000000206421,0.206421,eventually,2301
+49,"G[0,2401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004211191680,0.000000210560,0.210560,globally,2401
+50,"F[0,2401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004203179980,0.000000210159,0.210159,eventually,2401
+51,"G[0,2501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004214830020,0.000000210742,0.210742,globally,2501
+52,"F[0,2501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004176032480,0.000000208802,0.208802,eventually,2501
+53,"G[0,2601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004204354200,0.000000210218,0.210218,globally,2601
+54,"F[0,2601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004158525720,0.000000207926,0.207926,eventually,2601
+55,"G[0,2701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004295592480,0.000000214780,0.214780,globally,2701
+56,"F[0,2701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004241943320,0.000000212097,0.212097,eventually,2701
+57,"G[0,2801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004242299180,0.000000212115,0.212115,globally,2801
+58,"F[0,2801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004171853260,0.000000208593,0.208593,eventually,2801
+59,"G[0,2901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004187408360,0.000000209370,0.209370,globally,2901
+60,"F[0,2901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004183844220,0.000000209192,0.209192,eventually,2901
+61,"G[0,3001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004211359160,0.000000210568,0.210568,globally,3001
+62,"F[0,3001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004144720020,0.000000207236,0.207236,eventually,3001
+63,"G[0,3101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004255648360,0.000000212782,0.212782,globally,3101
+64,"F[0,3101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004167764180,0.000000208388,0.208388,eventually,3101
+65,"G[0,3201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004481949200,0.000000224097,0.224097,globally,3201
+66,"F[0,3201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004164694960,0.000000208235,0.208235,eventually,3201
+67,"G[0,3301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004197834900,0.000000209892,0.209892,globally,3301
+68,"F[0,3301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004163260020,0.000000208163,0.208163,eventually,3301
+69,"G[0,3401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004313470860,0.000000215674,0.215674,globally,3401
+70,"F[0,3401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004146352580,0.000000207318,0.207318,eventually,3401
+71,"G[0,3501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004260205900,0.000000213010,0.213010,globally,3501
+72,"F[0,3501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004113214980,0.000000205661,0.205661,eventually,3501
+73,"G[0,3601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004133261620,0.000000206663,0.206663,globally,3601
+74,"F[0,3601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004133479980,0.000000206674,0.206674,eventually,3601
+75,"G[0,3701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004322342500,0.000000216117,0.216117,globally,3701
+76,"F[0,3701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004171753400,0.000000208588,0.208588,eventually,3701
+77,"G[0,3801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004225162560,0.000000211258,0.211258,globally,3801
+78,"F[0,3801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004142130900,0.000000207107,0.207107,eventually,3801
+79,"G[0,3901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004204290020,0.000000210215,0.210215,globally,3901
+80,"F[0,3901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004133616680,0.000000206681,0.206681,eventually,3901
+81,"G[0,4001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004200142460,0.000000210007,0.210007,globally,4001
+82,"F[0,4001] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004130628320,0.000000206531,0.206531,eventually,4001
+83,"G[0,4101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004194099140,0.000000209705,0.209705,globally,4101
+84,"F[0,4101] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004172788320,0.000000208639,0.208639,eventually,4101
+85,"G[0,4201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004323904180,0.000000216195,0.216195,globally,4201
+86,"F[0,4201] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004166054200,0.000000208303,0.208303,eventually,4201
+87,"G[0,4301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004174409220,0.000000208720,0.208720,globally,4301
+88,"F[0,4301] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004172997540,0.000000208650,0.208650,eventually,4301
+89,"G[0,4401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004297777540,0.000000214889,0.214889,globally,4401
+90,"F[0,4401] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004166847460,0.000000208342,0.208342,eventually,4401
+91,"G[0,4501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004218674160,0.000000210934,0.210934,globally,4501
+92,"F[0,4501] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004177276660,0.000000208864,0.208864,eventually,4501
+93,"G[0,4601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004248705820,0.000000212435,0.212435,globally,4601
+94,"F[0,4601] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004189916760,0.000000209496,0.209496,eventually,4601
+95,"G[0,4701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004353037560,0.000000217652,0.217652,globally,4701
+96,"F[0,4701] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004147937540,0.000000207397,0.207397,eventually,4701
+97,"G[0,4801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004169977400,0.000000208499,0.208499,globally,4801
+98,"F[0,4801] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004108634160,0.000000205432,0.205432,eventually,4801
+99,"G[0,4901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004162036780,0.000000208102,0.208102,globally,4901
+100,"F[0,4901] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004091985860,0.000000204599,0.204599,eventually,4901
+101,"G[0,5000] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004170204100,0.000000208510,0.208510,globally,5000
+102,"F[0,5000] (x > 0.5)",DelayedQuantitative,Incremental,online,20000,50,0.004166959140,0.000000208348,0.208348,eventually,5000
+103,"(x > 0.5) U[0,1] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.007719549180,0.000000385977,0.385977,until,1
+104,"(x > 0.5) U[0,101] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.035807335820,0.000001790367,1.790367,until,101
+105,"(x > 0.5) U[0,201] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.056144510040,0.000002807226,2.807226,until,201
+106,"(x > 0.5) U[0,301] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.077626434160,0.000003881322,3.881322,until,301
+107,"(x > 0.5) U[0,401] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.095198215000,0.000004759911,4.759911,until,401
+108,"(x > 0.5) U[0,501] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.114034735900,0.000005701737,5.701737,until,501
+109,"(x > 0.5) U[0,601] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.137141908380,0.000006857095,6.857095,until,601
+110,"(x > 0.5) U[0,701] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.155721917480,0.000007786096,7.786096,until,701
+111,"(x > 0.5) U[0,801] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.174929521760,0.000008746476,8.746476,until,801
+112,"(x > 0.5) U[0,901] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.193642395880,0.000009682120,9.682120,until,901
+113,"(x > 0.5) U[0,1001] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.216478948260,0.000010823947,10.823947,until,1001
+114,"(x > 0.5) U[0,1101] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.241696654920,0.000012084833,12.084833,until,1101
+115,"(x > 0.5) U[0,1201] (x > 0.8)",DelayedQuantitative,Incremental,online,20000,50,0.260955278360,0.000013047764,13.047764,until,1201

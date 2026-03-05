@@ -24,14 +24,14 @@ def generate_chirp_signal(duration, sampling_rate, start_frequency, end_frequenc
     signal_values = chirp(t, f0=start_frequency, f1=end_frequency, t1=duration, method='linear')
     
     # # Plot the signal before saving
-    # print("Displaying plot. Close the plot window to save the file.")
-    # plt.figure(figsize=(12, 6))
-    # plt.plot(t, signal_values)
-    # plt.title("Generated Chirp Signal")
-    # plt.xlabel("Time (s)")
-    # plt.ylabel("Value")
-    # plt.grid(True)
-    # plt.show()
+    print("Displaying plot. Close the plot window to save the file.")
+    plt.figure(figsize=(12, 6))
+    plt.plot(t, signal_values)
+    plt.title("Generated Chirp Signal")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Value")
+    plt.grid(True)
+    plt.show()
 
     # Write the signal to a CSV file
     
@@ -47,7 +47,7 @@ def generate_chirp_signal(duration, sampling_rate, start_frequency, end_frequenc
 
 if __name__ == '__main__':
     # --- Configuration ---
-    DURATION = 20         # seconds
+    DURATION = 1000         # seconds
     SAMPLING_RATE = 1  # Hz
     START_FREQUENCY = 0.1   # Hz
     END_FREQUENCY = 0.0001   # Hz

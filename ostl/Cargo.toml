@@ -22,3 +22,7 @@ criterion = "0.7.0"
 name = "monitor_benchmark"
 harness = false
 
+[[bench]]
+name = "paper_benchmark"
+harness = false
+
