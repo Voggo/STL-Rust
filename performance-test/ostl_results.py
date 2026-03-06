@@ -10,7 +10,7 @@ from tqdm import tqdm
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-M = 1  # Number of runs to average over
+M = 50  # Number of runs to average over
 SIGNAL_CSV = os.path.join(
     os.path.dirname(__file__),
     "..",
@@ -143,15 +143,15 @@ def main() -> None:
     print(f"Averaging over M = {M} runs\n")
 
     semantics = [
-        # "DelayedQuantitative",
-        # "DelayedQualitative",
-        # "EagerQualitative",
+        "DelayedQuantitative",
+        "DelayedQualitative",
+        "EagerQualitative",
         "Rosi",
     ]
     algorithm = "Incremental"
 
     # Initialize CSV file with headers
-    out_path = os.path.join(os.path.dirname(__file__), "ostl_benchmark_results.csv")
+    out_path = os.path.join(os.path.dirname(__file__), "ostlpython_benchmark_results.csv")
 
     # Check if file exists and ask user for confirmation
     if os.path.exists(out_path):
