@@ -1,0 +1,4 @@
+formula_id,spec,monitor_type,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us
+1,(x < 0.5) and (x > -0.5),discrete-time,online,20000,50,0.06135601172223687,3.0678005861118434e-06,3.0678005861118436
+2,"G[0,1000] (x > 0.5 -> F[0,100] (x < 0.0))",discrete-time,online,20000,50,1.1112587533413898,5.556293766706949e-05,55.56293766706949
+3,"(G[0,100] (x < 0.5)) or (G[100,150] (x > 0.0))",discrete-time,online,20000,50,0.21574986247695052,1.0787493123847525e-05,10.787493123847526

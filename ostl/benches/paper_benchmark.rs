@@ -97,62 +97,9 @@ where
     Ok(signal)
 }
 
-fn run_single_formula(semantics: SemanticsKind, signal: &[Step<f64>], formula: &FormulaDefinition) {
-    match semantics {
-        SemanticsKind::DelayedQuantitative => {
-            let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
-                .formula(formula.clone())
-                .algorithm(Algorithm::Incremental)
-                .semantics(DelayedQuantitative)
-                .build()
-                .unwrap();
-
-            for step in signal {
-                black_box(monitor.update(step));
-            }
-        }
-        SemanticsKind::DelayedQualitative => {
-            let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                .formula(formula.clone())
-                .algorithm(Algorithm::Incremental)
-                .semantics(DelayedQualitative)
-                .build()
-                .unwrap();
-
-            for step in signal {
-                black_box(monitor.update(step));
-            }
-        }
-        SemanticsKind::EagerQualitative => {
-            let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
-                .formula(formula.clone())
-                .algorithm(Algorithm::Incremental)
-                .semantics(EagerQualitative)
-                .build()
-                .unwrap();
-
-            for step in signal {
-                black_box(monitor.update(step));
-            }
-        }
-        SemanticsKind::Rosi => {
-            let mut monitor = StlMonitor::builder()
-                .formula(formula.clone())
-                .algorithm(Algorithm::Incremental)
-                .semantics(Rosi)
-                .build()
-                .unwrap();
-
-            for step in signal {
-                black_box(monitor.update(step));
-            }
-        }
-    }
-}
-
 fn bench_item(
     item: &BenchItem,
-    signal: &[Step<f64>],
+    signal: Vec<Step<f64>>,
     m_runs: usize,
     semantics: SemanticsKind,
 ) -> Option<BenchResult> {
@@ -163,10 +110,74 @@ fn bench_item(
     let n_samples = signal.len();
     let mut total_time = 0.0;
 
-    for _ in 0..m_runs {
-        let t0 = Instant::now();
-        run_single_formula(semantics, signal, &item.formula);
-        total_time += t0.elapsed().as_secs_f64();
+    match semantics {
+        SemanticsKind::DelayedQuantitative => {
+            for _ in 0..m_runs {
+                let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
+                    .formula(item.formula.clone())
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(DelayedQuantitative)
+                    .build()
+                    .unwrap();
+
+                let t0 = Instant::now();
+                // step_signal_delayedquant(&mut monitor, signal);
+
+                for step in &signal {
+                    black_box(monitor.update(step));
+                }
+
+                total_time += t0.elapsed().as_secs_f64();
+            }
+        }
+        SemanticsKind::DelayedQualitative => {
+            for _ in 0..m_runs {
+                let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+                    .formula(item.formula.clone())
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(DelayedQualitative)
+                    .build()
+                    .unwrap();
+                let t0 = Instant::now();
+                // step_signal_delayedqual(&mut monitor, signal);
+                for step in signal.clone() {
+                    monitor.update(&step);
+                }
+                total_time += t0.elapsed().as_secs_f64();
+            }
+        }
+        SemanticsKind::EagerQualitative => {
+            for _ in 0..m_runs {
+                let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
+                    .formula(item.formula.clone())
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(EagerQualitative)
+                    .build()
+                    .unwrap();
+                let t0 = Instant::now();
+                // step_signal_eagerqual(&mut monitor, signal);
+                for step in signal.clone() {
+                    monitor.update(&step);
+                }
+                total_time += t0.elapsed().as_secs_f64();
+            }
+        }
+        SemanticsKind::Rosi => {
+            for _ in 0..m_runs {
+                let mut monitor = StlMonitor::builder()
+                    .formula(item.formula.clone())
+                    .algorithm(Algorithm::Incremental)
+                    .semantics(Rosi)
+                    .build()
+                    .unwrap();
+                let t0 = Instant::now();
+                // step_signal_rosi(&mut monitor, signal);
+                for step in signal.clone() {
+                    monitor.update(&step);
+                }
+                total_time += t0.elapsed().as_secs_f64();
+            }
+        }
     }
 
     let avg_total = total_time / m_runs as f64;
@@ -349,7 +360,7 @@ fn main() -> io::Result<()> {
         println!("\n--- Semantics: {} ---", sem.name());
         for item in &items {
             println!("formula_id={} spec={}", item.formula_id, item.spec);
-            let result = bench_item(item, &signal, m_runs, sem);
+            let result = bench_item(item, signal.clone(), m_runs, sem);
             if let Some(result) = result {
                 write_result_row(&mut writer, &result)?;
             }
