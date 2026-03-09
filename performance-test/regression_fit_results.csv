@@ -1,4 +1,4 @@
-source,semantics,operator,model_degree,model_name,n_points,intercept,coef_x,coef_x2,r2,adjusted_r2,rmse
+source,semantics,operator,model_degree,model_name,n_points,intercept,coef_b,coef_b2,r2,adjusted_r2,rmse
 native,DelayedQualitative,F,0,constant,51,0.17309068627450988,0.0,0.0,1.1102230246251565e-16,1.1102230246251565e-16,0.005138929088446943
 native,DelayedQualitative,G,0,constant,51,0.17183819607843143,0.0,0.0,0.0,0.0,0.0050217784952814185
 native,DelayedQualitative,U,1,linear,51,1.372597067063536,0.0053645707216395154,0.0,0.9960392012559627,0.9959583686285334,0.49793697216503685

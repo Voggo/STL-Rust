@@ -57,8 +57,8 @@ class RegressionResult:
     model_name: str
     n_points: int
     intercept: float
-    coef_x: float
-    coef_x2: float
+    coef_b: float
+    coef_b2: float
     r2: float
     adjusted_r2: float
     rmse: float
@@ -72,8 +72,8 @@ class RegressionResult:
             "model_name": self.model_name,
             "n_points": self.n_points,
             "intercept": self.intercept,
-            "coef_x": self.coef_x,
-            "coef_x2": self.coef_x2,
+            "coef_b": self.coef_b,
+            "coef_b2": self.coef_b2,
             "r2": self.r2,
             "adjusted_r2": self.adjusted_r2,
             "rmse": self.rmse,
@@ -253,18 +253,18 @@ def run_regression(
         adj_r2 = _adjusted_r2(r2, n=n, p=degree)
         rmse = _rmse(y, y_hat)
 
-        # Normalize to y = intercept + coef_x*x + coef_x2*x^2
+        # Normalize to y = intercept + coef_b*x + coef_b2*x^2
         if degree == 0:
             intercept = float(coeffs_h2l[0])
-            coef_x = 0.0
-            coef_x2 = 0.0
+            coef_b = 0.0
+            coef_b2 = 0.0
             model_name = "constant"
         elif degree == 1:
-            coef_x, intercept = float(coeffs_h2l[0]), float(coeffs_h2l[1])
-            coef_x2 = 0.0
+            coef_b, intercept = float(coeffs_h2l[0]), float(coeffs_h2l[1])
+            coef_b2 = 0.0
             model_name = "linear"
         else:
-            coef_x2, coef_x, intercept = map(float, coeffs_h2l)
+            coef_b2, coef_b, intercept = map(float, coeffs_h2l)
             model_name = "quadratic"
 
         results.append(
@@ -276,8 +276,8 @@ def run_regression(
                 model_name=model_name,
                 n_points=n,
                 intercept=intercept,
-                coef_x=coef_x,
-                coef_x2=coef_x2,
+                coef_b=coef_b,
+                coef_b2=coef_b2,
                 r2=r2,
                 adjusted_r2=adj_r2,
                 rmse=rmse,
@@ -299,8 +299,8 @@ def save_results_csv(results: list[RegressionResult], output_csv: Path) -> None:
         "model_name",
         "n_points",
         "intercept",
-        "coef_x",
-        "coef_x2",
+        "coef_b",
+        "coef_b2",
         "r2",
         "adjusted_r2",
         "rmse",

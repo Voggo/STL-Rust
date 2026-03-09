@@ -48,7 +48,7 @@ def _configure_matplotlib() -> None:
 
 
 def _predict_from_result(result: RegressionResult, x: np.ndarray) -> np.ndarray:
-    return result.intercept + result.coef_x * x + result.coef_x2 * (x**2)
+    return result.intercept + result.coef_b * x + result.coef_b2 * (x**2)
 
 
 def _fmt_coef(value: float) -> str:
@@ -69,11 +69,11 @@ def _formula_label(result: RegressionResult) -> str:
     if result.model_degree == 0:
         return f"$y={_fmt_coef(result.intercept)}$"
     if result.model_degree == 1:
-        return f"$y={_fmt_coef(result.intercept)} + {_fmt_coef(result.coef_x)}x$"
+        return f"$y={_fmt_coef(result.intercept)} + {_fmt_coef(result.coef_b)}b$"
     return (
         f"$y={_fmt_coef(result.intercept)}"
-        f" + {_fmt_coef(result.coef_x)}x"
-        f" + {_fmt_coef(result.coef_x2)}x^2$"
+        f" + {_fmt_coef(result.coef_b)}b"
+        f" + {_fmt_coef(result.coef_b2)}b^2$"
     )
 
 
@@ -138,6 +138,8 @@ def _plot_panel(
                 label=label,
             )
 
+    # ax.set_xscalex("log")
+    # ax.set_yscale("log")
     ax.set_xlabel("Temporal bound $b$")
     ax.set_ylabel("Time per sample ($\\mu$s)")
     ax.grid(alpha=cfg.GRID_ALPHA)
@@ -146,38 +148,30 @@ def _plot_panel(
 def _plot_policy_figure(
     points: list[DataPoint],
     results: list[RegressionResult],
-    output_stem: str,
+    output_stem_prefix: str,
 ) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=cfg.FIGSIZE)
-
     points_by_key = _group_points(points)
     result_by_key = _group_results(results)
+    out_dir = cfg.ensure_output_dir()
 
-    # Row 1: native
-    _plot_panel(axes[0, 0], "native", cfg.NON_ROSI_SEMANTICS, points_by_key, result_by_key)
-    _plot_panel(axes[0, 1], "native", cfg.ROSI_SEMANTICS, points_by_key, result_by_key)
-
-    # Row 2: python
-    _plot_panel(axes[1, 0], "python", cfg.NON_ROSI_SEMANTICS, points_by_key, result_by_key)
-    _plot_panel(axes[1, 1], "python", cfg.ROSI_SEMANTICS, points_by_key, result_by_key)
-
-    axes[0, 0].set_title("Native: Delayed/Eager semantics")
-    axes[0, 1].set_title("Native: RoSI semantics")
-    axes[1, 0].set_title("Python: Delayed/Eager semantics")
-    axes[1, 1].set_title("Python: RoSI semantics")
-
-    for ax in axes.flat:
-        ax.legend(loc="upper left", fontsize=cfg.LEGEND_FONT, framealpha=0.9)
+    native_panels = [
+        (cfg.NON_ROSI_SEMANTICS, "Native: Delayed/Eager semantics", f"{output_stem_prefix}_native_non_rosi"),
+        (cfg.ROSI_SEMANTICS, "Native: RoSI semantics", f"{output_stem_prefix}_native_rosi"),
+    ]
 
     policy_text = "Non-RoSI (G/F constant, U linear); RoSI (G/F linear, U quadratic)"
 
-    fig.suptitle(f"Scalability Regression Fits — {policy_text}")
+    for semantics, title, stem in native_panels:
+        fig, ax = plt.subplots(1, 1, figsize=cfg.FIGSIZE)
+        _plot_panel(ax, "native", semantics, points_by_key, result_by_key)
+        ax.set_title(title)
+        ax.legend(loc="upper left", fontsize=cfg.LEGEND_FONT, framealpha=0.9)
+        fig.suptitle(f"Scalability Regression Fits — {policy_text}")
 
-    out_dir = cfg.ensure_output_dir()
-    for ext in ("pdf", "png"):
-        fig.savefig(out_dir / f"{output_stem}.{ext}")
+        for ext in ("pdf", "png"):
+            fig.savefig(out_dir / f"{stem}.{ext}")
 
-    plt.close(fig)
+        plt.close(fig)
 
 
 def main() -> None:
@@ -191,7 +185,7 @@ def main() -> None:
     _plot_policy_figure(
         points=points,
         results=results,
-        output_stem="regression_fits_constant_fg_non_rosi",
+        output_stem_prefix="regression_fits_constant_fg_non_rosi",
     )
 
     print(f"Saved regression CSV: {DEFAULT_OUTPUT_CSV}")

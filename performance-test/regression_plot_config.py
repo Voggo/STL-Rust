@@ -12,12 +12,12 @@ OUTPUT_DIR = ROOT / "figures"
 
 # Figure/layout
 FIGSIZE = (14, 8)
-DPI = 300
+DPI = 1000
 POINT_SIZE = 10
 POINT_ALPHA = 0.45
-LINE_WIDTH = 1.8
+LINE_WIDTH = 1.5
 GRID_ALPHA = 0.25
-LEGEND_FONT = 8
+LEGEND_FONT = 11
 
 # Typography (LaTeX-like, but self-contained)
 FONT_FAMILY = "serif"
