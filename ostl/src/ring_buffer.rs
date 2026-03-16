@@ -8,7 +8,13 @@
 //! It also includes [`guarded_prune`], a helper for pruning while protecting
 //! data needed by pending evaluations.
 
+#[cfg(feature = "track-cache-size")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::VecDeque, time::Duration};
+
+#[cfg(feature = "track-cache-size")]
+/// Global counter for elements currently residing in any ring buffer.
+pub static GLOBAL_CACHE_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 /// A single sampled value of a named signal at a given timestamp.
 #[derive(Clone, Debug, PartialEq)]
@@ -116,6 +122,8 @@ where
     /// Appends a new step.
     pub fn add_step(&mut self, step: Step<T>) {
         self.steps.push_back(step);
+        #[cfg(feature = "track-cache-size")]
+        GLOBAL_CACHE_SIZE.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Replaces the step with the same timestamp.
@@ -171,10 +179,20 @@ where
         self.steps.front()
     }
     fn pop_front(&mut self) -> Option<Step<Self::Value>> {
-        self.steps.pop_front()
+        let res = self.steps.pop_front();
+        #[cfg(feature = "track-cache-size")]
+        if res.is_some() {
+            GLOBAL_CACHE_SIZE.fetch_sub(1, Ordering::Relaxed);
+        }
+        res
     }
     fn pop_back(&mut self) -> Option<Step<Self::Value>> {
-        self.steps.pop_back()
+        let res = self.steps.pop_back();
+        #[cfg(feature = "track-cache-size")]
+        if res.is_some() {
+            GLOBAL_CACHE_SIZE.fetch_sub(1, Ordering::Relaxed);
+        }
+        res
     }
 
     fn add_step(&mut self, step: Step<T>) {
@@ -189,17 +207,45 @@ where
             None => return, // Buffer is empty, nothing to prune
         };
         let max_age = current_time.saturating_sub(max_age);
-        while let Some(front_step) = self.steps.front() {
-            if front_step.timestamp < max_age {
-                self.steps.pop_front();
-            } else {
-                break;
+
+        #[cfg(feature = "track-cache-size")]
+        {
+            let mut removed = 0;
+            while let Some(front_step) = self.steps.front() {
+                if front_step.timestamp < max_age {
+                    removed += 1;
+                    self.steps.pop_front();
+                } else {
+                    break;
+                }
+            }
+            if removed > 0 {
+                GLOBAL_CACHE_SIZE.fetch_sub(removed, Ordering::Relaxed);
+            }
+        }
+        #[cfg(not(feature = "track-cache-size"))]
+        {
+            while let Some(front_step) = self.steps.front() {
+                if front_step.timestamp < max_age {
+                    self.steps.pop_front();
+                } else {
+                    break;
+                }
             }
         }
     }
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.iter()
+    }
+}
+#[cfg(feature = "track-cache-size")]
+impl<T> Drop for RingBuffer<T> {
+    fn drop(&mut self) {
+        let remaining = self.steps.len();
+        if remaining > 0 {
+            GLOBAL_CACHE_SIZE.fetch_sub(remaining, Ordering::Relaxed);
+        }
     }
 }
 

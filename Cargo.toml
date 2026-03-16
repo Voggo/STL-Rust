@@ -1,0 +1,7 @@
+# /Cargo.toml
+[workspace]
+members = [
+    "ostl",
+    "ostl/ostl-macros",
+    "ostl-python"
+]
