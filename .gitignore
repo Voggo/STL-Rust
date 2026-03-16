@@ -6,6 +6,4 @@ plots/
 *_log.txt
 .DS_Store
 .vscode/
-figures/
-results/
-signals/
+target/
