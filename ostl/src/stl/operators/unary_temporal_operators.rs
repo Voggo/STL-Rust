@@ -61,12 +61,28 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Eventually<T, C, Y, IS_
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
-        Eventually {
-            interval,
-            operand,
-            cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_default(),
-            max_lookahead,
+        #[cfg(feature = "track-cache-size")]
+        {
+            let mut c = cache.unwrap_or_else(|| C::new());
+            c.set_tracked(true); // Enable tracking for this cache
+            Eventually {
+                interval,
+                operand,
+                cache: c,
+                eval_buffer: eval_buffer.unwrap_or_default(),
+                max_lookahead,
+            }
+        }
+        #[cfg(not(feature = "track-cache-size"))]
+        {
+            let c = cache.unwrap_or_else(|| C::new());
+            Eventually {
+                interval,
+                operand,
+                cache: c,
+                eval_buffer: eval_buffer.unwrap_or_default(),
+                max_lookahead,
+            }
         }
     }
 }
@@ -250,12 +266,28 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Globally<T, C, Y, IS_EA
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + operand.get_max_lookahead();
-        Globally {
-            interval,
-            operand,
-            cache: cache.unwrap_or_else(|| C::new()),
-            eval_buffer: eval_buffer.unwrap_or_default(),
-            max_lookahead,
+        #[cfg(feature = "track-cache-size")]
+        {
+            let mut c = cache.unwrap_or_else(|| C::new());
+            c.set_tracked(true); // Enable tracking for this cache
+            Globally {
+                interval,
+                operand,
+                cache: c,
+                eval_buffer: eval_buffer.unwrap_or_default(),
+                max_lookahead,
+            }
+        }
+        #[cfg(not(feature = "track-cache-size"))]
+        {
+            let c = cache.unwrap_or_else(|| C::new());
+            Globally {
+                interval,
+                operand,
+                cache: c,
+                eval_buffer: eval_buffer.unwrap_or_default(),
+                max_lookahead,
+            }
         }
     }
 }

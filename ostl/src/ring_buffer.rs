@@ -91,12 +91,18 @@ pub trait RingBufferTrait {
 
     /// Returns an iterator over all steps from oldest to newest.
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
+
+    #[cfg(feature = "track-cache-size")]
+    /// Enables or disables global cache size tracking for this specific buffer.
+    fn set_tracked(&mut self, tracked: bool);
 }
 
 /// `VecDeque`-backed ring buffer for timestamped signal steps.
 #[derive(Clone, Debug)]
 pub struct RingBuffer<T> {
     steps: VecDeque<Step<T>>,
+    #[cfg(feature = "track-cache-size")]
+    is_tracked: bool,
 }
 
 impl<T> Default for RingBuffer<T>
@@ -116,6 +122,8 @@ where
     pub fn new() -> Self {
         RingBuffer {
             steps: VecDeque::new(),
+            #[cfg(feature = "track-cache-size")]
+            is_tracked: false, // Default to false to avoid unintended tracking
         }
     }
 
@@ -123,7 +131,9 @@ where
     pub fn add_step(&mut self, step: Step<T>) {
         self.steps.push_back(step);
         #[cfg(feature = "track-cache-size")]
-        GLOBAL_CACHE_SIZE.fetch_add(1, Ordering::Relaxed);
+        if self.is_tracked {
+            GLOBAL_CACHE_SIZE.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Replaces the step with the same timestamp.
@@ -181,7 +191,7 @@ where
     fn pop_front(&mut self) -> Option<Step<Self::Value>> {
         let res = self.steps.pop_front();
         #[cfg(feature = "track-cache-size")]
-        if res.is_some() {
+        if res.is_some() && self.is_tracked {
             GLOBAL_CACHE_SIZE.fetch_sub(1, Ordering::Relaxed);
         }
         res
@@ -189,7 +199,7 @@ where
     fn pop_back(&mut self) -> Option<Step<Self::Value>> {
         let res = self.steps.pop_back();
         #[cfg(feature = "track-cache-size")]
-        if res.is_some() {
+        if res.is_some() && self.is_tracked {
             GLOBAL_CACHE_SIZE.fetch_sub(1, Ordering::Relaxed);
         }
         res
@@ -219,8 +229,10 @@ where
                     break;
                 }
             }
-            if removed > 0 {
-                GLOBAL_CACHE_SIZE.fetch_sub(removed, Ordering::Relaxed);
+            if self.is_tracked {
+                if removed > 0 {
+                    GLOBAL_CACHE_SIZE.fetch_sub(removed, Ordering::Relaxed);
+                }
             }
         }
         #[cfg(not(feature = "track-cache-size"))]
@@ -238,12 +250,17 @@ where
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.iter()
     }
+
+    #[cfg(feature = "track-cache-size")]
+    fn set_tracked(&mut self, tracked: bool) {
+        self.is_tracked = tracked;
+    }
 }
 #[cfg(feature = "track-cache-size")]
 impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         let remaining = self.steps.len();
-        if remaining > 0 {
+        if remaining > 0 && self.is_tracked {
             GLOBAL_CACHE_SIZE.fetch_sub(remaining, Ordering::Relaxed);
         }
     }
