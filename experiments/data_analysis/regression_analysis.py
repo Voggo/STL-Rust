@@ -25,7 +25,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parent
-NATIVE_CSV = ROOT.parent / "ostl" / "benches" / "results" / "paper_native_benchmark_results.csv"
+NATIVE_CSV = ROOT.parent / "results" / "paper_native_benchmark_results.csv"
 PYTHON_CSV = ROOT / "ostlpython_benchmark_results.csv"
 DEFAULT_OUTPUT_CSV = ROOT / "regression_fit_results.csv"
 
@@ -220,14 +220,17 @@ def _group_points(points: Iterable[DataPoint]) -> dict[tuple[str, str, str], lis
     return grouped
 
 
-def load_scalability_points(native_csv: Path, python_csv: Path) -> list[DataPoint]:
-    """Load and combine native + Python scalability points used for regression."""
-    return _load_native_points(native_csv) + _load_python_points(python_csv)
+def load_scalability_points(native_csv: Path, python_csv: Path | None) -> list[DataPoint]:
+    """Load and combine native + optional Python scalability points used for regression."""
+    points = _load_native_points(native_csv)
+    if python_csv is not None and python_csv.exists():
+        points += _load_python_points(python_csv)
+    return points
 
 
 def run_regression(
     native_csv: Path,
-    python_csv: Path,
+    python_csv: Path | None,
 ) -> list[RegressionResult]:
     """Run regression analysis for native and Python benchmark datasets."""
     points = load_scalability_points(native_csv, python_csv)
@@ -326,8 +329,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--python-csv",
         type=Path,
-        default=PYTHON_CSV,
-        help=f"Path to Python benchmark CSV (default: {PYTHON_CSV})",
+        default=None,
+        help="Optional path to Python benchmark CSV (omit to run native-only regression)",
     )
     parser.add_argument(
         "--output",
@@ -341,7 +344,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_arg_parser().parse_args()
 
-    results = run_regression(native_csv=args.native_csv, python_csv=args.python_csv)
+    python_csv = args.python_csv
+    if python_csv is None and PYTHON_CSV.exists():
+        python_csv = PYTHON_CSV
+
+    results = run_regression(native_csv=args.native_csv, python_csv=python_csv)
     save_results_csv(results, args.output)
 
     print(f"Saved {len(results)} regression rows to: {args.output}")

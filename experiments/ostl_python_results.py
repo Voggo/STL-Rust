@@ -2,23 +2,25 @@ import ostl_python.ostl_python as ostl
 import csv
 import time
 import os
-import sys
-import json
+import argparse
 import numpy as np
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-M = 50  # Number of runs to average over
-SIGNAL_CSV = os.path.join(
+DEFAULT_M = 20  # Number of runs to average over
+DEFAULT_SIGNAL_CSV = os.path.join(
     os.path.dirname(__file__),
-    "..",
-    "ostl",
-    "benches",
+    "BENCH_RESULTS",
     "signal_generation",
     "signals",
-    "signal_20000.csv",
+    "signal_20000_chirp.csv",
+)
+DEFAULT_OUTPUT_CSV = os.path.join(
+    os.path.dirname(__file__),
+    "results",
+    "ostlpython_NAIVE_benchmark_results.csv",
 )
 
 # Formulas matching the ostl benchmark catalog (IDs 1-12)
@@ -82,7 +84,8 @@ def bench_formula(
     parsed_formula = ostl.parse_formula(spec)
     temporal_depth = 0
 
-    for _ in range(m):
+    for i in range(m):
+        print(f"  Run {i+1}/{m} for formula ID {formula_id}...", end="\r", flush=True)
         monitor = ostl.Monitor(
             parsed_formula,
             semantics=semantics,
@@ -134,13 +137,24 @@ def should_process_formula(spec: str, semantics: str) -> bool:
     return True
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Benchmark ostl_python monitors")
+    parser.add_argument("--signal-csv", default=DEFAULT_SIGNAL_CSV, help="Input signal CSV path")
+    parser.add_argument("--m-runs", type=int, default=DEFAULT_M, help="Number of runs to average")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT_CSV, help="Output CSV path")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite output CSV if it exists")
+    return parser.parse_args()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    signal = load_signal(SIGNAL_CSV)
-    print(f"Loaded signal with {len(signal)} samples from {SIGNAL_CSV}")
-    print(f"Averaging over M = {M} runs\n")
+    args = parse_args()
+
+    signal = load_signal(args.signal_csv)
+    print(f"Loaded signal with {len(signal)} samples from {args.signal_csv}")
+    print(f"Averaging over M = {args.m_runs} runs\n")
 
     semantics = [
         "DelayedQuantitative",
@@ -151,17 +165,12 @@ def main() -> None:
     algorithm = "Incremental"
 
     # Initialize CSV file with headers
-    out_path = os.path.join(os.path.dirname(__file__), "ostlpython_benchmark_results.csv")
-
-    # Check if file exists and ask user for confirmation
-    if os.path.exists(out_path):
-        print(f"Warning: File '{out_path}' already exists.")
-        response = input("Do you want to overwrite it? (yes/no): ").strip().lower()
-        if response not in ["yes", "y"]:
-            out_path = input("Enter a new filename (or path): ").strip()
-            if not out_path.endswith(".csv"):
-                out_path += ".csv"
-            print(f"Using new filename: {out_path}")
+    out_path = args.output
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    if os.path.exists(out_path) and not args.overwrite:
+        raise SystemExit(
+            f"Output file already exists: {out_path}. Use --overwrite or set --output to a new path."
+        )
 
     csv_file = open(out_path, "w", newline="")
     fieldnames = [
@@ -188,7 +197,7 @@ def main() -> None:
                 continue
             pbar.set_postfix({"fid": fid, "spec": spec[:30] + "..."})
             res = bench_formula(
-                fid, spec, signal, M, semantics=sem, algorithm=algorithm
+                fid, spec, signal, args.m_runs, semantics=sem, algorithm=algorithm
             )
             # Write result to CSV file
             writer.writerow(res)

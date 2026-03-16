@@ -1,3 +1,5 @@
+#[cfg(feature = "track-cache-size")]
+use ostl::ring_buffer::GLOBAL_CACHE_SIZE;
 use ostl::ring_buffer::Step;
 use ostl::stl::formula_definition::FormulaDefinition;
 use ostl::stl::monitor::{
@@ -5,9 +7,12 @@ use ostl::stl::monitor::{
 };
 use ostl::stl::parse_stl;
 use std::fs::{File, create_dir_all};
+#[cfg(feature = "track-cache-size")]
 use std::hint::black_box;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "track-cache-size")]
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
@@ -15,7 +20,7 @@ use std::time::{Duration, Instant};
 // ---------------------------------------------------------------------------
 const DEFAULT_M_RUNS: usize = 50;
 const DEFAULT_SIGNAL_PATH: &str = "benches/signal_generation/signals/signal_20000.csv";
-const DEFAULT_OUTPUT_CSV: &str = "benches/results/paper_native_benchmark_results.csv";
+const DEFAULT_OUTPUT_CSV: &str = "benches/results/paper_native_benchmark_results_N=20000.csv";
 
 #[derive(Copy, Clone, PartialEq)]
 enum SemanticsKind {
@@ -56,6 +61,10 @@ struct BenchResult {
     avg_total_s: f64,
     avg_per_sample_s: f64,
     avg_per_sample_us: f64,
+    #[cfg(feature = "track-cache-size")]
+    avg_cache_size: f64,
+    #[cfg(feature = "track-cache-size")]
+    max_cache_size: usize,
     benchmark_kind: &'static str,
     interval_len: usize,
 }
@@ -110,9 +119,16 @@ fn bench_item(
     let n_samples = signal.len();
     let mut total_time = 0.0;
 
+    #[cfg(feature = "track-cache-size")]
+    let mut total_cache_size_all_runs: u128 = 0;
+    #[cfg(feature = "track-cache-size")]
+    let mut max_cache_size_all_runs: usize = 0;
+
     match semantics {
         SemanticsKind::DelayedQuantitative => {
             for _ in 0..m_runs {
+                #[cfg(feature = "track-cache-size")]
+                GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
                 let mut monitor: StlMonitor<f64, f64> = StlMonitor::builder()
                     .formula(item.formula.clone())
                     .algorithm(Algorithm::Incremental)
@@ -120,68 +136,224 @@ fn bench_item(
                     .build()
                     .unwrap();
 
-                let t0 = Instant::now();
-                // step_signal_delayedquant(&mut monitor, signal);
-
-                for step in &signal {
-                    black_box(monitor.update(step));
+                #[cfg(not(feature = "track-cache-size"))]
+                {
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
                 }
 
-                total_time += t0.elapsed().as_secs_f64();
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let mut total_cache_size = 0usize;
+                    let mut max_cache_size = 0usize;
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        black_box(monitor.update(step));
+                        let current_size = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                        total_cache_size += current_size;
+                        max_cache_size = max_cache_size.max(current_size);
+                    }
+
+                    total_time += t0.elapsed().as_secs_f64();
+
+                    let avg_size = total_cache_size as f64 / signal.len() as f64;
+                    total_cache_size_all_runs += total_cache_size as u128;
+                    max_cache_size_all_runs = max_cache_size_all_runs.max(max_cache_size);
+                    println!(
+                        "  Formula ID {}: Avg Size: {:.2}, Max Size: {}",
+                        item.formula_id, avg_size, max_cache_size
+                    );
+                }
+
+                drop(monitor);
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let residual = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                    if residual != 0 {
+                        eprintln!(
+                            "  Warning: residual GLOBAL_CACHE_SIZE={} after run for formula {}",
+                            residual, item.formula_id
+                        );
+                        GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
+                    }
+                }
             }
         }
         SemanticsKind::DelayedQualitative => {
             for _ in 0..m_runs {
+                #[cfg(feature = "track-cache-size")]
+                GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
                 let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
                     .formula(item.formula.clone())
                     .algorithm(Algorithm::Incremental)
                     .semantics(DelayedQualitative)
                     .build()
                     .unwrap();
-                let t0 = Instant::now();
-                // step_signal_delayedqual(&mut monitor, signal);
-                for step in signal.clone() {
-                    monitor.update(&step);
+
+                #[cfg(not(feature = "track-cache-size"))]
+                {
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
                 }
-                total_time += t0.elapsed().as_secs_f64();
+
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let mut total_cache_size = 0usize;
+                    let mut max_cache_size = 0usize;
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                        let current_size = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                        total_cache_size += current_size;
+                        max_cache_size = max_cache_size.max(current_size);
+                    }
+
+                    total_time += t0.elapsed().as_secs_f64();
+
+                    let avg_size = total_cache_size as f64 / signal.len() as f64;
+                    total_cache_size_all_runs += total_cache_size as u128;
+                    max_cache_size_all_runs = max_cache_size_all_runs.max(max_cache_size);
+                    println!(
+                        "  Formula ID {}: Avg Size: {:.2}, Max Size: {}",
+                        item.formula_id, avg_size, max_cache_size
+                    );
+                }
+
+                drop(monitor);
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let residual = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                    if residual != 0 {
+                        eprintln!(
+                            "  Warning: residual GLOBAL_CACHE_SIZE={} after run for formula {}",
+                            residual, item.formula_id
+                        );
+                        GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
+                    }
+                }
             }
         }
         SemanticsKind::EagerQualitative => {
             for _ in 0..m_runs {
+                #[cfg(feature = "track-cache-size")]
+                GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
                 let mut monitor: StlMonitor<f64, bool> = StlMonitor::builder()
                     .formula(item.formula.clone())
                     .algorithm(Algorithm::Incremental)
                     .semantics(EagerQualitative)
                     .build()
                     .unwrap();
-                let t0 = Instant::now();
-                // step_signal_eagerqual(&mut monitor, signal);
-                for step in signal.clone() {
-                    monitor.update(&step);
+                #[cfg(not(feature = "track-cache-size"))]
+                {
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
                 }
-                total_time += t0.elapsed().as_secs_f64();
+
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let mut total_cache_size = 0usize;
+                    let mut max_cache_size = 0usize;
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                        let current_size = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                        total_cache_size += current_size;
+                        max_cache_size = max_cache_size.max(current_size);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
+
+                    let avg_size = total_cache_size as f64 / signal.len() as f64;
+                    total_cache_size_all_runs += total_cache_size as u128;
+                    max_cache_size_all_runs = max_cache_size_all_runs.max(max_cache_size);
+                    println!(
+                        "  Formula ID {}: Avg Size: {:.2}, Max Size: {}",
+                        item.formula_id, avg_size, max_cache_size
+                    );
+                }
+
+                drop(monitor);
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let residual = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                    if residual != 0 {
+                        eprintln!(
+                            "  Warning: residual GLOBAL_CACHE_SIZE={} after run for formula {}",
+                            residual, item.formula_id
+                        );
+                        GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
+                    }
+                }
             }
         }
         SemanticsKind::Rosi => {
             for _ in 0..m_runs {
+                #[cfg(feature = "track-cache-size")]
+                GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
                 let mut monitor = StlMonitor::builder()
                     .formula(item.formula.clone())
                     .algorithm(Algorithm::Incremental)
                     .semantics(Rosi)
                     .build()
                     .unwrap();
-                let t0 = Instant::now();
-                // step_signal_rosi(&mut monitor, signal);
-                for step in signal.clone() {
-                    monitor.update(&step);
+                #[cfg(not(feature = "track-cache-size"))]
+                {
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
                 }
-                total_time += t0.elapsed().as_secs_f64();
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let mut total_cache_size = 0usize;
+                    let mut max_cache_size = 0usize;
+                    let t0 = Instant::now();
+                    for step in &signal {
+                        monitor.update(step);
+                        let current_size = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                        total_cache_size += current_size;
+                        max_cache_size = max_cache_size.max(current_size);
+                    }
+                    total_time += t0.elapsed().as_secs_f64();
+
+                    let avg_size = total_cache_size as f64 / signal.len() as f64;
+                    total_cache_size_all_runs += total_cache_size as u128;
+                    max_cache_size_all_runs = max_cache_size_all_runs.max(max_cache_size);
+                    println!(
+                        "  Formula ID {}: Avg Size: {:.2}, Max Size: {}",
+                        item.formula_id, avg_size, max_cache_size
+                    );
+                }
+
+                drop(monitor);
+                #[cfg(feature = "track-cache-size")]
+                {
+                    let residual = GLOBAL_CACHE_SIZE.load(Ordering::Relaxed);
+                    if residual != 0 {
+                        eprintln!(
+                            "  Warning: residual GLOBAL_CACHE_SIZE={} after run for formula {}",
+                            residual, item.formula_id
+                        );
+                        GLOBAL_CACHE_SIZE.store(0, Ordering::Relaxed);
+                    }
+                }
             }
         }
     }
 
     let avg_total = total_time / m_runs as f64;
     let avg_per_sample = avg_total / n_samples as f64;
+    #[cfg(feature = "track-cache-size")]
+    let avg_cache_size = total_cache_size_all_runs as f64 / (n_samples as f64 * m_runs as f64);
 
     Some(BenchResult {
         formula_id: item.formula_id,
@@ -194,6 +366,10 @@ fn bench_item(
         avg_total_s: avg_total,
         avg_per_sample_s: avg_per_sample,
         avg_per_sample_us: avg_per_sample * 1e6,
+        #[cfg(feature = "track-cache-size")]
+        avg_cache_size,
+        #[cfg(feature = "track-cache-size")]
+        max_cache_size: max_cache_size_all_runs,
         benchmark_kind: item.benchmark_kind,
         interval_len: item.interval_len,
     })
@@ -292,27 +468,51 @@ fn csv_escape(field: &str) -> String {
 fn write_csv_header(w: &mut BufWriter<File>) -> io::Result<()> {
     writeln!(
         w,
-        "formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,benchmark_kind,interval_len"
+        "formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,avg_cache_size,max_cache_size,benchmark_kind,interval_len"
     )
 }
 
 fn write_result_row(w: &mut BufWriter<File>, r: &BenchResult) -> io::Result<()> {
-    writeln!(
-        w,
-        "{},{},{},{},{},{},{},{:.12},{:.12},{:.6},{},{}",
-        r.formula_id,
-        csv_escape(&r.spec),
-        r.semantics,
-        r.algorithm,
-        r.mode,
-        r.n_samples,
-        r.m_runs,
-        r.avg_total_s,
-        r.avg_per_sample_s,
-        r.avg_per_sample_us,
-        r.benchmark_kind,
-        r.interval_len
-    )
+    #[cfg(feature = "track-cache-size")]
+    {
+        writeln!(
+            w,
+            "{},{},{},{},{},{},{},{:.12},{:.12},{:.6},{:.6},{},{},{}",
+            r.formula_id,
+            csv_escape(&r.spec),
+            r.semantics,
+            r.algorithm,
+            r.mode,
+            r.n_samples,
+            r.m_runs,
+            r.avg_total_s,
+            r.avg_per_sample_s,
+            r.avg_per_sample_us,
+            r.avg_cache_size,
+            r.max_cache_size,
+            r.benchmark_kind,
+            r.interval_len
+        )
+    }
+    #[cfg(not(feature = "track-cache-size"))]
+    {
+        writeln!(
+            w,
+            "{},{},{},{},{},{},{},{:.12},{:.12},{:.6},{},{}",
+            r.formula_id,
+            csv_escape(&r.spec),
+            r.semantics,
+            r.algorithm,
+            r.mode,
+            r.n_samples,
+            r.m_runs,
+            r.avg_total_s,
+            r.avg_per_sample_s,
+            r.avg_per_sample_us,
+            r.benchmark_kind,
+            r.interval_len
+        )
+    }
 }
 
 fn ensure_parent_dir(path: &Path) -> io::Result<()> {
