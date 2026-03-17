@@ -13,20 +13,81 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 
-/// Removes dominated values from the back of a monotone cache.
+/// Returns `true` if it is safe to evict the cache entry at `back_ts` in favour
+/// of a new entry arriving at `new_ts`.
 ///
-/// This is used as a Lemire-style optimization for sliding min/max windows.
+/// Lemire back-eviction is only valid when every pending evaluation task whose
+/// window contains `back_ts` also contains `new_ts`.  Evicting prematurely
+/// removes an entry that a pending task still needs, which corrupts the result.
+///
+/// The check uses a sufficient O(1) condition based solely on the *oldest*
+/// pending task (the tightest constraint in the evaluation buffer):
+///
+/// * **Condition A** – `oldest + b ≥ new_ts`: the oldest pending task's window
+///   right-edge still reaches `new_ts`, so `new_ts` is inside every pending
+///   window.  Safe to evict.
+/// * **Condition B** – `oldest > back_ts − a`: even the oldest pending task's
+///   window starts after `back_ts`, meaning no pending window contains
+///   `back_ts` at all.  Safe to evict.
+///
+/// If neither condition holds, eviction is conservatively deferred.  Any entry
+/// retained this way is a true minimum/maximum candidate for some still-open
+/// window and will be cleaned up by `guarded_prune` once no longer needed.
+fn is_lemire_eviction_safe(
+    back_ts: Duration,
+    new_ts: Duration,
+    interval: &TimeInterval,
+    eval_buffer: &BTreeSet<Duration>,
+) -> bool {
+    let Some(&oldest) = eval_buffer.first() else {
+        return true; // No pending evaluations — unconditionally safe.
+    };
+    // Condition A: oldest + b >= new_ts  <=>  oldest >= new_ts - b
+    if oldest >= new_ts.saturating_sub(interval.end) {
+        return true;
+    }
+    // Condition B: oldest > back_ts - a
+    if oldest > back_ts.saturating_sub(interval.start) {
+        return true;
+    }
+    false
+}
+
+/// Removes dominated values from the back of a monotone cache (Lemire
+/// sliding min/max), guarded by an O(1) safety check.
+///
 /// `is_max = true` is used for `Eventually`; `is_max = false` for `Globally`.
-fn pop_dominated_values<C, Y>(cache: &mut C, sub_step: &Step<Y>, is_max: bool)
-where
+///
+/// Each entry is pushed at most once and evicted at most once, so the total
+/// cost across all insertions is O(n) — amortised O(1) per step.
+///
+/// The safety gate ensures that an entry is only evicted once every pending
+/// evaluation task whose window covers that entry also covers the new entry.
+/// For dense (gap = 1) timestamps the gate always passes, so Lemire behaves
+/// exactly as before.  For sparse timestamps where a gap exceeds the window
+/// width the gate blocks the eviction; the entry stays and is later cleaned
+/// up by `guarded_prune`.  The window query uses a bounded scan
+/// (`skip_while`/`take_while`) so it remains correct in both cases: with a
+/// healthy Lemire deque the scan terminates at the monotone-minimum front
+/// entry in O(1); with a sparse-timestamp gap the window contains at most one
+/// entry, also O(1).
+fn pop_dominated_values<C, Y>(
+    cache: &mut C,
+    sub_step: &Step<Y>,
+    is_max: bool,
+    interval: &TimeInterval,
+    eval_buffer: &BTreeSet<Duration>,
+) where
     C: RingBufferTrait<Value = Y>,
     Y: RobustnessSemantics + Debug,
 {
-    // Lemire's sliding min/max optimization with robust domination checks
-    while let Some(back) = cache.get_back()
-        && Y::prune_dominated(back.value.clone(), sub_step.value.clone(), is_max)
-    {
-        // Short-circuit: new value dominates the back of the cache.
+    while let Some(back) = cache.get_back() {
+        if !Y::prune_dominated(back.value.clone(), sub_step.value.clone(), is_max) {
+            break; // Back is not dominated; no earlier entry will be either.
+        }
+        if !is_lemire_eviction_safe(back.timestamp, sub_step.timestamp, interval, eval_buffer) {
+            break; // Value-dominated but not yet safe to remove.
+        }
         cache.pop_back();
     }
 }
@@ -126,7 +187,13 @@ where
 
                     if is_new_step {
                         // New step: Safe to prune back and append (Lemire)
-                        pop_dominated_values(&mut self.cache, &sub_step, true); // true for Max (Eventually)
+                        pop_dominated_values(
+                            &mut self.cache,
+                            &sub_step,
+                            true,
+                            &self.interval,
+                            &self.eval_buffer,
+                        ); // true for Max (Eventually)
                         self.cache.add_step(sub_step);
                     }
                 }
@@ -135,7 +202,13 @@ where
             // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
                 self.eval_buffer.insert(sub_step.timestamp);
-                pop_dominated_values(&mut self.cache, sub_step, true); // true for Max
+                pop_dominated_values(
+                    &mut self.cache,
+                    sub_step,
+                    true,
+                    &self.interval,
+                    &self.eval_buffer,
+                ); // true for Max
                 self.cache.add_step(sub_step.clone());
             }
         }
@@ -146,29 +219,24 @@ where
         // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
+            let window_end = t_eval + self.interval.end;
 
-            // The first step in this window is always the max as a result of how the cache is built
-            let windowed_max_value = if IS_ROSI {
-                let window_end = t_eval + self.interval.end;
-                self.cache
-                    .iter()
-                    .skip_while(|entry| entry.timestamp < window_start)
-                    .take_while(|entry| entry.timestamp <= window_end)
-                    .map(|entry| entry.value.clone())
-                    .fold(Y::eventually_identity(), Y::or)
-            } else {
-                // Standard optimization (valid for f64/bool with append-only data)
-                let windowed_max_step = self
-                    .cache
-                    .iter()
-                    .find(|entry| entry.timestamp >= window_start);
-
-                if let Some(entry) = windowed_max_step {
-                    entry.value.clone()
-                } else {
-                    Y::eventually_identity()
-                }
-            };
+            // Bounded window scan — correct for any timestamp density.
+            //
+            // With dense timestamps the Lemire safety gate always passes, so
+            // the deque is properly maintained: the first entry at or after
+            // `window_start` is the maximum and the scan terminates in O(1).
+            // With sparse timestamps (gap > window width) the gate may block
+            // some evictions, leaving a non-monotone deque; the bounded
+            // `take_while` ensures we never read past `window_end` in that
+            // case, so correctness is preserved regardless.
+            let windowed_max_value = self
+                .cache
+                .iter()
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
+                .map(|entry| entry.value.clone())
+                .fold(Y::eventually_identity(), Y::or);
 
             let final_value: Option<Y>;
             let mut remove_task = false;
@@ -181,9 +249,6 @@ where
             } else {
                 current_time
             };
-
-            // println!("t: {:?}, current_time: {:?}, t_eval: {:?}, max_lookahead: {:?}, windowed_max_value: {:?}",
-            //     t, current_time, t_eval, self.max_lookahead, windowed_max_value);
 
             // state-based logic
             if t >= t_eval + self.max_lookahead {
@@ -330,7 +395,13 @@ where
 
                     if is_new_step {
                         // New step: Safe to prune back and append (Lemire)
-                        pop_dominated_values(&mut self.cache, &sub_step, false); // false for Min (Globally)
+                        pop_dominated_values(
+                            &mut self.cache,
+                            &sub_step,
+                            false,
+                            &self.interval,
+                            &self.eval_buffer,
+                        ); // false for Min (Globally)
                         self.cache.add_step(sub_step);
                     }
                 }
@@ -338,7 +409,13 @@ where
         } else {
             // Non-RoSI path (f64/bool)
             for sub_step in &sub_robustness_vec {
-                pop_dominated_values(&mut self.cache, sub_step, false); // false for Min
+                pop_dominated_values(
+                    &mut self.cache,
+                    sub_step,
+                    false,
+                    &self.interval,
+                    &self.eval_buffer,
+                ); // false for Min
                 self.eval_buffer.insert(sub_step.timestamp);
                 self.cache.add_step(sub_step.clone());
             }
@@ -350,29 +427,24 @@ where
         // 2. Process the evaluation buffer
         for &t_eval in self.eval_buffer.iter() {
             let window_start = t_eval + self.interval.start;
+            let window_end = t_eval + self.interval.end;
 
-            // The first step in this window is always the max as a result of how the cache is built
-            let windowed_min_value = if IS_ROSI {
-                let window_end = t_eval + self.interval.end;
-                self.cache
-                    .iter()
-                    .skip_while(|entry| entry.timestamp < window_start)
-                    .take_while(|entry| entry.timestamp <= window_end)
-                    .map(|entry| entry.value.clone())
-                    .fold(Y::globally_identity(), Y::and)
-            } else {
-                // Standard optimization (valid for f64/bool with append-only data)
-                let windowed_min_step = self
-                    .cache
-                    .iter()
-                    .find(|entry| entry.timestamp >= window_start);
-
-                if let Some(entry) = windowed_min_step {
-                    entry.value.clone()
-                } else {
-                    Y::globally_identity()
-                }
-            };
+            // Bounded window scan — correct for any timestamp density.
+            //
+            // With dense timestamps the Lemire safety gate always passes, so
+            // the deque is properly maintained: the first entry at or after
+            // `window_start` is the minimum and the scan terminates in O(1).
+            // With sparse timestamps (gap > window width) the gate may block
+            // some evictions, leaving a non-monotone deque; the bounded
+            // `take_while` ensures we never read past `window_end` in that
+            // case, so correctness is preserved regardless.
+            let windowed_min_value = self
+                .cache
+                .iter()
+                .skip_while(|entry| entry.timestamp < window_start)
+                .take_while(|entry| entry.timestamp <= window_end)
+                .map(|entry| entry.value.clone())
+                .fold(Y::globally_identity(), Y::and);
 
             let final_value: Option<Y>;
             let mut remove_task = false;
@@ -617,5 +689,178 @@ mod tests {
             None,
         );
         assert_eq!(format!("{eventually}"), "F[0, 3](y < 5)");
+    }
+}
+
+#[cfg(test)]
+mod sparse_timestamp_tests {
+    //! Regression tests for the Lemire safety-gate fix.
+    //!
+    //! Root cause: `pop_dominated_values` would evict `v@t_old` in favour of
+    //! `v'@t_new` even when a pending `t_eval` had `t_old` inside its window
+    //! but `t_new` outside it.  With dense timestamps the oldest pending eval
+    //! is always finalised before the gap can grow large enough to trigger
+    //! this, so it never mattered.  With sparse timestamps (gap > window
+    //! width) the invariant is violated and the scan returned the wrong value.
+    //!
+    //! The non-RoSI path additionally used an unbounded `find(ts >=
+    //! window_start)` that had no `window_end` guard; it happened to return a
+    //! value that was within the window in the dense case (because the deque
+    //! front is always ≤ window_end when Lemire is healthy) but silently
+    //! returned an out-of-window entry once the deque was corrupted.
+    //!
+    //! Formula under test: G[0,2](x > 3), inputs at t = 0, 1, 2, 5, 10.
+    //!
+    //! Robustness (x − 3): 122.5 @ 0, 12.0 @ 1, 12.0 @ 2, −1.0 @ 5, −1.0 @ 10
+    //!
+    //! Expected delayed-quantitative output (finalised when current_time ≥ t_eval + 2):
+    //!   t_eval=0  (finalised at t=2):  min(122.5, 12, 12) = 12.0
+    //!   t_eval=1  (finalised at t=5):  window [1,3] → min(12, 12) = 12.0
+    //!   t_eval=2  (finalised at t=5):  window [2,4] → min(12) = 12.0
+    //!   t_eval=5  (finalised at t=10): window [5,7] → min(−1) = −1.0
+
+    use super::*;
+    use crate::ring_buffer::{RingBuffer, Step};
+    use crate::stl::core::{RobustnessInterval, StlOperatorTrait, TimeInterval};
+    use crate::stl::operators::atomic_operators::Atomic;
+    use std::time::Duration;
+
+    fn secs(s: u64) -> Duration {
+        Duration::from_secs(s)
+    }
+
+    fn g02_globally_f64() -> Globally<f64, RingBuffer<f64>, f64, false, false> {
+        let interval = TimeInterval {
+            start: secs(0),
+            end: secs(2),
+        };
+        let atomic = Atomic::<f64>::new_greater_than("x", 3.0);
+        Globally::new(interval, Box::new(atomic), None, None)
+    }
+    fn g02_globally_rosi()
+    -> Globally<f64, RingBuffer<RobustnessInterval>, RobustnessInterval, true, true> {
+        let interval = TimeInterval {
+            start: secs(0),
+            end: secs(2),
+        };
+        let atomic = Atomic::<RobustnessInterval>::new_greater_than("x", 3.0);
+        Globally::new(interval, Box::new(atomic), None, None)
+    }
+
+    fn sparse_steps() -> Vec<Step<f64>> {
+        vec![
+            Step::new("x", 125.5, secs(0)),
+            Step::new("x", 15.0, secs(1)),
+            Step::new("x", 16.0, secs(2)),
+            Step::new("x", 2.0, secs(5)),
+            Step::new("x", 2.0, secs(10)),
+        ]
+    }
+
+    fn find_output<Y>(outputs: &[Step<Y>], ts: u64) -> Y
+    where
+        Y: Copy,
+    {
+        outputs
+            .iter()
+            .find(|s| s.timestamp == secs(ts))
+            .unwrap_or_else(|| panic!("no output for t_eval={ts}"))
+            .value
+    }
+    // ------------------------------------------------------------------ G[0,2]
+
+    /// Delayed-quantitative path must not be fooled by the large gap t=2→t=5.
+    #[test]
+    fn globally_sparse_timestamps_delayed_quantitative() {
+        let mut op_f64 = g02_globally_f64();
+        let mut op_rosi = g02_globally_rosi();
+
+        for step in &sparse_steps() {
+            let outputs_f64 = op_f64.update(step);
+            let outputs_rosi = op_rosi.update(step);
+            match step.timestamp.as_secs() {
+                0 => {
+                    assert!(
+                        outputs_f64.is_empty(),
+                        "t_eval={} expected no output, got {:?}",
+                        step.timestamp.as_secs(),
+                        outputs_f64
+                    );
+                    assert!(
+                        outputs_rosi.len() == 1,
+                        "t_eval={} expected no output, got {:?}",
+                        step.timestamp.as_secs(),
+                        outputs_rosi
+                    );
+                }
+                1 => {
+                    assert!(
+                        outputs_f64.is_empty(),
+                        "t_eval={} expected no output, got {:?}",
+                        step.timestamp.as_secs(),
+                        outputs_f64
+                    );
+                    assert!(
+                        outputs_rosi.len() == 2,
+                        "t_eval={} expected no output, got {:?}",
+                        step.timestamp.as_secs(),
+                        outputs_rosi
+                    );
+                }
+                // at 2 f64 emits for 0, and rosi agrees in bounds
+                2 => {
+                    assert!(
+                        (find_output(&outputs_f64, 0) - 12.0).abs() < 1e-9,
+                        "t_eval=0 expected 12.0, got {}",
+                        find_output(&outputs_f64, 0)
+                    );
+                    let rosi_val = find_output(&outputs_rosi, 0);
+                    assert!(
+                        rosi_val.0 == 12.0 && rosi_val.1 == 12.0,
+                        "t_eval=0 expected ROSI bounds to contain 12.0, got {:?}",
+                        rosi_val
+                    );
+                }
+                // at 5 f64 emits for 1 and 2, and rosi agrees in bounds
+                5 => {
+                    assert!(
+                        (find_output(&outputs_f64, 1) - 12.0).abs() < 1e-9,
+                        "t_eval=1 expected 12.0, got {}",
+                        find_output(&outputs_f64, 1)
+                    );
+                    assert!(
+                        (find_output(&outputs_f64, 2) - 13.0).abs() < 1e-9,
+                        "t_eval=2 expected 13.0, got {}",
+                        find_output(&outputs_f64, 2)
+                    );
+                    let rosi_val_1 = find_output(&outputs_rosi, 1);
+                    let rosi_val_2 = find_output(&outputs_rosi, 2);
+                    assert!(
+                        rosi_val_1.0 == 12.0 && rosi_val_1.1 == 12.0,
+                        "t_eval=1 expected ROSI bounds to contain 12.0, got {:?}",
+                        rosi_val_1
+                    );
+                    assert!(
+                        rosi_val_2.0 == 13.0 && rosi_val_2.1 == 13.0,
+                        "t_eval=2 expected ROSI bounds to contain 13.0, got {:?}",
+                        rosi_val_2
+                    );
+                }
+                10 => {
+                    assert!(
+                        (find_output(&outputs_f64, 5) + 1.0).abs() < 1e-9,
+                        "t_eval=5 expected -1.0, got {}",
+                        find_output(&outputs_f64, 5)
+                    );
+                    let rosi_val = find_output(&outputs_rosi, 5);
+                    assert!(
+                        rosi_val.0 == -1.0 && rosi_val.1 == -1.0,
+                        "t_eval=5 expected ROSI bounds to contain -1.0, got {:?}",
+                        rosi_val
+                    );
+                }
+                _ => panic!("unexpected output at t={}", step.timestamp.as_secs()),
+            }
+        }
     }
 }

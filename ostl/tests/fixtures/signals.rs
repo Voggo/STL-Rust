@@ -58,8 +58,18 @@ pub fn signal_4() -> Vec<Step<f64>> {
 
 #[fixture]
 #[once]
+pub fn sparse_timestamps() -> Vec<Step<f64>> {
+    create_steps(
+        "x",
+        vec![0.0, 6.0, 1.0, 3.0, 8.0, 1.0, 7.0],
+        vec![0, 1, 2, 5, 10, 20, 70],
+    )
+}
+
+#[fixture]
+#[once]
 pub fn monotonic_increasing() -> Vec<Step<f64>> {
-    const N: usize = 51;
+    const N: usize = 100;
     (0..N)
         .map(|i| {
             let timestamp = Duration::from_secs(i as u64);
@@ -72,7 +82,7 @@ pub fn monotonic_increasing() -> Vec<Step<f64>> {
 #[fixture]
 #[once]
 pub fn monotonic_decreasing() -> Vec<Step<f64>> {
-    const N: usize = 51;
+    const N: usize = 100;
     (0..N)
         .map(|i| {
             let timestamp = Duration::from_secs(i as u64);
@@ -85,7 +95,7 @@ pub fn monotonic_decreasing() -> Vec<Step<f64>> {
 #[fixture]
 #[once]
 pub fn sinusoid() -> Vec<Step<f64>> {
-    const N: usize = 51;
+    const N: usize = 100;
     (0..N)
         .map(|i| {
             let timestamp = Duration::from_secs(i as u64);
