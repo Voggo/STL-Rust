@@ -47,12 +47,12 @@ jobs:
     - name: Build Python package
       run: |
         cd ostl-python
-        maturin build --release
+        maturin build --release --out dist
     
     - name: Install package
       shell: bash
       run: |
-        pip install ostl-python/target/wheels/*.whl
+        pip install ostl-python/dist/*.whl
     
     - name: Run tests
       run: |
