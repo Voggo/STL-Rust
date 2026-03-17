@@ -1,5 +1,0 @@
-formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,avg_cache_size,max_cache_size,benchmark_kind,interval_len
-1,(x < 0.5) and (x > -0.5),DelayedQuantitative,Incremental,online,20000,50,0.004826975020,0.000000241349,0.241349,0.000000,0,general,0
-2,"G[0,1000] (x > 0.5 -> F[0,100] (x < 0.0))",DelayedQuantitative,Incremental,online,20000,50,0.011161965020,0.000000558098,0.558098,121.458450,389,general,1000
-3,"(G[0,100] (x < 0.5)) or (G[100,150] (x > 0.0))",DelayedQuantitative,Incremental,online,20000,50,0.010654835920,0.000000532742,0.532742,75.119150,202,general,100
-4,"(x < 0.0) U[0,1] (x > 0.0)",DelayedQuantitative,Incremental,online,20000,50,0.009446815860,0.000000472341,0.472341,3.999900,4,general,1

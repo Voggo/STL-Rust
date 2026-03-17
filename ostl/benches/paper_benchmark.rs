@@ -6,6 +6,7 @@ use ostl::stl::monitor::{
     Algorithm, DelayedQualitative, DelayedQuantitative, EagerQualitative, Rosi, StlMonitor,
 };
 use ostl::stl::parse_stl;
+use std::collections::HashSet;
 use std::fs::{File, create_dir_all};
 #[cfg(feature = "track-cache-size")]
 use std::hint::black_box;
@@ -79,6 +80,43 @@ fn env_usize_or_default(key: &str, default: usize) -> usize {
 
 fn env_string_or_default(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn parse_formula_ids_from_env() -> io::Result<Option<HashSet<usize>>> {
+    let Ok(raw) = std::env::var("FORMULA_IDS") else {
+        return Ok(None);
+    };
+
+    let mut ids = HashSet::new();
+
+    for token in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let id = token.parse::<usize>().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Invalid FORMULA_IDS entry '{token}'. Expected a comma-separated list of positive integers, e.g. '1,2,3'"
+                ),
+            )
+        })?;
+
+        if id == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid FORMULA_IDS entry '0'. Formula IDs start at 1.",
+            ));
+        }
+
+        ids.insert(id);
+    }
+
+    if ids.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "FORMULA_IDS was set but no valid IDs were provided.",
+        ));
+    }
+
+    Ok(Some(ids))
 }
 
 fn read_signal_from_csv<P>(filename: P) -> io::Result<Vec<Step<f64>>>
@@ -425,14 +463,15 @@ fn build_formulas_map() -> Vec<(usize, String)> {
 
 fn extract_interval_length(spec: &str) -> usize {
     // Try to find pattern like [0,XXX] or [0,XXX.X]
-    if let Some(start) = spec.find("[0,") {
-        if let Some(end) = spec[start..].find(']') {
-            let interval_str = &spec[start + 3..start + end];
-            if let Ok(interval) = interval_str.parse::<f64>() {
-                return interval.ceil() as usize;
-            }
+    if let Some(start) = spec.find("[0,")
+        && let Some(end) = spec[start..].find(']')
+    {
+        let interval_str = &spec[start + 3..start + end];
+        if let Ok(interval) = interval_str.parse::<f64>() {
+            return interval.ceil() as usize;
         }
     }
+
     0
 }
 
@@ -466,10 +505,20 @@ fn csv_escape(field: &str) -> String {
 }
 
 fn write_csv_header(w: &mut BufWriter<File>) -> io::Result<()> {
-    writeln!(
-        w,
-        "formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,avg_cache_size,max_cache_size,benchmark_kind,interval_len"
-    )
+    #[cfg(feature = "track-cache-size")]
+    {
+        writeln!(
+            w,
+            "formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,avg_cache_size,max_cache_size,benchmark_kind,interval_len"
+        )
+    }
+    #[cfg(not(feature = "track-cache-size"))]
+    {
+        writeln!(
+            w,
+            "formula_id,spec,semantics,algorithm,mode,n_samples,m_runs,avg_total_s,avg_per_sample_s,avg_per_sample_us,benchmark_kind,interval_len"
+        )
+    }
 }
 
 fn write_result_row(w: &mut BufWriter<File>, r: &BenchResult) -> io::Result<()> {
@@ -525,14 +574,27 @@ fn ensure_parent_dir(path: &Path) -> io::Result<()> {
 }
 
 fn main() -> io::Result<()> {
-    let m_runs = env_usize_or_default("PAPER_M_RUNS", DEFAULT_M_RUNS);
-    let signal_path = env_string_or_default("PAPER_SIGNAL_PATH", DEFAULT_SIGNAL_PATH);
-    let output_path = PathBuf::from(env_string_or_default(
-        "PAPER_OUTPUT_CSV",
-        DEFAULT_OUTPUT_CSV,
-    ));
+    let m_runs = env_usize_or_default("M_RUNS", DEFAULT_M_RUNS);
+    let signal_path = env_string_or_default("SIGNAL_PATH", DEFAULT_SIGNAL_PATH);
+    let output_path = PathBuf::from(env_string_or_default("OUTPUT_CSV", DEFAULT_OUTPUT_CSV));
+    let selected_formula_ids = parse_formula_ids_from_env()?;
 
     let formulas = build_formulas_map();
+    let formulas: Vec<(usize, String)> = match selected_formula_ids {
+        Some(ids) => formulas
+            .into_iter()
+            .filter(|(formula_id, _)| ids.contains(formula_id))
+            .collect(),
+        None => formulas,
+    };
+
+    if formulas.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No formulas selected. Check FORMULA_IDS.",
+        ));
+    }
+
     let items = build_bench_items(&formulas);
     let signal = read_signal_from_csv(&signal_path)?;
 
@@ -542,6 +604,9 @@ fn main() -> io::Result<()> {
         signal_path
     );
     println!("Total formulas: {}", formulas.len());
+    if std::env::var("FORMULA_IDS").is_ok() {
+        println!("Using formula filter from FORMULA_IDS");
+    }
     println!("Averaging over M = {} runs", m_runs);
 
     ensure_parent_dir(&output_path)?;

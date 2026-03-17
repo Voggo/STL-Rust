@@ -229,10 +229,8 @@ where
                     break;
                 }
             }
-            if self.is_tracked {
-                if removed > 0 {
-                    GLOBAL_CACHE_SIZE.fetch_sub(removed, Ordering::Relaxed);
-                }
+            if self.is_tracked && removed > 0 {
+                GLOBAL_CACHE_SIZE.fetch_sub(removed, Ordering::Relaxed);
             }
         }
         #[cfg(not(feature = "track-cache-size"))]

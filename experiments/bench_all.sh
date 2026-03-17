@@ -9,11 +9,11 @@ SIGNAL_DIR="$SCRIPT_DIR/BENCH_RESULTS/signal_generation/signals"
 OUTPUT_DIR="$SCRIPT_DIR/BENCH_RESULTS/outputs"
 ANALYSIS_DIR="$SCRIPT_DIR/data_analysis"
 
-M1_RESULTS="$OUTPUT_DIR/results_M=1.csv" # for measuring cache sizes
-M50_RESULTS="$OUTPUT_DIR/results_M=50.csv" # for performance comparison
+M1_RESULTS="$OUTPUT_DIR/cache_size_results_M=1.csv" # for measuring cache sizes
+M50_RESULTS="$OUTPUT_DIR/performance_results_M=50.csv" # for performance comparison
 REGRESSION_OUT="$OUTPUT_DIR/regression_fit_results.csv"
 FIGURE_OUT="$OUTPUT_DIR/performance_comparison.pdf"
-PY_OSTL_RESULTS="$OUTPUT_DIR/ostlpython_benchmark_results.csv"
+PY_RESULTS="$OUTPUT_DIR/python_performance_results_M=50.csv"
 RTAMT_RESULTS="$OUTPUT_DIR/rtamt_benchmark_results.csv"
 
 mkdir -p "$SIGNAL_DIR" "$OUTPUT_DIR"
@@ -22,13 +22,13 @@ mkdir -p "$SIGNAL_DIR" "$OUTPUT_DIR"
 python "$SCRIPT_DIR/signal_generation/signal_generator.py" --num-samples 20000 --output-path "$SIGNAL_DIR/signal_20000_chirp.csv" --signal-type chirp
 
 # Run Python benchmark scripts in experiments/
-python "$SCRIPT_DIR/ostl_python_results.py" \
+python "$SCRIPT_DIR/python_benchmark.py" \
 	--signal-csv "$SIGNAL_DIR/signal_20000_chirp.csv" \
 	--m-runs 50 \
-	--output "$PY_OSTL_RESULTS" \
+	--output "$PY_RESULTS" \
 	# --overwrite
 
-python "$SCRIPT_DIR/test_rtamt.py" \
+python "$SCRIPT_DIR/rtamt_cpponline_benchmark.py" \
 	--signal-csv "$SIGNAL_DIR/signal_20000_chirp.csv" \
 	--m-runs 50 \
 	--output "$RTAMT_RESULTS" \
@@ -36,8 +36,8 @@ python "$SCRIPT_DIR/test_rtamt.py" \
 
 (
 	cd "$CRATE_DIR" || exit 1
-	PAPER_M_RUNS=1 PAPER_SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" PAPER_OUTPUT_CSV="$M1_RESULTS" cargo bench --bench paper_benchmark --features track-cache-size
-	PAPER_M_RUNS=50 PAPER_SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" PAPER_OUTPUT_CSV="$M50_RESULTS" cargo bench --bench paper_benchmark
+	M_RUNS=1 FORMULA_IDS="1,2,3" SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" OUTPUT_CSV="$M1_RESULTS" cargo bench --bench paper_benchmark --features track-cache-size
+	M_RUNS=50 SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" OUTPUT_CSV="$M50_RESULTS" cargo bench --bench paper_benchmark
 
 	python "$ANALYSIS_DIR/regression_analysis.py" \
 		--native-csv "$M50_RESULTS" \
