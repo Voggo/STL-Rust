@@ -498,8 +498,7 @@ impl Monitor {
         };
 
         // Get or create variables
-        let vars = variables.cloned()
-            .unwrap_or_else(PyVariables::new);
+        let vars = variables.cloned().unwrap_or_else(PyVariables::new);
 
         // Build monitor based on semantics
         match semantics {
