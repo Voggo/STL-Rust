@@ -71,12 +71,31 @@ fn is_lemire_eviction_safe(
 /// healthy Lemire deque the scan terminates at the monotone-minimum front
 /// entry in O(1); with a sparse-timestamp gap the window contains at most one
 /// entry, also O(1).
+///
+/// ### Eager mode (`is_eager = true`)
+///
+/// In eager qualitative mode the safety gate is **not applied**.  Any task
+/// still pending in `eval_buffer` has already been checked for the
+/// short-circuit condition (`atomic_false` / `atomic_true`) at every prior
+/// step; if it had been triggered the task would have been removed.  The
+/// surviving tasks therefore contain only identity values in their windows so
+/// far (`true` for `Globally`, `false` for `Eventually`).  Evicting an
+/// identity value from the Lemire deque never changes the fold result, so
+/// back-eviction is always semantically safe and must not be blocked.
+///
+/// Concretely: without this exception, on a formula like `G[0,1000](φ)` the
+/// safety gate's Condition A (`oldest ≥ new_ts − b`) fails permanently once
+/// `t > 1000`, causing every eviction to be blocked and the cache to balloon
+/// to ~`max_lookahead` entries — which is O(1100) for the inner-F[0,100]
+/// nesting — instead of the O(1) steady-state size that Lemire normally
+/// achieves.
 fn pop_dominated_values<C, Y>(
     cache: &mut C,
     sub_step: &Step<Y>,
     is_max: bool,
     interval: &TimeInterval,
     eval_buffer: &BTreeSet<Duration>,
+    is_eager: bool,
 ) where
     C: RingBufferTrait<Value = Y>,
     Y: RobustnessSemantics + Debug,
@@ -85,7 +104,9 @@ fn pop_dominated_values<C, Y>(
         if !Y::prune_dominated(back.value.clone(), sub_step.value.clone(), is_max) {
             break; // Back is not dominated; no earlier entry will be either.
         }
-        if !is_lemire_eviction_safe(back.timestamp, sub_step.timestamp, interval, eval_buffer) {
+        if !is_eager
+            && !is_lemire_eviction_safe(back.timestamp, sub_step.timestamp, interval, eval_buffer)
+        {
             break; // Value-dominated but not yet safe to remove.
         }
         cache.pop_back();
@@ -193,6 +214,7 @@ where
                             true,
                             &self.interval,
                             &self.eval_buffer,
+                            false, // IS_ROSI: always apply safety gate
                         ); // true for Max (Eventually)
                         self.cache.add_step(sub_step);
                     }
@@ -208,6 +230,7 @@ where
                     true,
                     &self.interval,
                     &self.eval_buffer,
+                    IS_EAGER, // skip safety gate in eager mode — see fn doc
                 ); // true for Max
                 self.cache.add_step(sub_step.clone());
             }
@@ -401,6 +424,7 @@ where
                             false,
                             &self.interval,
                             &self.eval_buffer,
+                            false, // IS_ROSI: always apply safety gate
                         ); // false for Min (Globally)
                         self.cache.add_step(sub_step);
                     }
@@ -415,6 +439,7 @@ where
                     false,
                     &self.interval,
                     &self.eval_buffer,
+                    IS_EAGER, // skip safety gate in eager mode — see fn doc
                 ); // false for Min
                 self.eval_buffer.insert(sub_step.timestamp);
                 self.cache.add_step(sub_step.clone());
@@ -746,10 +771,18 @@ mod sparse_timestamp_tests {
         let atomic = Atomic::<RobustnessInterval>::new_greater_than("x", 3.0);
         Globally::new(interval, Box::new(atomic), None, None)
     }
+    fn g02_globally_eager_qual() -> Globally<f64, RingBuffer<bool>, bool, true, false> {
+        let interval = TimeInterval {
+            start: secs(0),
+            end: secs(2),
+        };
+        let atomic = Atomic::<bool>::new_greater_than("x", 3.0);
+        Globally::new(interval, Box::new(atomic), None, None)
+    }
 
     fn sparse_steps() -> Vec<Step<f64>> {
         vec![
-            Step::new("x", 125.5, secs(0)),
+            Step::new("x", 100.0, secs(0)),
             Step::new("x", 15.0, secs(1)),
             Step::new("x", 16.0, secs(2)),
             Step::new("x", 2.0, secs(5)),
@@ -767,21 +800,23 @@ mod sparse_timestamp_tests {
             .unwrap_or_else(|| panic!("no output for t_eval={ts}"))
             .value
     }
-    // ------------------------------------------------------------------ G[0,2]
 
-    /// Delayed-quantitative path must not be fooled by the large gap t=2→t=5.
+    // This test covers the handling of sparse timestamps in the globally operator. It checks also whether RoSI, delayed and eager qualitative modes agree on the same final values, and whether eager qual can finalize early on true and false as expected.
+    // Eventually has a reflective implementation so not tested here... but we should add a similar test for it as well.
     #[test]
-    fn globally_sparse_timestamps_delayed_quantitative() {
+    fn globally_sparse_timestamps() {
         let mut op_f64 = g02_globally_f64();
         let mut op_rosi = g02_globally_rosi();
+        let mut op_eager_qual = g02_globally_eager_qual();
 
         for step in &sparse_steps() {
             let outputs_f64 = op_f64.update(step);
             let outputs_rosi = op_rosi.update(step);
+            let outputs_eager_qual = op_eager_qual.update(step);
             match step.timestamp.as_secs() {
                 0 => {
                     assert!(
-                        outputs_f64.is_empty(),
+                        outputs_f64.is_empty() && outputs_eager_qual.is_empty(),
                         "t_eval={} expected no output, got {:?}",
                         step.timestamp.as_secs(),
                         outputs_f64
@@ -795,7 +830,7 @@ mod sparse_timestamp_tests {
                 }
                 1 => {
                     assert!(
-                        outputs_f64.is_empty(),
+                        outputs_f64.is_empty() && outputs_eager_qual.is_empty(),
                         "t_eval={} expected no output, got {:?}",
                         step.timestamp.as_secs(),
                         outputs_f64
@@ -820,6 +855,11 @@ mod sparse_timestamp_tests {
                         "t_eval=0 expected ROSI bounds to contain 12.0, got {:?}",
                         rosi_val
                     );
+                    assert!(
+                        find_output(&outputs_eager_qual, 0),
+                        "t_eval=0 expected eager qual to be true, got {}",
+                        find_output(&outputs_eager_qual, 0)
+                    )
                 }
                 // at 5 f64 emits for 1 and 2, and rosi agrees in bounds
                 5 => {
@@ -835,6 +875,7 @@ mod sparse_timestamp_tests {
                     );
                     let rosi_val_1 = find_output(&outputs_rosi, 1);
                     let rosi_val_2 = find_output(&outputs_rosi, 2);
+                    let rosi_val_5 = find_output(&outputs_rosi, 5);
                     assert!(
                         rosi_val_1.0 == 12.0 && rosi_val_1.1 == 12.0,
                         "t_eval=1 expected ROSI bounds to contain 12.0, got {:?}",
@@ -844,6 +885,28 @@ mod sparse_timestamp_tests {
                         rosi_val_2.0 == 13.0 && rosi_val_2.1 == 13.0,
                         "t_eval=2 expected ROSI bounds to contain 13.0, got {:?}",
                         rosi_val_2
+                    );
+                    assert!(
+                        find_output(&outputs_eager_qual, 1),
+                        "t_eval=1 expected eager qual to be true, got {}",
+                        find_output(&outputs_eager_qual, 1)
+                    );
+                    assert!(
+                        find_output(&outputs_eager_qual, 2),
+                        "t_eval=2 expected eager qual to be true, got {}",
+                        find_output(&outputs_eager_qual, 2)
+                    );
+                    // it sees the -1.0 at t=5 and finalizes to false immediately, without waiting for t=10
+                    assert!(
+                        !find_output(&outputs_eager_qual, 5),
+                        "t_eval=5 expected eager qual to be false, got {}",
+                        find_output(&outputs_eager_qual, 5)
+                    );
+                    // should agree with rosi upper bound being negative already at t=5, even if it can't finalize yet
+                    assert!(
+                        rosi_val_5.1 < 0.0,
+                        "t_eval=5 expected ROSI upper bound to be negative, got {:?}",
+                        rosi_val_5
                     );
                 }
                 10 => {
@@ -857,6 +920,12 @@ mod sparse_timestamp_tests {
                         rosi_val.0 == -1.0 && rosi_val.1 == -1.0,
                         "t_eval=5 expected ROSI bounds to contain -1.0, got {:?}",
                         rosi_val
+                    );
+                    // eager can short-circuit to false for t=10 already
+                    assert!(
+                        !find_output(&outputs_eager_qual, 10),
+                        "t_eval=5 expected eager qual to be false, got {}",
+                        find_output(&outputs_eager_qual, 10)
                     );
                 }
                 _ => panic!("unexpected output at t={}", step.timestamp.as_secs()),
