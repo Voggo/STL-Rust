@@ -29,7 +29,7 @@ cd experiments
 
 ## Results
 
-The results of the benchmarks will be saved in the `results/` directory, and the performance comparison plot will be saved as `performance_comparison.pdf`. You can open this PDF to visually compare the performance of our implementation against RTAMT and the Python STL library.
+The results of the benchmarks will, by default, be saved in the `experiments/BENCH_RESULTS` directory, and the performance comparison plot will be saved as `performance_comparison.pdf`. You can open this PDF to visually compare the performance of our implementation against RTAMT and the Python STL library.
 
 ## Results from the paper
 

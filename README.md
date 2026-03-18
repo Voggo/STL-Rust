@@ -97,6 +97,9 @@ pip install ostl_python
 
 ### Rust Usage
 
+For more examples, see the [`ostl/examples`](./ostl/examples) directory.
+The following snippet demonstrates how to create a monitor for the STL formula $\Box_{[0, 2]}(x > 5)$ using the embedded DSL and process incoming signal data.
+
 CANARIFY utilizes the Builder pattern to configure the monitor's formula, semantics, and algorithm before processing the data stream.
 
 ```rust
@@ -127,7 +130,7 @@ for verdict in out2.verdicts() {
 ```
 
 ### Python Usage
-
+For more Python examples, see the [`ostl-python/examples`](./ostl-python/examples) directory.
 The Python API wraps the core Rust engine, offering comparable performance via an intuitive Pythonic interface.
 
 ```python
