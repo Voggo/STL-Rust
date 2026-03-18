@@ -166,6 +166,7 @@ def main() -> None:
             fid, spec, signal, args.m_runs, make_discrete_monitor_cpp
         )
         if res is not None:
+            res["monitor_type"] = "discrete-time-cpp"
             writer.writerow(res)
             csv_file.flush()
 
