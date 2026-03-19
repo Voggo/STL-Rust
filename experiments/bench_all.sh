@@ -20,7 +20,7 @@ mkdir -p "$SIGNAL_DIR" "$OUTPUT_DIR"
 python "$SCRIPT_DIR/signal_generation/signal_generator.py" --num-samples 20000 --output-path "$SIGNAL_DIR/signal_20000_chirp.csv" --signal-type chirp
 
 # ensure latest python is built in current python environment
-pip install -e "$PROJECT_ROOT/ostl-python" --force-reinstall
+pip install -e "$PROJECT_ROOT/festl-python" --force-reinstall
 
 # Run Python benchmark scripts in experiments/
 python "$SCRIPT_DIR/python_benchmark.py" \
@@ -36,7 +36,7 @@ python "$SCRIPT_DIR/rtamt_cpponline_benchmark.py" \
  	# --overwrite
 
 (
-	cd "$PROJECT_ROOT/ostl" || exit 1
+	cd "$PROJECT_ROOT/festl" || exit 1
 	M_RUNS=1 FORMULA_IDS="1,2,3" SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" OUTPUT_CSV="$M1_RESULTS" cargo bench --bench paper_benchmark --features track-cache-size
 	M_RUNS=50 SIGNAL_PATH="$SIGNAL_DIR/signal_20000_chirp.csv" OUTPUT_CSV="$M50_RESULTS" cargo bench --bench paper_benchmark
 

@@ -3,12 +3,12 @@ name: Prepare Rust Crate Release
 # NOTE: This workflow intentionally does NOT publish yet.
 # To enable real crates.io publishing, do ALL of the following:
 # 1) Add repository secret: CARGO_REGISTRY_TOKEN (crates.io API token).
-# 2) Replace the dry-run command for ostl-macros with:
-#    cargo publish --manifest-path ostl/ostl-macros/Cargo.toml --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-# 3) Add a propagation wait/retry step (sleep/poll) after publishing ostl-macros.
-# 4) Add an ostl publish step after macros are visible on crates.io:
-#    cargo publish --manifest-path ostl/Cargo.toml --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-# 5) Keep publish order strictly: ostl-macros first, then ostl.
+# 2) Replace the dry-run command for festl-macros with:
+#    cargo publish --manifest-path festl/festl-macros/Cargo.toml --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+# 3) Add a propagation wait/retry step (sleep/poll) after publishing festl-macros.
+# 4) Add an festl publish step after macros are visible on crates.io:
+#    cargo publish --manifest-path festl/Cargo.toml --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+# 5) Keep publish order strictly: festl-macros first, then festl.
 
 on:
   workflow_dispatch:
@@ -30,10 +30,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Dry-run ostl-macros publish
-        run: cargo publish --manifest-path ostl/ostl-macros/Cargo.toml --locked --dry-run
+      - name: Dry-run festl-macros publish
+        run: cargo publish --manifest-path festl/festl-macros/Cargo.toml --locked --dry-run
 
-      - name: Validate ostl crate metadata and buildability
+      - name: Validate festl crate metadata and buildability
         run: |
-          cargo metadata --manifest-path ostl/Cargo.toml --format-version 1 > /dev/null
-          cargo check --manifest-path ostl/Cargo.toml --locked
+          cargo metadata --manifest-path festl/Cargo.toml --format-version 1 > /dev/null
+          cargo check --manifest-path festl/Cargo.toml --locked

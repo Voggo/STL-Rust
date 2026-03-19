@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'ostl-python/**'
+      - 'festl-python/**'
       - '.github/workflows/python-tests.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'ostl-python/**'
+      - 'festl-python/**'
       - '.github/workflows/python-tests.yml'
 
 env:
@@ -39,24 +39,24 @@ jobs:
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
       with:
-        workspaces: ostl-python
+        workspaces: festl-python
     
     - name: Install maturin and pytest
       run: pip install maturin pytest
     
     - name: Build Python package
       run: |
-        cd ostl-python
+        cd festl-python
         maturin build --release --out dist
     
     - name: Install package
       shell: bash
       run: |
-        pip install ostl-python/dist/*.whl
+        pip install festl-python/dist/*.whl
     
     - name: Run tests
       run: |
-        cd ostl-python
+        cd festl-python
         pytest tests/ -v --tb=short
 
   lint:
@@ -77,13 +77,13 @@ jobs:
     
     - name: Lint with flake8
       run: |
-        cd ostl-python
+        cd festl-python
         flake8 tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       continue-on-error: true
     
     - name: Type check with mypy
       run: |
-        cd ostl-python
+        cd festl-python
         mypy tests/ --ignore-missing-imports
       continue-on-error: true

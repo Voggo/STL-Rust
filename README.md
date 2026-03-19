@@ -1,16 +1,16 @@
-# CANARIFY
+# FeSTL
 
 [![Rust CI](https://github.com/Voggo/STL-Rust/workflows/Rust%20CI/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/rust.yml)
 [![Python Tests](https://github.com/Voggo/STL-Rust/workflows/Python%20Tests/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/python-tests.yml)
 [![codecov](https://codecov.io/gh/Voggo/STL-Rust/branch/main/graph/badge.svg)](https://codecov.io/gh/Voggo/STL-Rust)
-[![crates.io](https://img.shields.io/crates/v/ostl.svg)](https://crates.io/crates/ostl)
-[![PyPI](https://img.shields.io/pypi/v/ostl-python.svg)](https://pypi.org/project/ostl-python/)
-[![docs.rs](https://img.shields.io/docsrs/ostl)](https://docs.rs/ostl)
+[![crates.io](https://img.shields.io/crates/v/festl.svg)](https://crates.io/crates/festl)
+[![PyPI](https://img.shields.io/pypi/v/festl-python.svg)](https://pypi.org/project/festl-python/)
+[![docs.rs](https://img.shields.io/docsrs/festl)](https://docs.rs/festl)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://voggo.github.io/STL-Rust/)
 
-CANARIFY is the project name for the `ostl` core engine: a Rust library for online monitoring of Signal Temporal Logic (STL) specifications. It is designed for high performance and low memory usage, making it suitable for real-time applications. The Python bindings are published as `ostl-python` and imported as `ostl_python`.
+FeSTL is a Rust library for online monitoring of Signal Temporal Logic (STL) specifications. It is designed for high performance and low memory usage, making it suitable for real-time applications. The Python bindings are published as `festl-python` and imported as `festl_python`.
 
-- [CANARIFY](#canarify)
+- [FeSTL](#festl)
   - [About](#about)
   - [Theory](#theory)
     - [Signal Temporal Logic (STL)](#signal-temporal-logic-stl)
@@ -26,19 +26,19 @@ CANARIFY is the project name for the `ostl` core engine: a Rust library for onli
 
 ## About
 
-Cyber-Physical Systems (CPSs) increasingly rely on real-time fault detection and runtime monitoring to ensure safe operation. CANARIFY provides a unified monitoring interface that addresses the stringent performance requirements of these systems. Key features include:
+Cyber-Physical Systems (CPSs) increasingly rely on real-time fault detection and runtime monitoring to ensure safe operation. FeSTL provides a unified monitoring interface that addresses the stringent performance requirements of these systems. Key features include:
 
 - **Embedded DSL:** A macro-based DSL (`stl!`) allows specifications to be embedded and syntax-checked directly at compile time in Rust.
 - **Unified Semantics Interface:** Supports multiple online evaluation modes (Qualitative, Quantitative, Eager, and RoSI) in a single framework.
-- **Python Bindings:** Exposed via the `ostl-python` package (import name: `ostl_python`) to enable interactive workflows in environments like Jupyter Notebooks.
-- **High Performance:** Benchmarks demonstrate throughput exceeding existing state-of-the-art tools, with native optimizations running blazingly fast across modern architectures.
+- **Python Bindings:** Exposed via the `festl-python` package (import name: `festl_python`) to enable interactive workflows in environments like Jupyter Notebooks.
+- **High Performance:** Benchmarks demonstrate throughput exceeding existing state-of-the-art tools.
 
 Published package pages:
 
-- Rust crate: [crates.io/crates/ostl](https://crates.io/crates/ostl)
-- Python package: [pypi.org/project/ostl-python](https://pypi.org/project/ostl-python/)
-- Rust API docs: [docs.rs/ostl](https://docs.rs/ostl)
-- Project docs: [voggo.github.io/STL-Rust](https://voggo.github.io/STL-Rust/)
+- Rust crate: [crates.io/crates/festl](https://crates.io/crates/festl)
+- Python package: [pypi.org/project/festl-python](https://pypi.org/project/festl-python/)
+- Rust API docs: [docs.rs/festl](https://docs.rs/festl)
+- Python docs: [voggo.github.io/STL-Rust](https://voggo.github.io/STL-Rust/)
 
 ## Theory
 
@@ -46,7 +46,7 @@ Published package pages:
 
 Signal Temporal Logic (STL) is a formalism for specifying properties of real-valued signals that evolve over time, providing a compact language to describe the desired behaviors of dynamic systems. STL evaluates properties over signals, which are defined as functions mapping a time domain (such as nonnegative real numbers, $\mathbb{R}_{\ge0}$) to a value domain.
 
-CANARIFY focuses on bounded STL, meaning all temporal operators are constrained by finite time intervals of the form $[a, b]$, where $0 \le a < t$.
+FeSTL focuses on bounded STL, meaning all temporal operators are constrained by finite time intervals of the form $[a, b]$, where $0 \le a < t$.
 
 The core syntax of STL is built from a minimal set of primitive operators:
 
@@ -72,7 +72,9 @@ From these primitives, the library derives other highly useful operators to simp
 
 ### Evaluation Semantics
 
-An online monitor observes a system's behavior incrementally as discrete samples arrive. CANARIFY provides a unified interface supporting four distinct monitoring semantics, allowing users to trade off between expressiveness and verdict latency:
+See also [semantics-comparison.ipynb](festl-python/examples/semantics-comparison.ipynb) for an interactive demonstration of the different semantics.
+
+An online monitor observes a system's behavior incrementally as discrete samples arrive. FeSTL provides a unified interface supporting four distinct monitoring semantics, allowing users to trade off between expressiveness and verdict latency:
 
 - **Delayed Qualitative:** Computes standard Boolean satisfaction. This mode requires the signal to be fully resolved up to the formula's maximum temporal horizon before emitting a strict true/false verdict.
 
@@ -82,18 +84,17 @@ An online monitor observes a system's behavior incrementally as discrete samples
 
 - **Robust Satisfaction Intervals (RoSI):** Provides quantitative reasoning over partial traces. Instead of a single robustness value, the monitor computes an interval $[\rho_{min}, \rho_{max}]$ that encloses all possible future robustness values. A formula is definitively satisfied when $\rho_{min} > 0$ and definitively violated when $\rho_{max} < 0$.
 
-To compute these semantics efficiently, CANARIFY uses a bottom-up dynamic programming approach. For sliding window operations (like *eventually* and *globally*), the library incorporates Lemire's algorithm to aggressively reduce cache footprints and computation time.
+To compute these semantics efficiently, FeSTL uses a bottom-up dynamic programming approach. For sliding window operations (like *eventually* and *globally*), the library incorporates Lemire's algorithm to aggressively reduce cache footprints and computation time.
 
 ## Installation
 
 ### Rust
 
-Add CANARIFY to your `Cargo.toml`:
+Add FeSTL to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ostl = "0.1.0"
-
+festl = "0.1.0"
 ```
 
 ### Python
@@ -101,67 +102,67 @@ ostl = "0.1.0"
 Install the Python bindings via pip:
 
 ```bash
-pip install ostl-python
-
+pip install festl-python
 ```
 
 ## Usage
 
 ### Rust Usage
 
-For more examples, see the [`ostl/examples`](./ostl/examples) directory.
+For more examples, see the [`festl/examples`](./festl/examples) directory.
 The following snippet demonstrates how to create a monitor for the STL formula $\Box_{[0, 2]}(x > 5)$ using the embedded DSL and process incoming signal data.
 
-CANARIFY utilizes the Builder pattern to configure the monitor's formula, semantics, and algorithm before processing the data stream.
+FeSTL utilizes the Builder pattern to configure the monitor's formula, semantics, and algorithm before processing the data stream.
 
 ```rust
-use ostl::ring_buffer::Step;
-use ostl::stl::monitor::{Algorithm, DelayedQuantitative, StlMonitor};
+use festl::ring_buffer::Step;
+use festl::stl::monitor::{Rosi, StlMonitor};
 use std::time::Duration;
 
-// Define a formula using the embedded DSL
-let formula = ostl::stl!(G[0, 2](x > 5.0));
+fn main() {
+    // Define a formula using the embedded DSL
+    let formula = festl::stl!(G[0, 2](x > 5.0));
 
-// Build the monitor
-let mut monitor = StlMonitor::builder()
-    .formula(formula)
-    .algorithm(Algorithm::Incremental)
-    .semantics(DelayedQuantitative)
-    .build()
-    .expect("Failed to build monitor");
+    // Build the monitor
+    let mut monitor = StlMonitor::builder()
+        .formula(formula)
+        .semantics(Rosi)
+        .build()
+        .expect("Failed to build monitor");
 
-// Feed data steps to the monitor
-let out1 = monitor.update(&Step::new("x", 7.0, Duration::from_secs(0)));
-let out2 = monitor.update(&Step::new("x", 6.0, Duration::from_secs(1)));
-
-// Process the finalized verdicts
-for verdict in out2.verdicts() {
-    println!("t={:?}: {:?}", verdict.timestamp, verdict.value);
+    // Feed data steps to the monitor
+    let out1 = monitor.update(&Step::new("x", 7.0, Duration::from_secs(0)));
+    println!("{:?}", out1.verdicts());
+    // [Step { signal: "x", value: RobustnessInterval(-inf, 2.0), timestamp: 0ns }] // at time 0, robustness value is in interval (-inf, 2.0)
+    let out2 = monitor.update(&Step::new("x", 4.0, Duration::from_secs(1)));
+    println!("{:?}", out2.verdicts());
+    // Output after second update: [Step { signal: "x", value: RobustnessInterval(-inf, -1.0), timestamp: 0ns }, Step { signal: "x", value: RobustnessInterval(-inf, -1.0), timestamp: 1s }] // early violation detection for times 0 and 1
 }
-
 ```
 
 ### Python Usage
 
-For more Python examples, see the [`ostl-python/examples`](./ostl-python/examples) directory.
+For more Python examples, see the [`festl-python/examples`](./festl-python/examples) directory.
 The Python API wraps the core Rust engine, offering comparable performance via an intuitive Pythonic interface.
 
 ```python
-import ostl_python as ostl
+import festl_python as festl
 
 # Parse formula using the DSL syntax
-phi = ostl.parse_formula("G[0, 10](x > 5)")
+phi = festl.parse_formula("G[0, 10](x > 5)")
 
 # Create a monitor using the selected semantics
-monitor = ostl.Monitor(phi, semantics="DelayedQuantitative")
+monitor = festl.Monitor(phi, semantics="Rosi")
 
 # Update the monitor with streaming data (signal_name, value, timestamp)
 output = monitor.update("x", 6.0, 0.5)
 
 # Print formatted verdicts or extract structured data
-print(f"Verdicts: {output}")
-print(output.to_dict())
-
+print(f"Verdicts: {output.verdicts()}")
+# Verdicts: [(0.5, (-inf, 1.0))] # (timestamp, (lower_bound, upper_bound) for robustness)
+output = monitor.update("x", 3.0, 1.2)
+print(f"Verdicts: {output.verdicts()}")
+# Verdicts: [(0.5, (-inf, -2.0)), (1.2, (-inf, -2.0))] # early indication of violation
 ```
 
 ## References

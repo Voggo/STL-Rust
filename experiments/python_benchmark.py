@@ -1,4 +1,4 @@
-import ostl_python.ostl_python as ostl
+import festl_python.festl_python as festl
 import csv
 import time
 import os
@@ -20,7 +20,7 @@ DEFAULT_SIGNAL_CSV = os.path.join(
 DEFAULT_OUTPUT_CSV = os.path.join(
     os.path.dirname(__file__),
     "results",
-    "ostlpython_NAIVE_benchmark_results.csv",
+    "python_benchmark_results.csv",
 )
 
 # Formulas matching the uploaded Rust benchmark CSV labeling.
@@ -84,12 +84,12 @@ def bench_formula(
     """
     n_samples = len(signal)
     total_time = 0.0
-    parsed_formula = ostl.parse_formula(spec)
+    parsed_formula = festl.parse_formula(spec)
     temporal_depth = 0
 
     for i in range(m):
         print(f"  Run {i+1}/{m} for formula ID {formula_id}...", end="\r", flush=True)
-        monitor = ostl.Monitor(
+        monitor = festl.Monitor(
             parsed_formula,
             semantics=semantics,
             algorithm=algorithm,
@@ -141,7 +141,7 @@ def should_process_formula(spec: str, semantics: str) -> bool:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark ostl_python monitors")
+    parser = argparse.ArgumentParser(description="Benchmark festl_python monitors")
     parser.add_argument("--signal-csv", default=DEFAULT_SIGNAL_CSV, help="Input signal CSV path")
     parser.add_argument("--m-runs", type=int, default=DEFAULT_M, help="Number of runs to average")
     parser.add_argument("--output", default=DEFAULT_OUTPUT_CSV, help="Output CSV path")

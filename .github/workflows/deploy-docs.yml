@@ -5,8 +5,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "ostl-python/docs/**"
-      - "ostl-python/mkdocs.yml"
+      - "festl-python/docs/**"
+      - "festl-python/mkdocs.yml"
       - ".github/workflows/deploy-docs.yml"
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
           pip install mkdocs-material mkdocstrings-python
 
       - name: Build docs
-        working-directory: ostl-python
+        working-directory: festl-python
         run: mkdocs build --strict --site-dir ../_site
 
       - name: Setup Pages

@@ -41,12 +41,12 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
-          working-directory: ostl-python
+          working-directory: festl-python
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
           name: wheels-linux-${{ matrix.platform.target }}
-          path: ostl-python/dist
+          path: festl-python/dist
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -73,12 +73,12 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: musllinux_1_2
-          working-directory: ostl-python
+          working-directory: festl-python
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
-          path: ostl-python/dist
+          path: festl-python/dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -106,12 +106,12 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          working-directory: ostl-python
+          working-directory: festl-python
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: ostl-python/dist
+          path: festl-python/dist
 
   macos:
     runs-on: ${{ matrix.platform.runner }}
@@ -133,12 +133,12 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          working-directory: ostl-python
+          working-directory: festl-python
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
           name: wheels-macos-${{ matrix.platform.target }}
-          path: ostl-python/dist
+          path: festl-python/dist
 
   sdist:
     runs-on: ubuntu-latest
@@ -149,12 +149,12 @@ jobs:
         with:
           command: sdist
           args: --out dist
-          working-directory: ostl-python
+          working-directory: festl-python
       - name: Upload sdist
         uses: actions/upload-artifact@v5
         with:
           name: wheels-sdist
-          path: ostl-python/dist
+          path: festl-python/dist
 
   release:
     name: Release

@@ -2,7 +2,7 @@
 Comprehensive benchmark suite for rtamt monitoring.
 
 Tests formula families with varying temporal bounds and records performance metrics,
-matching the structure and approach of ostl_results.py.
+matching the structure and approach of festl_results.py.
 """
 
 import csv
@@ -29,7 +29,7 @@ DEFAULT_OUTPUT_CSV = os.path.join(
     "rtamt_benchmark_results_cpp.csv",
 )
 
-# Generate formulas matching the ostl benchmark catalog
+# Generate formulas matching the festl benchmark catalog
 # Uses the same structure: globally, eventually, until with varying bounds
 FORMULAS: dict[int, str] = {}
 
@@ -82,10 +82,10 @@ def bench_discrete_online_monitor(
 
         for _ in range(m):
             monitor = monitor_func(spec)
-            t0 = time.perf_counter()
-            for ts, val in signal:
-                monitor.update(ts, [("x", val)])
-            t1 = time.perf_counter()
+    """
+    A focused RTAMT benchmark script for STL formulas,
+    matching the structure and approach of festl_results.py.
+    """
             total_time += t1 - t0
 
         avg_total = total_time / m

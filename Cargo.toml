@@ -1,8 +1,8 @@
 # /Cargo.toml
 [workspace]
 members = [
-    "ostl",
-    "ostl/ostl-macros",
-    "ostl-python"
+    "festl",
+    "festl/festl-macros",
+    "festl-python"
 ]
 resolver = "3"
