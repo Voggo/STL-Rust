@@ -1,8 +1,4 @@
-simple_signal_app/target
-stl_types_traits/target
 __pycache__/
-eval_results/
-plots/
 *_log.txt
 .DS_Store
 .vscode/
