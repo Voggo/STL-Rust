@@ -32,6 +32,85 @@ plt.rcParams.update(
 # of the horizontal text area without becoming cluttered.
 FIG_SIZE = (6.6, 4.2)
 
+FORMULA_OPERATOR = {4: "U", 5: "G", 6: "F"}
+
+
+def _build_plot_dataframe(
+    df: pd.DataFrame, fg_mode: str
+) -> tuple[pd.DataFrame, list[str]]:
+    """Build plot dataframe according to F/G mode selection."""
+    df_u = df[df["operator"] == "U"].copy()
+
+    if fg_mode == "average":
+        df_fg = (
+            df[df["operator"].isin(["F", "G"])]
+            .groupby(["semantics", "interval_len"], as_index=False)["avg_per_sample_us"]
+            .mean()
+        )
+        df_fg["operator"] = "F/G"
+        return pd.concat([df_u, df_fg], ignore_index=True), ["U", "F/G"]
+
+    if fg_mode == "both":
+        df_fg = df[df["operator"].isin(["F", "G"])].copy()
+        return pd.concat([df_u, df_fg], ignore_index=True), ["U", "F", "G"]
+
+    if fg_mode == "eventually":
+        df_f = df[df["operator"] == "F"].copy()
+        return pd.concat([df_u, df_f], ignore_index=True), ["U", "F"]
+
+    # global
+    df_g = df[df["operator"] == "G"].copy()
+    return pd.concat([df_u, df_g], ignore_index=True), ["U", "G"]
+
+
+def _build_fit_params(
+    fits_orig: pd.DataFrame,
+    df_plot: pd.DataFrame,
+    operators_to_plot: list[str],
+    fg_mode: str,
+) -> dict[tuple[str, str], dict | pd.Series]:
+    """Build fit parameter lookup keyed by (semantics, operator)."""
+    fit_params: dict[tuple[str, str], dict | pd.Series] = {}
+
+    for _, row in fits_orig[fits_orig["operator"] == "U"].iterrows():
+        fit_params[(row["semantics"], "U")] = row
+
+    if fg_mode == "average":
+        df_fg = df_plot[df_plot["operator"] == "F/G"].copy()
+        for sem in df_plot["semantics"].unique():
+            fg_rows = fits_orig[
+                (fits_orig["semantics"] == sem)
+                & (fits_orig["operator"].isin(["F", "G"]))
+            ]
+            model_names = fg_rows["model_name"].unique()
+
+            g_avg = df_fg[df_fg["semantics"] == sem].sort_values("interval_len")
+            x_raw = g_avg["interval_len"].values
+            y = g_avg["avg_per_sample_us"].values
+
+            if len(model_names) == 1 and model_names[0] == "constant":
+                fit_params[(sem, "F/G")] = {
+                    "model_name": "constant",
+                    "intercept": fg_rows["intercept"].mean(),
+                    "coef_b": 0.0,
+                    "coef_b2": 0.0,
+                }
+            else:
+                reg = LinearRegression().fit(x_raw.reshape(-1, 1), y)
+                fit_params[(sem, "F/G")] = {
+                    "model_name": "linear",
+                    "intercept": reg.intercept_,
+                    "coef_b": reg.coef_[0],
+                    "coef_b2": 0.0,
+                }
+        return fit_params
+
+    fg_ops = [op for op in operators_to_plot if op in {"F", "G"}]
+    for _, row in fits_orig[fits_orig["operator"].isin(fg_ops)].iterrows():
+        fit_params[(row["semantics"], row["operator"])] = row
+
+    return fit_params
+
 
 def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parent
@@ -114,7 +193,7 @@ def adjust_log_label_positions(y_values, y_min, y_max, min_delta=0.06):
             pos[i] = max(pos[i], pos[i - 1] + min_delta)
 
     adjusted = np.empty_like(y_logs)
-    adjusted[order] = 10 ** pos
+    adjusted[order] = 10**pos
     return adjusted
 
 
@@ -122,74 +201,14 @@ def main() -> None:
     args = parse_args()
 
     df = pd.read_csv(args.benchmark_csv)
-    df = df[df["formula_id"].isin([4, 5, 6])].copy()
-    formula_operator = {4: "U", 5: "G", 6: "F"}
-    df["operator"] = df["formula_id"].map(formula_operator)
+    df = df[df["formula_id"].isin(FORMULA_OPERATOR)].copy()
+    df["operator"] = df["formula_id"].map(FORMULA_OPERATOR)
 
     fits_orig = pd.read_csv(args.regression_csv)
     fits_orig = fits_orig[fits_orig["source"] == "native"]
 
-    df_u = df[df["operator"] == "U"].copy()
-
-    if args.fg_mode == "average":
-        df_fg = (
-            df[df["operator"].isin(["F", "G"])]
-            .groupby(["semantics", "interval_len"], as_index=False)["avg_per_sample_us"]
-            .mean()
-        )
-        df_fg["operator"] = "F/G"
-        df_plot = pd.concat([df_u, df_fg], ignore_index=True)
-        operators_to_plot = ["U", "F/G"]
-    elif args.fg_mode == "both":
-        df_plot = pd.concat([df_u, df[df["operator"].isin(["F", "G"])].copy()], ignore_index=True)
-        operators_to_plot = ["U", "F", "G"]
-    elif args.fg_mode == "eventually":
-        df_plot = pd.concat([df_u, df[df["operator"] == "F"].copy()], ignore_index=True)
-        operators_to_plot = ["U", "F"]
-    else:  # global
-        df_plot = pd.concat([df_u, df[df["operator"] == "G"].copy()], ignore_index=True)
-        operators_to_plot = ["U", "G"]
-
-    fit_params = {}
-
-    for _, row in fits_orig[fits_orig["operator"] == "U"].iterrows():
-        key = (row["semantics"], "U")
-        fit_params[key] = row
-
-    if args.fg_mode == "average":
-        df_fg = df_plot[df_plot["operator"] == "F/G"].copy()
-        for sem in df_plot["semantics"].unique():
-            fg_rows = fits_orig[(fits_orig["semantics"] == sem) & (fits_orig["operator"].isin(["F", "G"]))]
-            model_names = fg_rows["model_name"].unique()
-
-            g_avg = df_fg[df_fg["semantics"] == sem].sort_values("interval_len")
-            x_raw = g_avg["interval_len"].values
-            y = g_avg["avg_per_sample_us"].values
-
-            if len(model_names) == 1 and model_names[0] == "constant":
-                avg_intercept = fg_rows["intercept"].mean()
-                key = (sem, "F/G")
-                fit_params[key] = {
-                    "model_name": "constant",
-                    "intercept": avg_intercept,
-                    "coef_b": 0.0,
-                    "coef_b2": 0.0,
-                }
-            else:
-                X = x_raw.reshape(-1, 1)
-                reg = LinearRegression().fit(X, y)
-                key = (sem, "F/G")
-                fit_params[key] = {
-                    "model_name": "linear",
-                    "intercept": reg.intercept_,
-                    "coef_b": reg.coef_[0],
-                    "coef_b2": 0.0,
-                }
-    else:
-        fg_ops = [op for op in operators_to_plot if op in {"F", "G"}]
-        for _, row in fits_orig[fits_orig["operator"].isin(fg_ops)].iterrows():
-            key = (row["semantics"], row["operator"])
-            fit_params[key] = row
+    df_plot, operators_to_plot = _build_plot_dataframe(df, args.fg_mode)
+    fit_params = _build_fit_params(fits_orig, df_plot, operators_to_plot, args.fg_mode)
 
     semantics_colors = {
         "DelayedQuantitative": "#64baaa",
@@ -286,7 +305,9 @@ def main() -> None:
     # Spread non-RoSI labels per operator to avoid near-overlapping stacks,
     # especially for G labels which often cluster tightly.
     y_targets = {i: info["y"] for i, info in enumerate(direct_labels)}
-    non_rosi_indices = [i for i, info in enumerate(direct_labels) if info["semantics"] != "RoSI"]
+    non_rosi_indices = [
+        i for i, info in enumerate(direct_labels) if info["semantics"] != "RoSI"
+    ]
     operators = sorted({direct_labels[i]["operator"] for i in non_rosi_indices})
     for op in operators:
         idx = [i for i in non_rosi_indices if direct_labels[i]["operator"] == op]
@@ -311,7 +332,12 @@ def main() -> None:
                 va="center",
                 ha="left",
                 clip_on=False,
-                bbox={"boxstyle": "round,pad=0.1", "fc": "white", "ec": "none", "alpha": 0.75},
+                bbox={
+                    "boxstyle": "round,pad=0.1",
+                    "fc": "white",
+                    "ec": "none",
+                    "alpha": 0.75,
+                },
             )
         else:
             ax.annotate(
@@ -324,7 +350,12 @@ def main() -> None:
                 va="center",
                 ha="left",
                 clip_on=False,
-                bbox={"boxstyle": "round,pad=0.1", "fc": "white", "ec": "none", "alpha": 0.75},
+                bbox={
+                    "boxstyle": "round,pad=0.1",
+                    "fc": "white",
+                    "ec": "none",
+                    "alpha": 0.75,
+                },
                 arrowprops={
                     "arrowstyle": "-",
                     "lw": 1.0,

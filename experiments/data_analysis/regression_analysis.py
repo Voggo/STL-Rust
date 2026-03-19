@@ -22,12 +22,13 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+import pandas as pd
 
 
-ROOT = Path(__file__).resolve().parent
-NATIVE_CSV = ROOT.parent / "results" / "paper_native_benchmark_results.csv"
-PYTHON_CSV = ROOT / "ostlpython_benchmark_results.csv"
-DEFAULT_OUTPUT_CSV = ROOT / "regression_fit_results.csv"
+ROOT = Path(__file__).resolve().parent.parent / "paper_results" / "outputs"
+NATIVE_CSV = ROOT / "performance_results_M=50.csv"
+PYTHON_CSV = ROOT / "python_performance_results_M=50.csv"
+DEFAULT_OUTPUT_CSV = "regression_fit_results.csv"
 
 _OPERATOR_FROM_NATIVE_FID = {
     "4": "U",
@@ -80,94 +81,69 @@ class RegressionResult:
         }
 
 
-def _is_simple_operator_spec(spec: str) -> bool:
-    """Return True if the spec is a simple G/F/U benchmark formula."""
-    spec = spec.strip()
-    return bool(_SIMPLE_SPEC_PATTERN.match(spec) or _SIMPLE_UNTIL_PATTERN.match(spec))
-
-
-def _parse_operator_from_spec(spec: str) -> str | None:
-    """Extract operator label ('G', 'F', 'U') from a simple benchmark spec."""
-    s = spec.strip()
-    if " U[" in s:
-        return "U"
-    if s.startswith("G[") and "->" not in s:
-        return "G"
-    if s.startswith("F[") and "->" not in s:
-        return "F"
-    return None
+def _dataframe_to_points(df: pd.DataFrame, source: str) -> list[DataPoint]:
+    """Convert normalized dataframe rows to DataPoint list."""
+    return [
+        DataPoint(
+            source=source,
+            semantics=semantics,
+            operator=operator,
+            temporal_depth=float(temporal_depth),
+            time_us=float(time_us),
+        )
+        for semantics, operator, temporal_depth, time_us in df[
+            ["semantics", "operator", "temporal_depth", "time_us"]
+        ].itertuples(index=False, name=None)
+    ]
 
 
 def _load_native_points(path: Path) -> list[DataPoint]:
     """Load native Rust scalability datapoints (formula IDs 4/5/6)."""
-    points: list[DataPoint] = []
+    df = pd.read_csv(path, dtype={"formula_id": "string"})
 
-    with path.open(newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fid = row.get("formula_id", "").strip()
-            if fid not in _OPERATOR_FROM_NATIVE_FID:
-                continue
+    df["formula_id"] = df["formula_id"].astype("string").str.strip()
+    df = df[df["formula_id"].isin(_OPERATOR_FROM_NATIVE_FID)]
 
-            interval_len = row.get("interval_len", "").strip()
-            if interval_len == "":
-                continue
+    df["operator"] = df["formula_id"].map(_OPERATOR_FROM_NATIVE_FID)
+    df["temporal_depth"] = pd.to_numeric(df.get("interval_len"), errors="coerce")
+    df["time_us"] = pd.to_numeric(df.get("avg_per_sample_us"), errors="coerce")
+    df["semantics"] = df["semantics"].astype(str).str.strip()
 
-            try:
-                x = float(interval_len)
-                y = float(row["avg_per_sample_us"])
-            except (KeyError, ValueError):
-                continue
-
-            points.append(
-                DataPoint(
-                    source="native",
-                    semantics=row["semantics"].strip(),
-                    operator=_OPERATOR_FROM_NATIVE_FID[fid],
-                    temporal_depth=x,
-                    time_us=y,
-                )
-            )
-
-    return points
+    df = df.dropna(subset=["operator", "temporal_depth", "time_us"])
+    return _dataframe_to_points(df, source="native")
 
 
 def _load_python_points(path: Path) -> list[DataPoint]:
     """Load Python-binding scalability datapoints (simple G/F/U formulas only)."""
-    points: list[DataPoint] = []
+    df = pd.read_csv(path)
 
-    with path.open(newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            spec = row.get("spec", "")
-            if not _is_simple_operator_spec(spec):
-                continue
+    spec = (
+        df.get("spec", pd.Series("", index=df.index)).fillna("").astype(str).str.strip()
+    )
+    simple_mask = spec.str.match(_SIMPLE_SPEC_PATTERN) | spec.str.match(
+        _SIMPLE_UNTIL_PATTERN
+    )
 
-            operator = _parse_operator_from_spec(spec)
-            if operator is None:
-                continue
+    operators = np.select(
+        [
+            spec.str.contains(r"\sU\[", regex=True),
+            spec.str.startswith("G[") & ~spec.str.contains("->", regex=False),
+            spec.str.startswith("F[") & ~spec.str.contains("->", regex=False),
+        ],
+        ["U", "G", "F"],
+        default="",
+    )
 
-            depth_raw = row.get("temporal_depth", "").strip()
-            if depth_raw == "":
-                continue
+    df = df.assign(
+        semantics=df["semantics"].astype(str).str.strip(),
+        operator=operators,
+        temporal_depth=pd.to_numeric(df.get("temporal_depth"), errors="coerce"),
+        time_us=pd.to_numeric(df.get("avg_per_sample_us"), errors="coerce"),
+    )
 
-            try:
-                x = float(depth_raw)
-                y = float(row["avg_per_sample_us"])
-            except (KeyError, ValueError):
-                continue
-
-            points.append(
-                DataPoint(
-                    source="python",
-                    semantics=row["semantics"].strip(),
-                    operator=operator,
-                    temporal_depth=x,
-                    time_us=y,
-                )
-            )
-
-    return points
+    df = df[simple_mask & (df["operator"] != "")]
+    df = df.dropna(subset=["temporal_depth", "time_us"])
+    return _dataframe_to_points(df, source="python")
 
 
 def _select_model_degree(semantics: str, operator: str) -> int:
@@ -183,7 +159,9 @@ def _select_model_degree(semantics: str, operator: str) -> int:
     return 1
 
 
-def _fit_polynomial(x: np.ndarray, y: np.ndarray, degree: int) -> tuple[np.ndarray, np.ndarray]:
+def _fit_polynomial(
+    x: np.ndarray, y: np.ndarray, degree: int
+) -> tuple[np.ndarray, np.ndarray]:
     """Fit polynomial with least squares and return (coeffs_high_to_low, y_hat)."""
     coeffs = np.polyfit(x, y, degree)
     y_hat = np.polyval(coeffs, x)
@@ -211,7 +189,9 @@ def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
 
-def _group_points(points: Iterable[DataPoint]) -> dict[tuple[str, str, str], list[DataPoint]]:
+def _group_points(
+    points: Iterable[DataPoint],
+) -> dict[tuple[str, str, str], list[DataPoint]]:
     """Group datapoints by (source, semantics, operator)."""
     grouped: dict[tuple[str, str, str], list[DataPoint]] = {}
     for p in points:
@@ -220,7 +200,9 @@ def _group_points(points: Iterable[DataPoint]) -> dict[tuple[str, str, str], lis
     return grouped
 
 
-def load_scalability_points(native_csv: Path, python_csv: Path | None) -> list[DataPoint]:
+def load_scalability_points(
+    native_csv: Path, python_csv: Path | None
+) -> list[DataPoint]:
     """Load and combine native + optional Python scalability points used for regression."""
     points = _load_native_points(native_csv)
     if python_csv is not None and python_csv.exists():
