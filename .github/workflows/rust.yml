@@ -133,7 +133,8 @@ jobs:
 
       - name: Generate coverage (ostl)
         working-directory: ./ostl
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
+        run: >
+          cargo tarpaulin --verbose --all-features -p ostl --timeout 120 --out xml --exclude-files benches/* --exclude-files tests/* --exclude-files examples/* --exclude-files ostl-macros/*
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
