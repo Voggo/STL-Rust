@@ -58,9 +58,9 @@ def make_discrete_monitor_cpp(spec: str) -> rtamt.StlDiscreteTimeOnlineSpecifica
     return monitor
 
 
-def make_discrete_monitor_python(spec: str) -> rtamt.StlDiscreteTimeSpecification:
-    """Create a fresh rtamt discrete-time monitor for online monitoring."""
-    monitor = rtamt.StlDiscreteTimeSpecification()
+def make_discrete_monitor_python(spec: str) -> rtamt.StlDiscreteTimeOnlineSpecification:
+    """Create a fresh rtamt discrete-time online monitor for online monitoring."""
+    monitor = rtamt.StlDiscreteTimeOnlineSpecification()
     monitor.declare_var("x", "float")
     monitor.spec = spec
     monitor.parse()

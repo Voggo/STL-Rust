@@ -9,10 +9,10 @@ from tqdm import tqdm
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DEFAULT_M = 20  # Number of runs to average over
+DEFAULT_M = 1  # Number of runs to average over
 DEFAULT_SIGNAL_CSV = os.path.join(
     os.path.dirname(__file__),
-    "BENCH_RESULTS",
+    "paper_results",
     "signal_generation",
     "signals",
     "signal_20000_chirp.csv",
@@ -23,37 +23,40 @@ DEFAULT_OUTPUT_CSV = os.path.join(
     "ostlpython_NAIVE_benchmark_results.csv",
 )
 
-# Formulas matching the ostl benchmark catalog (IDs 1-12)
+# Formulas matching the uploaded Rust benchmark CSV labeling.
 # Uses the same DSL syntax as Rust's stl! macro (parsed via parse_formula)
-FORMULAS: dict[int, str] = {}
+#
+# Formula IDs are family labels (not unique row IDs):
+# 1: phi1
+# 2: phi2
+# 3: phi3
+# 4: until family (all bounds)
+# 5: globally family (all bounds)
+# 6: eventually family (all bounds)
+FORMULAS: list[tuple[int, str]] = []
 b = np.arange(0, 5001, 100)
 b[0] += 1  # avoid zero bound for the first formula
 
-formula_id = 1
+# phi1
+FORMULAS.append((1, "(x < 0.5) and (x > -0.5)"))
+
+# phi2
+FORMULAS.append((2, "G[0,1000] (x > 0.5 -> F[0,100] (x < 0.0))"))
+
+# phi3
+FORMULAS.append((3, "(G[0,100] (x < 0.5)) or (G[100,150] (x > 0.0))"))
+
+# until formulas
+for bnd in b:
+    FORMULAS.append((4, f"(x < 0.0) U[0,{bnd:.1f}] (x > 0.0)"))
 
 # globally formulas
 for bnd in b:
-    FORMULAS[formula_id] = f"G[0,{bnd:.1f}] (x > 0.0)"
-    formula_id += 1
+    FORMULAS.append((5, f"G[0,{bnd:.1f}] (x > 0.0)"))
 
 # eventually formulas
 for bnd in b:
-    FORMULAS[formula_id] = f"F[0,{bnd:.1f}] (x > 0.0)"
-    formula_id += 1
-
-# with until, only 10 formulas before it gets too slow
-for bnd in b:
-    FORMULAS[formula_id] = f"(x < 0.0) U[0,{bnd:.1f}] (x > 0.0)"
-    formula_id += 1
-
-# phi1
-FORMULAS[formula_id] = "(x < 0.5) and (x > -0.5)"
-
-# phi2
-FORMULAS[formula_id + 1] = "G[0,1000] (x > 0.5 -> F[0,100] (x < 0.0))"
-
-# phi3
-FORMULAS[formula_id + 2] = "(G[0,100] (x < 0.5)) or (G[100,150] (x > 0.0))"
+    FORMULAS.append((6, f"F[0,{bnd:.1f}] (x > 0.0)"))
 
 
 def load_signal(path: str) -> list[tuple[float, float]]:
@@ -191,7 +194,7 @@ def main() -> None:
 
     for sem in semantics:
         print(f"\n--- Semantics: {sem} ---")
-        pbar = tqdm(FORMULAS.items(), desc=f"Processing {sem}")
+        pbar = tqdm(FORMULAS, desc=f"Processing {sem}")
         for fid, spec in pbar:
             if not should_process_formula(spec, sem):
                 continue
