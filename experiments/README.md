@@ -16,7 +16,7 @@ To run the experiments, ensure you have the following installed:
 - Python packages listed in `requirements.txt` (install via `pip install -r requirements.txt`)
 - RTAMT. This can be installed from source by following the instructions in their [GitHub repository](https://github.com/nickovic/rtamt). Follow their instructions, to make sure to build the CPP library and have it accessible in your Python environment.
 
-Make also sure that the python bindings for ostl are properly installed. You can do this by running `pip install -e .` in the `ostl-python` directory.
+Make also sure that the python bindings for festl are properly installed. You can do this by running `pip install -e .` in the `festl-python` directory.
 
 ## Running the Experiments
 
