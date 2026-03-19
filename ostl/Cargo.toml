@@ -2,10 +2,18 @@
 name = "ostl"
 version = "0.1.0"
 edition = "2024"
+description = "A Rust library for online monitoring of Signal Temporal Logic (STL) specifications."
+license-file = "../LICENSE"
+repository = "https://github.com/Voggo/STL-Rust"
+homepage = "https://github.com/Voggo/STL-Rust"
+documentation = "https://docs.rs/ostl"
+readme = "../README.md"
+keywords = ["stl", "monitoring", "temporal-logic", "cps"]
+categories = ["science", "mathematics"]
 
 [dependencies]
 dyn-clone = "1.0.20"
-ostl-macros = { path = "ostl-macros" }
+ostl-macros = { version = "0.1.0", path = "ostl-macros" }
 
 [dev-dependencies]
 proptest = "1.8.0"

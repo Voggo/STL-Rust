@@ -1,0 +1,29 @@
+name: Prepare Rust Crate Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate-release:
+    name: Validate crates for release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Dry-run ostl-macros publish
+        run: cargo publish --manifest-path ostl/ostl-macros/Cargo.toml --locked --dry-run
+
+      - name: Validate ostl crate metadata and buildability
+        run: |
+          cargo metadata --manifest-path ostl/Cargo.toml --format-version 1 > /dev/null
+          cargo check --manifest-path ostl/Cargo.toml --locked
