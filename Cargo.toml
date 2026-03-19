@@ -5,3 +5,4 @@ members = [
     "ostl/ostl-macros",
     "ostl-python"
 ]
+resolver = "3"

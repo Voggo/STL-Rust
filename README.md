@@ -3,8 +3,12 @@
 [![Rust CI](https://github.com/Voggo/STL-Rust/workflows/Rust%20CI/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/rust.yml)
 [![Python Tests](https://github.com/Voggo/STL-Rust/workflows/Python%20Tests/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/python-tests.yml)
 [![codecov](https://codecov.io/gh/Voggo/STL-Rust/branch/main/graph/badge.svg)](https://codecov.io/gh/Voggo/STL-Rust)
+[![crates.io](https://img.shields.io/crates/v/ostl.svg)](https://crates.io/crates/ostl)
+[![PyPI](https://img.shields.io/pypi/v/ostl-python.svg)](https://pypi.org/project/ostl-python/)
+[![docs.rs](https://img.shields.io/docsrs/ostl)](https://docs.rs/ostl)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://voggo.github.io/STL-Rust/)
 
-CANARIFY is a Rust Library for online monitoring of Signal Temporal Logic (STL) specifications. It is designed for high performance and low memory usage, making it suitable for real-time applications. The library also has Python bindings, allowing for easy integration with Python-based workflows.
+CANARIFY is the project name for the `ostl` core engine: a Rust library for online monitoring of Signal Temporal Logic (STL) specifications. It is designed for high performance and low memory usage, making it suitable for real-time applications. The Python bindings are published as `ostl-python` and imported as `ostl_python`.
 
 - [CANARIFY](#canarify)
   - [About](#about)
@@ -18,6 +22,7 @@ CANARIFY is a Rust Library for online monitoring of Signal Temporal Logic (STL) 
     - [Rust Usage](#rust-usage)
     - [Python Usage](#python-usage)
   - [References](#references)
+  - [License](#license)
 
 ## About
 
@@ -25,8 +30,15 @@ Cyber-Physical Systems (CPSs) increasingly rely on real-time fault detection and
 
 - **Embedded DSL:** A macro-based DSL (`stl!`) allows specifications to be embedded and syntax-checked directly at compile time in Rust.
 - **Unified Semantics Interface:** Supports multiple online evaluation modes (Qualitative, Quantitative, Eager, and RoSI) in a single framework.
-- **Python Bindings:** Exposed via the `ostl_python` (or `CANARIFY`) package to enable interactive workflows in environments like Jupyter Notebooks.
+- **Python Bindings:** Exposed via the `ostl-python` package (import name: `ostl_python`) to enable interactive workflows in environments like Jupyter Notebooks.
 - **High Performance:** Benchmarks demonstrate throughput exceeding existing state-of-the-art tools, with native optimizations running blazingly fast across modern architectures.
+
+Published package pages:
+
+- Rust crate: [crates.io/crates/ostl](https://crates.io/crates/ostl)
+- Python package: [pypi.org/project/ostl-python](https://pypi.org/project/ostl-python/)
+- Rust API docs: [docs.rs/ostl](https://docs.rs/ostl)
+- Project docs: [voggo.github.io/STL-Rust](https://voggo.github.io/STL-Rust/)
 
 ## Theory
 
@@ -89,7 +101,7 @@ ostl = "0.1.0"
 Install the Python bindings via pip:
 
 ```bash
-pip install ostl_python
+pip install ostl-python
 
 ```
 
@@ -130,6 +142,7 @@ for verdict in out2.verdicts() {
 ```
 
 ### Python Usage
+
 For more Python examples, see the [`ostl-python/examples`](./ostl-python/examples) directory.
 The Python API wraps the core Rust engine, offering comparable performance via an intuitive Pythonic interface.
 
@@ -156,3 +169,7 @@ print(output.to_dict())
 1. Deshmukh, J.V., et al. "Robust Online Monitoring of Signal Temporal Logic." *arXiv preprint arXiv:1506.08234* (2015).
 2. Lemire, D. "Streaming Maximum-Minimum Filter Using No More than Three Comparisons per Element." *arXiv preprint arXiv:cs/0610046* (2007).
 3. Maler, O., & Nickovic, D. "Monitoring Temporal Properties of Continuous Signals." *Formal Techniques, Modelling and Analysis of Timed and Fault-Tolerant Systems* (2004).
+
+## License
+
+This project is distributed under the INTO-CPS Association Public License (ICAPL) with GPL v3 as a supported subsidiary mode. See `LICENSE` for the full terms and `ICA-USAGE-MODE.txt` for the selected usage mode in this distribution.
