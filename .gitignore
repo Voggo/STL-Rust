@@ -6,3 +6,4 @@ plots/
 *_log.txt
 .DS_Store
 .vscode/
+target/

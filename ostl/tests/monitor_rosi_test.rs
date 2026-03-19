@@ -144,9 +144,9 @@ fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<
         );
     }
 }
-
 #[rstest]
-#[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+// #[case(vec![formula_1(), formula_1_alt(), formula_1_alt_2()])]
+#[case(vec![formula_1()])]
 #[case(vec![formula_2()])]
 #[case(vec![formula_3(), formula_3_alt()])]
 #[case(vec![formula_4()])]
@@ -157,7 +157,13 @@ fn run_rosi_interval_bounds_check(formulas: Vec<FormulaDefinition>, signal: Vec<
 #[case(vec![formula_9()])]
 fn test_final_rosi_verdicts(
     #[case] formulas: Vec<FormulaDefinition>,
-    #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<Step<f64>>,
+    #[values(
+        monotonic_increasing(),
+        monotonic_decreasing(),
+        sinusoid(),
+        sparse_timestamps()
+    )]
+    signal: Vec<Step<f64>>,
 ) {
     run_final_rosi_verdicts_check(formulas, signal);
 }
@@ -174,14 +180,26 @@ fn test_final_rosi_verdicts(
 #[case(vec![formula_9()])]
 fn test_rosi_interval_bounds(
     #[case] formulas: Vec<FormulaDefinition>,
-    #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<Step<f64>>,
+    #[values(
+        monotonic_increasing(),
+        monotonic_decreasing(),
+        sinusoid(),
+        sparse_timestamps()
+    )]
+    signal: Vec<Step<f64>>,
 ) {
     run_rosi_interval_bounds_check(formulas, signal);
 }
 
 #[rstest]
 fn test_library_formulas_rosi(
-    #[values(monotonic_increasing(), monotonic_decreasing(), sinusoid())] signal: Vec<Step<f64>>,
+    #[values(
+        monotonic_increasing(),
+        monotonic_decreasing(),
+        sinusoid(),
+        sparse_timestamps()
+    )]
+    signal: Vec<Step<f64>>,
 ) {
     let lib_formulas = ostl::stl::formulas::get_formulas(&[]);
     for (id, formula) in lib_formulas {

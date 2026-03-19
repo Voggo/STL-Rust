@@ -696,9 +696,6 @@ where
         };
 
         let synchronizer = if formula_def.get_signal_identifiers().len() <= 1 {
-            eprintln!(
-                "Warning: Only one signal involved, synchronization of signals is disabled for performance."
-            );
             Synchronizer::new(SynchronizationStrategy::None)
         } else {
             Synchronizer::new(self.synchronization_strategy)

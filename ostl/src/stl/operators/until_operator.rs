@@ -55,17 +55,40 @@ impl<T, C, Y, const IS_EAGER: bool, const IS_ROSI: bool> Until<T, C, Y, IS_EAGER
         Y: RobustnessSemantics + 'static,
     {
         let max_lookahead = interval.end + left.get_max_lookahead().max(right.get_max_lookahead());
-        Until {
-            interval,
-            left,
-            right,
-            left_cache: left_cache.unwrap_or_else(|| C::new()),
-            right_cache: right_cache.unwrap_or_else(|| C::new()),
-            t_max: (Duration::ZERO, Duration::ZERO),
-            eval_buffer: BTreeSet::new(),
-            left_signals_set: HashSet::new(),
-            right_signals_set: HashSet::new(),
-            max_lookahead,
+
+        #[cfg(feature = "track-cache-size")]
+        {
+            let mut l_cache = left_cache.unwrap_or_else(|| C::new());
+            l_cache.set_tracked(true); // Enable tracking for this cache
+            let mut r_cache = right_cache.unwrap_or_else(|| C::new());
+            r_cache.set_tracked(true); // Enable tracking for this cache
+            Until {
+                interval,
+                left,
+                right,
+                left_cache: l_cache,
+                right_cache: r_cache,
+                t_max: (Duration::ZERO, Duration::ZERO),
+                eval_buffer: BTreeSet::new(),
+                left_signals_set: HashSet::new(),
+                right_signals_set: HashSet::new(),
+                max_lookahead,
+            }
+        }
+        #[cfg(not(feature = "track-cache-size"))]
+        {
+            Until {
+                interval,
+                left,
+                right,
+                left_cache: left_cache.unwrap_or_else(|| C::new()),
+                right_cache: right_cache.unwrap_or_else(|| C::new()),
+                t_max: (Duration::ZERO, Duration::ZERO),
+                eval_buffer: BTreeSet::new(),
+                left_signals_set: HashSet::new(),
+                right_signals_set: HashSet::new(),
+                max_lookahead,
+            }
         }
     }
 

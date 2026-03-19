@@ -594,7 +594,7 @@ fn parse_time_interval(input: ParseStream) -> Result<(Expr, Expr)> {
     Ok((start, end))
 }
 
-/// Parse globally: G[start, end](sub) or G[start, end] sub
+/// Parse globally: G[start, end]\(sub\) or G[start, end] sub
 fn parse_globally(input: ParseStream) -> Result<StlFormula> {
     let ident: Ident = input.parse()?;
     let ident_str = ident.to_string();
@@ -657,7 +657,7 @@ fn parse_globally(input: ParseStream) -> Result<StlFormula> {
     Ok(StlFormula::Globally(start, end, Box::new(sub)))
 }
 
-/// Parse eventually: F[start, end](sub) or F[start, end] sub  
+/// Parse eventually: F[start, end]\(sub\) or F[start, end] sub  
 fn parse_eventually(input: ParseStream) -> Result<StlFormula> {
     let ident: Ident = input.parse()?;
     let ident_str = ident.to_string();
