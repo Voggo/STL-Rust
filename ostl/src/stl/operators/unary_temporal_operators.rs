@@ -86,7 +86,7 @@ fn is_lemire_eviction_safe(
 /// Concretely: without this exception, on a formula like `G[0,1000](φ)` the
 /// safety gate's Condition A (`oldest ≥ new_ts − b`) fails permanently once
 /// `t > 1000`, causing every eviction to be blocked and the cache to balloon
-/// to ~`max_lookahead` entries — which is O(1100) for the inner-F[0,100]
+/// to ~`max_lookahead` entries — which is O(1100) for the inner-F[\0,100\]
 /// nesting — instead of the O(1) steady-state size that Lemire normally
 /// achieves.
 fn pop_dominated_values<C, Y>(
