@@ -40,8 +40,8 @@ print(output.to_dict())
 
 ## Project links
 
-- Repository: [github.com/Voggo/STL-Rust](https://github.com/Voggo/STL-Rust)
-- Documentation: [voggo.github.io/STL-Rust](https://voggo.github.io/STL-Rust/)
+- Repository: [github.com/Voggo/FeSTL](https://github.com/Voggo/FeSTL)
+- Documentation: [voggo.github.io/FeSTL](https://voggo.github.io/FeSTL/)
 - Rust API docs: [docs.rs/festl](https://docs.rs/festl)
 
 ## License

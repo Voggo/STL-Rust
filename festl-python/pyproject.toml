@@ -18,9 +18,9 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/Voggo/STL-Rust"
-Documentation = "https://voggo.github.io/STL-Rust/"
-Repository = "https://github.com/Voggo/STL-Rust"
+Homepage = "https://github.com/Voggo/FeSTL"
+Documentation = "https://voggo.github.io/FeSTL/"
+Repository = "https://github.com/Voggo/FeSTL"
 
 [tool.maturin]
 # Python source directory for additional files (like .pyi)
