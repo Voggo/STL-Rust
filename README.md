@@ -1,12 +1,12 @@
 # FeSTL
 
-[![Rust CI](https://github.com/Voggo/STL-Rust/workflows/Rust%20CI/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/rust.yml)
-[![Python Tests](https://github.com/Voggo/STL-Rust/workflows/Python%20Tests/badge.svg)](https://github.com/Voggo/STL-Rust/actions/workflows/python-tests.yml)
-[![codecov](https://codecov.io/gh/Voggo/STL-Rust/branch/main/graph/badge.svg)](https://codecov.io/gh/Voggo/STL-Rust)
+[![Rust CI](https://github.com/Voggo/FeSTL/workflows/Rust%20CI/badge.svg)](https://github.com/Voggo/FeSTL/actions/workflows/rust.yml)
+[![Python Tests](https://github.com/Voggo/FeSTL/workflows/Python%20Tests/badge.svg)](https://github.com/Voggo/FeSTL/actions/workflows/python-tests.yml)
+[![codecov](https://codecov.io/gh/Voggo/FeSTL/branch/main/graph/badge.svg)](https://codecov.io/gh/Voggo/FeSTL)
 [![crates.io](https://img.shields.io/crates/v/festl.svg)](https://crates.io/crates/festl)
 [![PyPI](https://img.shields.io/pypi/v/festl-python.svg)](https://pypi.org/project/festl-python/)
 [![docs.rs](https://img.shields.io/docsrs/festl)](https://docs.rs/festl)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://voggo.github.io/STL-Rust/)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://voggo.github.io/FeSTL/)
 
 FeSTL is a Rust library for online monitoring of Signal Temporal Logic (STL) specifications. It is designed for high performance and low memory usage, making it suitable for real-time applications. The Python bindings are published as `festl-python` and imported as `festl_python`.
 
@@ -38,7 +38,7 @@ Published package pages:
 - Rust crate: [crates.io/crates/festl](https://crates.io/crates/festl)
 - Python package: [pypi.org/project/festl-python](https://pypi.org/project/festl-python/)
 - Rust API docs: [docs.rs/festl](https://docs.rs/festl)
-- Python docs: [voggo.github.io/STL-Rust](https://voggo.github.io/STL-Rust/)
+- Python docs: [voggo.github.io/FeSTL](https://voggo.github.io/FeSTL/)
 
 ## Theory
 
